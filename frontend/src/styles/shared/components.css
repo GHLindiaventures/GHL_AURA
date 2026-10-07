@@ -1,6 +1,5 @@
 /* Shared Common UI Components */
 
-/* Typography Helpers */
 h1,
 h2,
 h3,
@@ -11,6 +10,14 @@ h6 {
   font-weight: 700;
   color: var(--text-primary);
   letter-spacing: -0.02em;
+}
+
+code,
+kbd,
+samp,
+pre,
+.font-mono {
+  font-family: var(--font-mono);
 }
 
 .page-header {
@@ -82,7 +89,12 @@ h6 {
 }
 
 .btn-primary:active {
-  transform: translateY(0);
+  transform: scale(0.98);
+}
+
+.btn-secondary:active,
+.btn-ghost:active {
+  transform: scale(0.98);
 }
 
 .btn-secondary {
@@ -132,7 +144,7 @@ h6 {
 
 .btn-call:active,
 .btn-success:active {
-  transform: translateY(0);
+  transform: scale(0.98);
 }
 
 .btn-sm {
@@ -154,13 +166,70 @@ h6 {
   border: 1px solid var(--border-base);
   border-radius: var(--radius-lg);
   padding: 20px;
-  box-shadow: var(--shadow-card);
-  transition: border-color var(--transition-fast);
+  box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.04), 0 1px 2px -1px rgba(0, 0, 0, 0.02);
+  transition: border-color var(--transition-fast), box-shadow var(--transition-fast), transform var(--transition-fast);
 }
 
 .card-hover:hover {
   border-color: var(--border-strong);
-  box-shadow: var(--shadow-md);
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.06), 0 4px 6px -4px rgba(0, 0, 0, 0.03);
+  transform: translateY(-1px);
+}
+
+/* Drawer Vertical Activity Timeline */
+.drawer-timeline-container {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  position: relative;
+  padding-left: 8px;
+}
+
+.drawer-timeline-container::before {
+  content: '';
+  position: absolute;
+  top: 14px;
+  bottom: 14px;
+  left: 20px;
+  width: 2px;
+  background: var(--border-base);
+  z-index: 1;
+}
+
+.drawer-timeline-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 12px;
+  position: relative;
+  z-index: 2;
+}
+
+.drawer-timeline-marker {
+  width: 24px;
+  height: 24px;
+  border-radius: var(--radius-full);
+  background: var(--primary-600);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  box-shadow: 0 0 0 3px var(--bg-surface), 0 2px 4px rgba(220, 38, 38, 0.25);
+  margin-top: 2px;
+}
+
+.drawer-timeline-card {
+  flex: 1;
+  border: 1px solid var(--border-base);
+  border-radius: var(--radius-md);
+  padding: 12px 14px;
+  background-color: var(--bg-surface);
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.03);
+  transition: all var(--transition-fast);
+}
+
+.drawer-timeline-card:hover {
+  border-color: var(--border-strong);
+  box-shadow: 0 4px 8px -2px rgba(0, 0, 0, 0.06);
 }
 
 /* Forms */

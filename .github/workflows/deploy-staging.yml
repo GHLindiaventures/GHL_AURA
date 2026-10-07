@@ -1,0 +1,61 @@
+name: Deploy to Staging (CD)
+
+on:
+  push:
+    branches:
+      - staging
+
+jobs:
+  deploy-staging:
+    name: 🚀 Deploy to DigitalOcean Staging
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 🔐 Connect via SSH & Deploy
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DROPLET_HOST }}
+          username: ${{ secrets.DROPLET_USER }}
+          key: ${{ secrets.DROPLET_SSH_KEY }}
+          script: |
+            set -e
+            echo "🚀 Starting Staging Deployment on Droplet..."
+
+            APP_DIR="/var/www/salesapp-staging"
+            if [ ! -d "$APP_DIR" ]; then
+              echo "Creating $APP_DIR directory..."
+              sudo mkdir -p "$APP_DIR"
+              sudo chown -R $USER:www-data "$APP_DIR"
+            fi
+            cd "$APP_DIR"
+
+            # 1. Pull latest code from staging
+            if [ -d ".git" ]; then
+              git fetch origin staging
+              git reset --hard origin/staging
+            else
+              echo "Repository not yet cloned in $APP_DIR. Please clone the repo first."
+              exit 1
+            fi
+
+            # 2. Apply PostgreSQL Database Migrations (EF Core)
+            echo "📊 Applying Database Migrations..."
+            dotnet ef database update --project backend/backend.csproj --no-build || true
+
+            # 3. Publish & Restart .NET Backend Service
+            echo "⚙️ Publishing .NET Backend..."
+            dotnet publish backend/backend.csproj -c Release -o "$APP_DIR/backend_publish"
+            sudo systemctl restart salesapp-staging-backend.service || sudo systemctl restart salesapp-backend.service || true
+
+            # 4. Build Frontend (React 19 + Vite)
+            echo "🎨 Building React Frontend..."
+            cd frontend
+            npm install
+            npm run build
+            cd ..
+
+            # 5. Reload Nginx
+            echo "🌐 Reloading Nginx Web Server..."
+            sudo systemctl reload nginx
+
+            echo "✅ Staging deployment finished successfully!"

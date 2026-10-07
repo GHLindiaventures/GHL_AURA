@@ -10,8 +10,10 @@
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background-color: rgba(15, 23, 42, 0.65);
-  backdrop-filter: blur(4px);
+  background-color: rgba(15, 23, 42, 0.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  transition: opacity var(--transition-normal);
 }
 
 .modal-card {
@@ -20,9 +22,10 @@
   display: flex;
   flex-direction: column;
   padding: 0;
-  box-shadow: var(--shadow-xl);
+  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.1);
   overflow: hidden;
   background-color: var(--bg-surface);
+  border: 1px solid var(--border-base);
   border-radius: var(--radius-xl);
 }
 
@@ -32,12 +35,14 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  background: var(--bg-surface);
 }
 
 .modal-title {
   font-size: 18px;
   font-weight: 700;
   margin: 0;
+  letter-spacing: -0.01em;
 }
 
 .modal-subtitle {

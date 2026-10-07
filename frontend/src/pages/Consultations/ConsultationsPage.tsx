@@ -631,6 +631,30 @@ export const ConsultationsPage: React.FC = () => {
                   title="Select consultation time"
                 />
               </div>
+
+              {/* Quick Time Slot Pills */}
+              <div className="consultation-quick-slots">
+                {[
+                  { time: '10:00', label: '10:00 AM' },
+                  { time: '11:30', label: '11:30 AM' },
+                  { time: '14:00', label: '02:00 PM' },
+                  { time: '15:30', label: '03:30 PM' },
+                  { time: '17:00', label: '05:00 PM' },
+                ].map(slot => (
+                  <button
+                    key={slot.time}
+                    type="button"
+                    className={`consultation-time-pill${form.scheduledTime === slot.time ? ' active' : ''}`}
+                    onClick={() => {
+                      setField('scheduledTime', slot.time);
+                      setField('scheduledAt', formatSlotDateTime(form.scheduledDate, slot.time));
+                    }}
+                  >
+                    {slot.label}
+                  </button>
+                ))}
+              </div>
+
               {form.scheduledAt && (
                 <div className="consultation-slot-preview">
                   📅 {form.scheduledAt}

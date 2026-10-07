@@ -1,4 +1,4 @@
- sing backend.Models.Entities;
+using backend.Models.Entities;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 

@@ -426,61 +426,58 @@ export const LeadDetailDrawerContent: React.FC<LeadDetailDrawerContentProps> = (
           </div>
 
           {isPreviousConsultationsOpen && (
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+            <div className="drawer-timeline-container">
               {consultationHistory.map(item => (
-                <div
-                  key={item.id}
-                  style={{
-                    border: '1px solid var(--border-base)',
-                    borderRadius: 'var(--radius-md)',
-                    padding: '12px 14px',
-                    backgroundColor: 'var(--bg-surface)',
-                  }}
-                >
-                  {/* Header row: slot (scheduledAt) and StatusChip */}
-                  <div
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      justifyContent: 'space-between',
-                      gap: 8,
-                      flexWrap: 'wrap',
-                    }}
-                  >
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                      <span
-                        style={{
-                          fontSize: 11,
-                          fontWeight: 700,
-                          padding: '2px 8px',
-                          borderRadius: 10,
-                          backgroundColor: 'var(--bg-surface-hover)',
-                          color: 'var(--text-primary)',
-                        }}
-                      >
-                        <Clock size={11} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
-                        {item.scheduledAt}
-                      </span>
-                      <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                        Consultant: <strong>{item.consultantName}</strong>
-                      </span>
-                    </div>
-                    <StatusChip status={item.status} size="sm" />
+                <div key={item.id} className="drawer-timeline-item">
+                  <div className="drawer-timeline-marker">
+                    <Calendar size={12} color="#ffffff" />
                   </div>
-
-                  {/* Agenda / Reason */}
-                  {item.agenda && (
-                    <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }}>
-                      <strong>Reason / Agenda:</strong> {item.agenda}
+                  <div className="drawer-timeline-card">
+                    {/* Header row: slot (scheduledAt) and StatusChip */}
+                    <div
+                      style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        gap: 8,
+                        flexWrap: 'wrap',
+                      }}
+                    >
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <span
+                          style={{
+                            fontSize: 11,
+                            fontWeight: 700,
+                            padding: '2px 8px',
+                            borderRadius: 10,
+                            backgroundColor: 'var(--bg-surface-hover)',
+                            color: 'var(--text-primary)',
+                          }}
+                        >
+                          <Clock size={11} style={{ display: 'inline', marginRight: 4, verticalAlign: '-1px' }} />
+                          {item.scheduledAt}
+                        </span>
+                        <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                          Advisor: <strong>{item.consultantName}</strong>
+                        </span>
+                      </div>
+                      <StatusChip status={item.status} size="sm" />
                     </div>
-                  )}
 
-                  {/* Outcome Notes (if any) */}
-                  {item.outcomeNotes && (
-                    <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
-                      <strong>Outcome Notes:</strong> {item.outcomeNotes}
-                    </div>
-                  )}
+                    {/* Agenda / Reason */}
+                    {item.agenda && (
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 8 }}>
+                        <strong>Agenda:</strong> {item.agenda}
+                      </div>
+                    )}
+
+                    {/* Outcome Notes (if any) */}
+                    {item.outcomeNotes && (
+                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 4 }}>
+                        <strong>Outcome Notes:</strong> {item.outcomeNotes}
+                      </div>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>

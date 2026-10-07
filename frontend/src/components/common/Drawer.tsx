@@ -51,8 +51,10 @@ export const Drawer: React.FC<DrawerProps> = ({
         zIndex: 1000,
         display: 'flex',
         justifyContent: 'flex-end',
-        backgroundColor: 'rgba(15, 23, 42, 0.5)',
-        backdropFilter: 'blur(3px)',
+        backgroundColor: 'rgba(15, 23, 42, 0.45)',
+        backdropFilter: 'blur(8px)',
+        WebkitBackdropFilter: 'blur(8px)',
+        transition: 'opacity var(--transition-normal)',
       }}
       onClick={onClose}
     >
@@ -65,7 +67,7 @@ export const Drawer: React.FC<DrawerProps> = ({
           backgroundColor: 'var(--bg-surface)',
           display: 'flex',
           flexDirection: 'column',
-          boxShadow: 'var(--shadow-xl)',
+          boxShadow: '-8px 0 32px -4px rgba(0, 0, 0, 0.16)',
           borderLeft: '1px solid var(--border-base)',
         }}
         onClick={e => e.stopPropagation()}
