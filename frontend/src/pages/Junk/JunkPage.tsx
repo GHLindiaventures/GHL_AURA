@@ -115,35 +115,40 @@ export const JunkPage: React.FC = () => {
     setReengaging(true);
     try {
       const numId = parseInt(String(lead.id).replace(/\D/g, ''), 10);
+      let backendSuccess = false;
       if (numId) {
         try {
           await apiClient.post(`/sales-executive/leads/${numId}/reengage`);
+          backendSuccess = true;
         } catch (e) {
           console.warn('Backend reengage error, falling back to apiSaveLead', e);
-          await apiSaveLead({ ...lead, status: 'Contacted' });
+          await apiSaveLead({ ...lead, status: 'Follow-up Required' });
         }
       } else {
-        await apiSaveLead({ ...lead, status: 'Contacted' });
+        await apiSaveLead({ ...lead, status: 'Follow-up Required' });
       }
 
-      const tomorrow = new Date();
-      tomorrow.setDate(tomorrow.getDate() + 1);
-      const newFlw = {
-        id: `flw-${Date.now()}`,
-        companyId: tenant.id,
-        contactId: lead.id,
-        contactName: lead.name,
-        contactPhone: lead.phone,
-        contactType: 'lead' as const,
-        scheduledAt: tomorrow.toISOString(),
-        priority: 'High' as const,
-        status: 'Pending' as const,
-        notes: `Re-engaged from Junk — follow-up required with ${lead.name}.`,
-        assignedAgentId: user.id,
-        assignedAgentName: user.name,
-      };
-      await apiSaveFollowup(newFlw);
+      if (!backendSuccess) {
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        const newFlw = {
+          id: `flw-${Date.now()}`,
+          companyId: tenant.id,
+          contactId: lead.id,
+          contactName: lead.name,
+          contactPhone: lead.phone,
+          contactType: 'lead' as const,
+          scheduledAt: tomorrow.toISOString(),
+          priority: 'High' as const,
+          status: 'Pending' as const,
+          notes: `Re-engaged from Junk — follow-up required with ${lead.name}.`,
+          assignedAgentId: user.id,
+          assignedAgentName: user.name,
+        };
+        await apiSaveFollowup(newFlw);
+      }
       await loadData();
+      window.dispatchEvent(new Event('nexus_storage_updated'));
 
       setIsDetailDrawerOpen(false);
       setSelectedLead(null);

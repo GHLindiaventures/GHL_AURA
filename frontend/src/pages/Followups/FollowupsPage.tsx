@@ -94,7 +94,7 @@ export const FollowupsPage: React.FC = () => {
     roleCode === 'super_admin';
   const isGhlSalesExec = tenant?.slug === 'ghl' && isExec;
   const isIrm = roleCode === 'irm';
-  const canOpenDrawer = isGhlSalesExec || isAdmin || isIrm;
+  const canOpenDrawer = isExec || isAdmin || isIrm || isGhlSalesExec;
 
   // ── Admin Filter States ──────────────────────────────────────────────────
   const [selectedRole, setSelectedRole] = useState<FollowupRoleFilter>('sales_executive');
@@ -818,18 +818,32 @@ export const FollowupsPage: React.FC = () => {
     scopedFollowups = followups;
   }
 
-  // Do NOT collapse legitimate separate tasks merely because they belong to the same customer or have nearby schedules.
-  // Deduplicate only by unique ID so distinct tasks are never merged
+  // Deduplicate follow-ups so that only ONE card appears per contact/lead in the follow-ups list.
   let processedFollowups = scopedFollowups;
   try {
-    const seen = new Set<string>();
+    const seenContactKeys = new Set<string>();
     const deduped: Followup[] = [];
 
     for (const f of scopedFollowups) {
-      const key = String(f.id);
-      if (!seen.has(key)) {
-        seen.add(key);
-        deduped.push(f);
+      const fPhoneDigits = (f.contactPhone || '').replace(/\D/g, '').slice(-10);
+      const contactKey =
+        f.contactId && f.contactId !== 'contact-new'
+          ? `cid_${f.contactId}`
+          : fPhoneDigits.length >= 7
+          ? `phone_${fPhoneDigits}`
+          : `fid_${f.id}`;
+
+      if (f.status === 'Pending') {
+        if (!seenContactKeys.has(contactKey)) {
+          seenContactKeys.add(contactKey);
+          deduped.push(f);
+        }
+      } else {
+        const idKey = `fid_${f.id}`;
+        if (!seenContactKeys.has(idKey)) {
+          seenContactKeys.add(idKey);
+          deduped.push(f);
+        }
       }
     }
     processedFollowups = deduped;
@@ -1402,12 +1416,12 @@ export const FollowupsPage: React.FC = () => {
           }
         >
           {drawerFollowup && (() => {
-            const leads = storageService.getLeads(tenant?.id) || [];
+            const leads = (allLeads && allLeads.length > 0) ? allLeads : (storageService.getLeads(tenant?.id) || []);
             const customers = storageService.getCustomers(tenant?.id) || [];
             const fDigits = (drawerFollowup.contactPhone || '').replace(/\D/g, '').slice(-10);
 
             const matchingLead = leads.find(l => {
-              if (drawerFollowup.contactId && drawerFollowup.contactId !== 'contact-new' && l.id === drawerFollowup.contactId) return true;
+              if (drawerFollowup.contactId && drawerFollowup.contactId !== 'contact-new' && String(l.id) === String(drawerFollowup.contactId)) return true;
               const lDigits = (l.phone || '').replace(/\D/g, '').slice(-10);
               if (lDigits && fDigits && lDigits === fDigits) return true;
               if (l.name && drawerFollowup.contactName && l.name.trim().toLowerCase() === drawerFollowup.contactName.trim().toLowerCase()) return true;
@@ -1887,6 +1901,8 @@ export const FollowupsPage: React.FC = () => {
                   contactType={resolvedContactType}
                   tenantId={tenant?.id}
                   tenantName={tenant?.name}
+                  calls={callsList}
+                  lead={matchingLead}
                   onCall={() =>
                     initiateCall(
                       drawerFollowup.contactName,

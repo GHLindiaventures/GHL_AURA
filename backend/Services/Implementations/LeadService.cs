@@ -1009,19 +1009,8 @@ public class LeadService : ILeadService
         lead.Status = "Contacted";
         lead.UpdatedAt = DateTime.UtcNow;
 
-        // Clear stale pending followups for this lead
-        var leadIdStr = lead.Id.ToString();
-        var staleFollowups = await _context.Followups
-            .Where(f => f.CompanyId == lead.CompanyId &&
-                        f.ContactId == leadIdStr &&
-                        f.ContactType == "lead" &&
-                        f.Status == FollowupStatus.Pending)
-            .ToListAsync(ct);
-
-        if (staleFollowups.Any())
-        {
-            _context.Followups.RemoveRange(staleFollowups);
-        }
+        // Clear any stale sales followups for this lead
+        await InterestedLeadConversion.RemoveSalesFollowupsAsync(_context, lead, ct);
 
         // Schedule fresh followup for tomorrow
         var today = await _clock.GetTodayAsync(lead.CompanyId, ct);

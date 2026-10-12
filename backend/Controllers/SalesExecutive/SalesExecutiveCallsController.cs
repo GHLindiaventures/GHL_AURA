@@ -334,6 +334,7 @@ public class SalesExecutiveCallsController : ControllerBase
                 {
                     lead.Status = "Not Interested";
                     lead.UpdatedAt = DateTime.UtcNow;
+                    await backend.Services.Implementations.InterestedLeadConversion.RemoveSalesFollowupsAsync(_context, lead, ct);
                     var cf = DeserializeCustomFields(lead.CustomFieldsJson);
                     cf["dispositionReason"] = !string.IsNullOrWhiteSpace(dto.Notes) ? dto.Notes : "Not Interested";
                     lead.CustomFieldsJson = JsonSerializer.Serialize(cf);
@@ -348,6 +349,7 @@ public class SalesExecutiveCallsController : ControllerBase
                 {
                     lead.Status = "Junk";
                     lead.UpdatedAt = DateTime.UtcNow;
+                    await backend.Services.Implementations.InterestedLeadConversion.RemoveSalesFollowupsAsync(_context, lead, ct);
                     var cf = DeserializeCustomFields(lead.CustomFieldsJson);
                     cf["dispositionReason"] = !string.IsNullOrWhiteSpace(dto.Notes) ? dto.Notes : "Wrong Number";
                     lead.CustomFieldsJson = JsonSerializer.Serialize(cf);

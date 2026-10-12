@@ -61,7 +61,7 @@ public sealed class CallService(ApplicationDbContext context, ICurrentUserServic
                     lead.Status = request.Disposition == "Wrong Number" ? "Junk" : request.Disposition;
                     lead.UpdatedAt = DateTime.UtcNow;
 
-                    if (request.Disposition is "Not Interested" or "Wrong Number")
+                    if (request.Disposition is "Not Interested" or "Wrong Number" or "Junk")
                     {
                         var cf = DeserializeCustomFields(lead.CustomFieldsJson);
                         cf["dispositionReason"] = !string.IsNullOrWhiteSpace(request.Notes) ? request.Notes : request.Disposition;
@@ -72,6 +72,7 @@ public sealed class CallService(ApplicationDbContext context, ICurrentUserServic
                                 ? $"[{DateTime.UtcNow:yyyy-MM-dd}] {request.Disposition}: {request.Notes}"
                                 : $"{lead.Notes}\n\n[{DateTime.UtcNow:yyyy-MM-dd}] {request.Disposition}: {request.Notes}";
                         }
+                        await backend.Services.Implementations.InterestedLeadConversion.RemoveSalesFollowupsAsync(context, lead, cancellationToken);
                     }
 
                     if (request.Disposition == "Interested")

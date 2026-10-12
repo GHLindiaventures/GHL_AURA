@@ -19,19 +19,27 @@ public static class InterestedLeadConversion
     /// IRM follow-ups are kept: IRMs keep working Interested leads.</summary>
     public static async Task RemoveSalesFollowupsAsync(ApplicationDbContext context, Lead lead, CancellationToken ct)
     {
-        // NOTE: Followup.LeadId is [NotMapped] (not a DB column), so match on ContactId only.
-        // ContactId is free text from the UI ("12", "lead-12" ...), so compare the digits.
         var leadIdStr = lead.Id.ToString();
+        var phoneDigits = string.Concat((lead.Phone ?? "").Where(char.IsDigit));
+        var last10 = phoneDigits.Length >= 10 ? phoneDigits.Substring(phoneDigits.Length - 10) : phoneDigits;
+
         var candidates = await context.Followups
             .Where(f => f.CompanyId == lead.CompanyId &&
                         f.Status != FollowupStatus.Completed &&
-                        f.AssignedToRole != "irm" &&
-                        f.ContactType == "lead" &&
-                        f.ContactId.Contains(leadIdStr))
+                        f.AssignedToRole != "irm")
             .ToListAsync(ct);
 
         var rows = candidates
-            .Where(f => System.Text.RegularExpressions.Regex.Replace(f.ContactId, @"\D", "") == leadIdStr)
+            .Where(f => {
+                var cId = System.Text.RegularExpressions.Regex.Replace(f.ContactId ?? "", @"\D", "");
+                if (!string.IsNullOrEmpty(cId) && cId == leadIdStr) return true;
+                if (!string.IsNullOrEmpty(last10) && !string.IsNullOrEmpty(f.ContactPhone))
+                {
+                    var fDigits = string.Concat(f.ContactPhone.Where(char.IsDigit));
+                    if (fDigits.EndsWith(last10)) return true;
+                }
+                return false;
+            })
             .ToList();
 
         if (rows.Count > 0) context.Followups.RemoveRange(rows);
