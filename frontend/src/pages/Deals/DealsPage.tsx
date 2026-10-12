@@ -92,6 +92,25 @@ export const DealsPage: React.FC<DealsPageProps> = ({ onNavigate }) => {
                 Covering for {d.handedOverFromName}
               </span>
             )}
+            {!d.handedOverFromName && (d.isReturnedFromHandover || Boolean(d.returnedFromCoveringUserName)) && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  padding: '2px 7px',
+                  borderRadius: 6,
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  color: '#34d399',
+                  border: '1px solid rgba(16, 185, 129, 0.35)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3,
+                }}
+                title={`Returned from coverage by ${d.returnedFromCoveringUserName || 'Covering Agent'}${d.returnedAt ? ` on ${new Date(d.returnedAt).toLocaleDateString()}` : ''}`}
+              >
+                ↩ Returned from {d.returnedFromCoveringUserName || 'Covering Agent'}
+              </span>
+            )}
           </div>
           <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{d.customerName}</div>
         </div>

@@ -121,12 +121,21 @@ export interface Lead {
   email: string;
   location: string;
   source: string;
-  status: 'New' | 'Contacted' | 'Qualified' | 'Proposal' | 'Negotiation' | 'Converted' | 'Lost' | 'Not Interested' | 'Junk' | 'Callback' | 'No Response' | 'Follow-up Required' | 'Interested' | 'Other';
+  status: 'New' | 'Contacted' | 'Qualified' | 'Proposal' | 'Negotiation' | 'Converted' | 'Lost' | 'Not Interested' | 'Junk' | 'Wrong Number' | 'Callback' | 'No Response' | 'Follow-up Required' | 'Interested' | 'Other';
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
   assignedAgentId: string;
   assignedAgentName: string;
+  assignedAgentRole?: string;
   assignedById?: string | number;
   assignedByName?: string;
+  assignedSalesExecutiveId?: string;
+  assignedSalesExecutiveName?: string;
+  assignedSalesExecutiveAt?: string;
+  transferredBySalesExecutiveName?: string;
+  activeOwnerName?: string;
+  activeOwnerRole?: string;
+  isCovered?: boolean;
+  coveredByName?: string;
   assignedIrmId?: string;
   assignedIrmName?: string;
   assignedIrmAt?: string;
@@ -162,6 +171,9 @@ export interface Lead {
   handedOverFromName?: string;
   handoverPlannedEnd?: string;
   originalOwnerId?: number;
+  isReturnedFromHandover?: boolean;
+  returnedFromCoveringUserName?: string;
+  returnedAt?: string;
   updatedAt?: string;
   normalizedEmail?: string;
 }
@@ -198,6 +210,9 @@ export interface Customer {
   handedOverFromName?: string;
   handoverPlannedEnd?: string;
   originalOwnerId?: number;
+  isReturnedFromHandover?: boolean;
+  returnedFromCoveringUserName?: string;
+  returnedAt?: string;
   /** Set only for virtual Customer 360 entries built from an 'Interested' lead (not a row in the Customers table). */
   isLeadRecord?: boolean;
   sourceLeadId?: string;
@@ -250,6 +265,9 @@ export interface Deal {
   handoverPlannedEnd?: string;
   originalOwnerId?: number;
   nextFollowupDate?: string;
+  isReturnedFromHandover?: boolean;
+  returnedFromCoveringUserName?: string;
+  returnedAt?: string;
 }
 
 export interface DealActivity {
@@ -370,6 +388,10 @@ export interface Followup {
   handedOverFromName?: string;
   handoverPlannedEnd?: string;
   originalOwnerId?: number;
+  isReturnedFromHandover?: boolean;
+  returnedFromCoveringUserName?: string;
+  returnedAt?: string;
+  customFields?: Record<string, any>;
 }
 
 export interface PropertyProject {

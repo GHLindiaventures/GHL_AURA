@@ -285,6 +285,15 @@ public class FollowupService : IFollowupService
             .Where(l => l.CompanyId == companyId && (contactIds.Contains(l.Id.ToString()) || contactPhones.Contains(l.Phone)))
             .ToListAsync(ct);
 
+        var fIds = paged.Select(f => f.Id).ToList();
+        var returnedFItems = await _context.WorkHandoverItems
+            .AsNoTracking()
+            .Include(whi => whi.Handover).ThenInclude(wh => wh!.CoveringUser)
+            .Where(whi => whi.EntityType == "Followup" && fIds.Contains(whi.EntityId) && whi.ReturnOutcome == "returned")
+            .OrderByDescending(whi => whi.ReturnedAt)
+            .ToListAsync(ct);
+        var returnedByF = returnedFItems.GroupBy(i => i.EntityId).ToDictionary(g => g.Key, g => g.First());
+
         var items = paged.Select(f =>
         {
             Lead? lead = null;
@@ -295,7 +304,14 @@ public class FollowupService : IFollowupService
                 var p10 = f.ContactPhone.Length >= 10 ? f.ContactPhone[^10..] : f.ContactPhone;
                 lead = matchedLeads.FirstOrDefault(l => l.Phone.Contains(p10));
             }
-            return MapToDto(f, lead);
+            var dto = MapToDto(f, lead);
+            if (returnedByF.TryGetValue(f.Id, out var retItem))
+            {
+                dto.IsReturnedFromHandover = true;
+                dto.ReturnedFromCoveringUserName = retItem.Handover?.CoveringUser?.Name;
+                dto.ReturnedAt = retItem.ReturnedAt;
+            }
+            return dto;
         }).ToList();
 
         return ApiResponse<PagedResult<FollowupResponseDto>>.SuccessResult(

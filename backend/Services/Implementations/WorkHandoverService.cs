@@ -193,6 +193,7 @@ public class WorkHandoverService : IWorkHandoverService
         foreach (var lead in openLeads)
         {
             lead.AssignedAgentId = toUser.Id;
+            lead.AssignedAt = DateTime.UtcNow;
             lead.HandoverId = handover.Id;
             lead.OriginalOwnerId = fromUser.Id;
             lead.UpdatedAt = DateTime.UtcNow;
@@ -391,6 +392,42 @@ public class WorkHandoverService : IWorkHandoverService
             });
         }
 
+        // 11. Leads with Assigned IRM
+        if (fromUser.Role.Code.Equals("irm", StringComparison.OrdinalIgnoreCase))
+        {
+            var irmLeads = await _db.Leads
+                .Where(l => l.CompanyId == companyId && l.CustomFieldsJson != null &&
+                            (l.CustomFieldsJson.Contains($"\"assignedIrmId\":\"{fromUser.Id}\"") ||
+                             l.CustomFieldsJson.Contains($"\"assignedIrmId\":{fromUser.Id}") ||
+                             l.CustomFieldsJson.Contains(fromUser.Name)))
+                .ToListAsync(ct);
+
+            foreach (var l in irmLeads)
+            {
+                var cf = DeserializeCustomFields(l.CustomFieldsJson);
+                var curId = cf.TryGetValue("assignedIrmId", out var cId) ? cId : null;
+                var curName = cf.TryGetValue("assignedIrmName", out var cName) ? cName : null;
+
+                if (curId == fromUser.Id.ToString() || (curName != null && curName.Trim().Equals(fromUser.Name.Trim(), StringComparison.OrdinalIgnoreCase)))
+                {
+                    cf["assignedIrmId"] = toUser.Id.ToString();
+                    cf["assignedIrmName"] = toUser.Name;
+                    cf["assignedIrmAt"] = DateTime.UtcNow.ToString("o");
+                    l.CustomFieldsJson = JsonSerializer.Serialize(cf);
+                    l.UpdatedAt = DateTime.UtcNow;
+
+                    items.Add(new WorkHandoverItem
+                    {
+                        HandoverId = handover.Id,
+                        EntityType = "LeadIrm",
+                        EntityId = l.Id,
+                        Origin = "included_at_start",
+                        CreatedAt = DateTime.UtcNow
+                    });
+                }
+            }
+        }
+
         _db.WorkHandoverItems.AddRange(items);
 
         // Audit Log
@@ -534,9 +571,18 @@ public class WorkHandoverService : IWorkHandoverService
                         if (lead.AssignedAgentId == handover.CoveringUserId)
                         {
                             lead.AssignedAgentId = handover.OriginalUserId;
+                            lead.AssignedAt = DateTime.UtcNow;
                             lead.HandoverId = null;
                             lead.OriginalOwnerId = null;
                             lead.UpdatedAt = DateTime.UtcNow;
+
+                            var cf = DeserializeCustomFields(lead.CustomFieldsJson);
+                            cf["returnedFromHandover"] = "true";
+                            cf["returnedFromCoveringUserName"] = handover.CoveringUser?.Name ?? "Covering Agent";
+                            cf["returnedFromCoveringUserId"] = handover.CoveringUserId.ToString();
+                            cf["returnedAt"] = DateTime.UtcNow.ToString("o");
+                            lead.CustomFieldsJson = JsonSerializer.Serialize(cf);
+
                             item.ReturnedAt = DateTime.UtcNow;
                             item.ReturnOutcome = "returned";
                             returnedCount++;
@@ -566,6 +612,14 @@ public class WorkHandoverService : IWorkHandoverService
                             customer.HandoverId = null;
                             customer.OriginalOwnerId = null;
                             customer.UpdatedAt = DateTime.UtcNow;
+
+                            var cf = DeserializeCustomFields(customer.CustomFieldsJson);
+                            cf["returnedFromHandover"] = "true";
+                            cf["returnedFromCoveringUserName"] = handover.CoveringUser?.Name ?? "Covering Agent";
+                            cf["returnedFromCoveringUserId"] = handover.CoveringUserId.ToString();
+                            cf["returnedAt"] = DateTime.UtcNow.ToString("o");
+                            customer.CustomFieldsJson = JsonSerializer.Serialize(cf);
+
                             item.ReturnedAt = DateTime.UtcNow;
                             item.ReturnOutcome = "returned";
                             returnedCount++;
@@ -816,6 +870,35 @@ public class WorkHandoverService : IWorkHandoverService
                         item.ReturnOutcome = "missing";
                     }
                     break;
+
+                case "LeadIrm":
+                    var leadIrm = await _db.Leads.FirstOrDefaultAsync(l => l.Id == item.EntityId, ct);
+                    if (leadIrm != null)
+                    {
+                        var cf = DeserializeCustomFields(leadIrm.CustomFieldsJson);
+                        var curId = cf.TryGetValue("assignedIrmId", out var cId) ? cId : null;
+                        if (curId == handover.CoveringUserId.ToString())
+                        {
+                            cf["assignedIrmId"] = handover.OriginalUserId.ToString();
+                            cf["assignedIrmName"] = handover.OriginalUser?.Name ?? string.Empty;
+                            cf["assignedIrmAt"] = DateTime.UtcNow.ToString("o");
+                            leadIrm.CustomFieldsJson = JsonSerializer.Serialize(cf);
+                            leadIrm.UpdatedAt = DateTime.UtcNow;
+                            item.ReturnedAt = DateTime.UtcNow;
+                            item.ReturnOutcome = "returned";
+                            returnedCount++;
+                        }
+                        else
+                        {
+                            isReassigned = true;
+                        }
+                    }
+                    else
+                    {
+                        item.ReturnedAt = DateTime.UtcNow;
+                        item.ReturnOutcome = "missing";
+                    }
+                    break;
             }
 
             if (isReassigned)
@@ -902,6 +985,14 @@ public class WorkHandoverService : IWorkHandoverService
                         lead.HandoverId = null;
                         lead.OriginalOwnerId = null;
                         lead.UpdatedAt = DateTime.UtcNow;
+
+                        var cf = DeserializeCustomFields(lead.CustomFieldsJson);
+                        cf["returnedFromHandover"] = "true";
+                        cf["returnedFromCoveringUserName"] = handover.CoveringUser?.Name ?? "Covering Agent";
+                        cf["returnedFromCoveringUserId"] = handover.CoveringUserId.ToString();
+                        cf["returnedAt"] = DateTime.UtcNow.ToString("o");
+                        lead.CustomFieldsJson = JsonSerializer.Serialize(cf);
+
                         item.ReturnedAt = DateTime.UtcNow;
                         item.ReturnOutcome = "returned";
                         returnedCount++;
@@ -916,6 +1007,14 @@ public class WorkHandoverService : IWorkHandoverService
                         cust.HandoverId = null;
                         cust.OriginalOwnerId = null;
                         cust.UpdatedAt = DateTime.UtcNow;
+
+                        var cf = DeserializeCustomFields(cust.CustomFieldsJson);
+                        cf["returnedFromHandover"] = "true";
+                        cf["returnedFromCoveringUserName"] = handover.CoveringUser?.Name ?? "Covering Agent";
+                        cf["returnedFromCoveringUserId"] = handover.CoveringUserId.ToString();
+                        cf["returnedAt"] = DateTime.UtcNow.ToString("o");
+                        cust.CustomFieldsJson = JsonSerializer.Serialize(cf);
+
                         item.ReturnedAt = DateTime.UtcNow;
                         item.ReturnOutcome = "returned";
                         returnedCount++;
@@ -1505,5 +1604,18 @@ public class WorkHandoverService : IWorkHandoverService
         }
 
         return sorted;
+    }
+
+    private static Dictionary<string, string> DeserializeCustomFields(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json)) return new Dictionary<string, string>();
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, string>>(json) ?? new Dictionary<string, string>();
+        }
+        catch
+        {
+            return new Dictionary<string, string>();
+        }
     }
 }

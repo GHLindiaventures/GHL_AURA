@@ -465,6 +465,26 @@ function mapLead(l: Record<string, any>): Lead {
     assignedAgentName: l.assignedAgentName ?? '',
     assignedById: l.assignedById != null ? sid(l.assignedById) : undefined,
     assignedByName: l.assignedByName ?? l.customFields?.qualifiedByAgentName ?? '',
+    assignedAgentRole: l.assignedAgentRole ?? undefined,
+    assignedSalesExecutiveId: l.assignedSalesExecutiveId != null ? sid(l.assignedSalesExecutiveId) : undefined,
+    assignedSalesExecutiveName: l.assignedSalesExecutiveName ?? undefined,
+    assignedSalesExecutiveAt: l.assignedSalesExecutiveAt ?? undefined,
+    transferredBySalesExecutiveName: l.transferredBySalesExecutiveName ?? l.customFields?.qualifiedByAgentName ?? undefined,
+    activeOwnerName: l.activeOwnerName ?? undefined,
+    activeOwnerRole: l.activeOwnerRole ?? undefined,
+    isCovered: l.isCovered ?? false,
+    coveredByName: l.coveredByName ?? undefined,
+    assignedIrmId: l.assignedIrmId != null ? sid(l.assignedIrmId) : (l.customFields?.assignedIrmId ? sid(l.customFields.assignedIrmId) : undefined),
+    assignedIrmName: l.assignedIrmName ?? l.customFields?.assignedIrmName ?? undefined,
+    assignedIrmAt: l.assignedIrmAt ?? l.customFields?.assignedIrmAt ?? undefined,
+    assignedAt: l.assignedAt ?? undefined,
+    handoverId: l.handoverId ?? undefined,
+    handedOverFromName: l.handedOverFromName ?? undefined,
+    handoverPlannedEnd: l.handoverPlannedEnd ?? undefined,
+    originalOwnerId: l.originalOwnerId ?? undefined,
+    isReturnedFromHandover: l.isReturnedFromHandover ?? (l.customFields?.returnedFromHandover === 'true' || l.customFields?.returnedFromHandover === true) ?? false,
+    returnedFromCoveringUserName: l.returnedFromCoveringUserName ?? l.customFields?.returnedFromCoveringUserName ?? undefined,
+    returnedAt: l.returnedAt ?? l.customFields?.returnedAt ?? undefined,
     nextFollowupDate: l.nextFollowupDate,
     createdAt: l.createdAt ?? new Date().toISOString(),
     notes: l.notes ?? '',
@@ -472,9 +492,63 @@ function mapLead(l: Record<string, any>): Lead {
   };
 }
 
-export async function getLeads(companyId?: string): Promise<Lead[]> {
-  const raw = await fetchAll<any>('/sales-executive/leads');
+export async function getLeads(companyId?: string, status?: string): Promise<Lead[]> {
+  if (isMockMode()) {
+    const all = storageService.getLeads(companyId);
+    if (status && status !== 'all') {
+      return all.filter(l => l.status === status);
+    }
+    return all;
+  }
+  const params: Record<string, string> = {};
+  if (status) params.status = status;
+  const raw = await fetchAll<any>('/sales-executive/leads', params);
   return raw.map(mapLead);
+}
+
+export async function getNotInterestedLeads(companyId?: string): Promise<Lead[]> {
+  if (isMockMode()) {
+    const all = storageService.getLeads(companyId);
+    return all.filter(l => l.status === 'Not Interested');
+  }
+  try {
+    const raw = await fetchAll<any>('/sales-executive/leads/not-interested');
+    if (raw && raw.length > 0) {
+      return raw.map(mapLead);
+    }
+  } catch (err) {
+    console.warn('[ghlApiService] /sales-executive/leads/not-interested failed, falling back to status query', err);
+  }
+  const fallback = await fetchAll<any>('/sales-executive/leads', { status: 'Not Interested' });
+  return fallback.map(mapLead);
+}
+
+export async function getJunkLeads(companyId?: string): Promise<Lead[]> {
+  if (isMockMode()) {
+    const all = storageService.getLeads(companyId);
+    return all.filter(l => l.status === 'Junk' || l.status === 'Wrong Number');
+  }
+  try {
+    const raw = await fetchAll<any>('/sales-executive/leads/junk');
+    if (raw && raw.length > 0) {
+      return raw.map(mapLead);
+    }
+  } catch (err) {
+    console.warn('[ghlApiService] /sales-executive/leads/junk failed, falling back to status query', err);
+  }
+  const [fallbackJunk, fallbackWrong] = await Promise.all([
+    fetchAll<any>('/sales-executive/leads', { status: 'Junk' }),
+    fetchAll<any>('/sales-executive/leads', { status: 'Wrong Number' }),
+  ]);
+  const combined = [...fallbackJunk, ...fallbackWrong];
+  const seen = new Set<string>();
+  const unique = combined.filter(l => {
+    const id = String(l.id);
+    if (seen.has(id)) return false;
+    seen.add(id);
+    return true;
+  });
+  return unique.map(mapLead);
 }
 
 export async function saveLead(lead: Lead): Promise<Lead> {
@@ -493,6 +567,9 @@ export async function saveLead(lead: Lead): Promise<Lead> {
         priority: lead.priority,
         notes: lead.notes,
         assignedAgentId: nid(lead.assignedAgentId) || undefined,
+        assignedIrmId: nid(lead.assignedIrmId) || (customFields.assignedIrmId ? nid(customFields.assignedIrmId) : undefined),
+        assignedIrmName: lead.assignedIrmName ?? customFields.assignedIrmName ?? undefined,
+        assignedIrmAt: lead.assignedIrmAt ?? customFields.assignedIrmAt ?? undefined,
         companyId: nid(lead.companyId) || 1,
         investmentCapacity: customFields['Investment Capacity'] ?? customFields['investmentCapacity'],
         investmentAmount: (lead as any).investmentAmount ?? customFields['Investment Amount'] ?? customFields['investmentAmount'],
@@ -521,6 +598,9 @@ export async function saveLead(lead: Lead): Promise<Lead> {
         notes: lead.notes,
         nextFollowupDate: lead.nextFollowupDate,
         assignedAgentId: nid(lead.assignedAgentId?.toString()) || undefined,
+        assignedIrmId: nid(lead.assignedIrmId) || (customFields.assignedIrmId ? nid(customFields.assignedIrmId) : undefined),
+        assignedIrmName: lead.assignedIrmName ?? customFields.assignedIrmName ?? undefined,
+        assignedIrmAt: lead.assignedIrmAt ?? customFields.assignedIrmAt ?? undefined,
         investmentCapacity: customFields['Investment Capacity'] ?? customFields['investmentCapacity'],
         investmentAmount: (lead as any).investmentAmount ?? customFields['Investment Amount'] ?? customFields['investmentAmount'],
         assetClass: customFields['Asset Class'] ?? customFields['assetClass'],
@@ -568,6 +648,14 @@ function mapFollowup(f: Record<string, any>): Followup {
     assignedById: f.assignedById != null ? sid(f.assignedById) : undefined,
     assignedByName: f.assignedByName ?? undefined,
     completedAt: f.completedAt,
+    handoverId: f.handoverId ?? undefined,
+    handedOverFromName: f.handedOverFromName ?? undefined,
+    handoverPlannedEnd: f.handoverPlannedEnd ?? undefined,
+    originalOwnerId: f.originalOwnerId ?? undefined,
+    isReturnedFromHandover: f.isReturnedFromHandover ?? (f.customFields?.returnedFromHandover === 'true' || f.customFields?.returnedFromHandover === true) ?? false,
+    returnedFromCoveringUserName: f.returnedFromCoveringUserName ?? f.customFields?.returnedFromCoveringUserName ?? undefined,
+    returnedAt: f.returnedAt ?? f.customFields?.returnedAt ?? undefined,
+    customFields: f.customFields ?? {},
   };
 }
 
@@ -662,6 +750,13 @@ function mapCustomer(c: Record<string, any>): Customer {
     totalValue: c.totalValue ?? 0,
     createdAt: c.createdAt ?? new Date().toISOString(),
     notes: c.notes ?? '',
+    handoverId: c.handoverId ?? undefined,
+    handedOverFromName: c.handedOverFromName ?? undefined,
+    handoverPlannedEnd: c.handoverPlannedEnd ?? undefined,
+    originalOwnerId: c.originalOwnerId ?? undefined,
+    isReturnedFromHandover: c.isReturnedFromHandover ?? (c.customFields?.returnedFromHandover === 'true' || c.customFields?.returnedFromHandover === true) ?? false,
+    returnedFromCoveringUserName: c.returnedFromCoveringUserName ?? c.customFields?.returnedFromCoveringUserName ?? undefined,
+    returnedAt: c.returnedAt ?? c.customFields?.returnedAt ?? undefined,
     customFields: c.customFields ?? {},
   };
 }
@@ -1485,13 +1580,16 @@ export async function saveConsultation(consultation: Consultation): Promise<Cons
   const isNew =
     !consultation.id ||
     consultation.id.startsWith('cons-') ||
-    consultation.id.startsWith('co-');
+    consultation.id.startsWith('co-') ||
+    consultation.id.startsWith('cns-');
 
   const payload = {
     investorId: consultation.investorId,
     investorName: consultation.investorName,
     investorPhone: consultation.investorPhone,
     scheduledAt: consultation.scheduledAt,
+    consultantId: nid(consultation.consultantId) || undefined,
+    consultantName: consultation.consultantName || undefined,
     agenda: consultation.agenda,
     outcomeNotes: consultation.outcomeNotes,
     referredByAgentName: consultation.referredByAgentName,
@@ -1582,7 +1680,7 @@ export async function getCompanyIrms(companyId?: string): Promise<IrmProfile[]> 
   try {
     const res = await apiClient.get<ApiResponse<any[]>>('/sales-executive/consultations/irms');
     if (res && res.success && Array.isArray(res.data) && res.data.length > 0) {
-      return res.data.map(u => ({
+      const mapped: IrmProfile[] = res.data.map(u => ({
         id: String(u.id),
         name: u.name,
         email: u.email || '',
@@ -1593,10 +1691,12 @@ export async function getCompanyIrms(companyId?: string): Promise<IrmProfile[]> 
         experienceLevel: 'Experienced' as const,
         performance: 95,
       }));
+      storageService.setIrms(mapped);
+      return mapped;
     }
-    return [];
+    return storageService.getIrms(companyId);
   } catch (err) {
     console.warn('[ghlApiService] getCompanyIrms failed:', err);
-    return [];
+    return storageService.getIrms(companyId);
   }
 }

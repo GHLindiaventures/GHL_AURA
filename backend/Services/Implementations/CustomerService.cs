@@ -336,6 +336,15 @@ public class CustomerService : ICustomerService
 
     private static CustomerResponseDto MapToDto(Customer c)
     {
+        var customFields = DeserializeCustomFields(c.CustomFieldsJson);
+        bool isReturned = customFields.TryGetValue("returnedFromHandover", out var retVal) && retVal == "true";
+        string? returnedCoveringName = customFields.TryGetValue("returnedFromCoveringUserName", out var rcn) ? rcn : null;
+        DateTime? returnedAt = null;
+        if (customFields.TryGetValue("returnedAt", out var retAtStr) && DateTime.TryParse(retAtStr, out var parsedRetAt))
+        {
+            returnedAt = parsedRetAt;
+        }
+
         return new CustomerResponseDto
         {
             Id = c.Id,
@@ -349,14 +358,17 @@ public class CustomerService : ICustomerService
             Status = c.Status,
             TotalValue = c.TotalValue,
             Notes = c.Notes,
-            CustomFields = DeserializeCustomFields(c.CustomFieldsJson),
+            CustomFields = customFields,
             LastContactedAt = c.LastContactedAt,
             CreatedAt = c.CreatedAt,
             UpdatedAt = c.UpdatedAt,
             HandoverId = c.HandoverId,
             HandedOverFromName = c.OriginalOwner?.Name,
             HandoverPlannedEnd = c.Handover?.PlannedEndAt,
-            OriginalOwnerId = c.OriginalOwnerId
+            OriginalOwnerId = c.OriginalOwnerId,
+            IsReturnedFromHandover = isReturned,
+            ReturnedFromCoveringUserName = returnedCoveringName,
+            ReturnedAt = returnedAt
         };
     }
 

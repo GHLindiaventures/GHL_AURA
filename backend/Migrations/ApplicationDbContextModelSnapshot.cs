@@ -521,6 +521,9 @@ namespace backend.Migrations
                     b.Property<int?>("HandoverId")
                         .HasColumnType("integer");
 
+                    b.Property<DateTime?>("InterestedLeadSince")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<bool>("IsDuplicate")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("boolean")
@@ -558,6 +561,13 @@ namespace backend.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
+
+                    b.Property<string>("Source")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<int?>("SourceLeadId")
+                        .HasColumnType("integer");
 
                     b.Property<string>("Status")
                         .IsRequired()

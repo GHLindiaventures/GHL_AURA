@@ -204,7 +204,7 @@ class StorageService {
     }
   }
 
-  private get<T>(key: string, fallback: T): T {
+  get<T>(key: string, fallback: T): T {
     try {
       const data = localStorage.getItem(`nexus_${key}`);
       return data ? JSON.parse(data) : fallback;
@@ -213,12 +213,20 @@ class StorageService {
     }
   }
 
-  private set<T>(key: string, value: T): void {
+  set<T>(key: string, value: T): void {
     try {
       localStorage.setItem(`nexus_${key}`, JSON.stringify(value));
       window.dispatchEvent(new Event('nexus_storage_updated'));
     } catch (e) {
       console.error('Failed to save to localStorage', e);
+    }
+  }
+
+  setIrms(irms: IrmProfile[]): void {
+    try {
+      localStorage.setItem('nexus_company_irms', JSON.stringify(irms));
+    } catch (e) {
+      console.error('Failed to save irms to localStorage', e);
     }
   }
 
@@ -241,12 +249,10 @@ class StorageService {
   // Users
   getUsers(companySlug?: string): User[] {
     let users = this.get<User[]>('users', []);
-    if (!users || users.length === 0) {
       try {
-        const raw = localStorage.getItem('nexus_dev_users');
+        const raw = localStorage.getItem('nexus_dev_users') || localStorage.getItem('nexus_users');
         if (raw) users = JSON.parse(raw);
       } catch {}
-    }
     if (!users || users.length === 0) {
       // Default fallback users corresponding to the database seeds
       users = [
@@ -335,19 +341,19 @@ class StorageService {
       }
       return u;
     });
-
     if (!companySlug || companySlug === 'all') return users;
-
-    const isGhlTarget = companySlug === '1' || companySlug === 't-ghl-01' || companySlug.toLowerCase() === 'ghl';
-    const isJaminTarget = companySlug === '2' || companySlug === 't-jamin-02' || companySlug.toLowerCase() === 'jamin';
-
+    const target = String(companySlug).toLowerCase().trim();
     return users.filter(u => {
-      const isGhlUser = String(u.companyId) === '1' || u.companyId === 't-ghl-01' || u.companySlug === 'ghl' || (u.companyName && u.companyName.toLowerCase().includes('ghl'));
-      const isJaminUser = String(u.companyId) === '2' || u.companyId === 't-jamin-02' || u.companySlug === 'jamin' || (u.companyName && u.companyName.toLowerCase().includes('jamin'));
-
-      if (isGhlTarget) return isGhlUser;
-      if (isJaminTarget) return isJaminUser;
-      return u.companySlug === companySlug || String(u.companyId) === companySlug;
+      const uSlug = String(u.companySlug || '').toLowerCase().trim();
+      const uId = String((u as any).companyId || '').toLowerCase().trim();
+      if (!uSlug && !uId) return true;
+      if (target === 'ghl' || target === 't-ghl-01' || target === '1') {
+        return uSlug === 'ghl' || uSlug === 't-ghl-01' || uSlug === '1' || uId === '1' || uId === 't-ghl-01' || !uSlug || (u.companyName && u.companyName.toLowerCase().includes('ghl'));
+      }
+      if (target === 'jamin' || target === 't-jamin-02' || target === '2') {
+        return uSlug === 'jamin' || uSlug === 't-jamin-02' || uSlug === '2' || uId === '2' || uId === 't-jamin-02' || (u.companyName && u.companyName.toLowerCase().includes('jamin'));
+      }
+      return uSlug === target || uId === target;
     });
   }
 
@@ -1183,9 +1189,14 @@ class StorageService {
   }
 
   getIrms(companyId?: string): IrmProfile[] {
+    const cachedApiIrms = this.get<IrmProfile[]>('company_irms', []);
+    if (cachedApiIrms && cachedApiIrms.length > 0) {
+      return cachedApiIrms;
+    }
+
     const users = this.getUsers(companyId);
     const irms: IrmProfile[] = users
-      .filter(u => !u.isCovered && (u.role?.code === 'irm' || u.role?.name?.toLowerCase().includes('irm') || u.role?.name?.toLowerCase().includes('investor')))
+      .filter(u => !u.isCovered && (u.role?.code === 'irm' || u.role?.name?.toLowerCase().includes('irm') || u.role?.name?.toLowerCase().includes('investor') || String(u.role?.id) === '4'))
       .map(u => ({
         id: String(u.id),
         name: u.name,
@@ -1205,17 +1216,9 @@ class StorageService {
     if (isJamin) return [];
 
     return [
-      {
-        id: '5',
-        name: 'Dhinakaran',
-        email: 'dhinakaran@ghlindiaventures.com',
-        phone: '+91 98110 77889',
-        experience: '5 Years',
-        experienceYears: 5,
-        experienceLevel: 'Experienced' as const,
-        performance: 95,
-        status: 'Available' as const,
-      },
+      { id: '50', name: 'karnan', email: 'dhina729@gmail.com', phone: '+91 98450', experience: '5 Years', experienceYears: 5, experienceLevel: 'Experienced' as const, performance: 95, status: 'Available' as const },
+      { id: '5', name: 'Dhinakaran', email: 'dhinakaran@ghlindiaventures.com', phone: '+91 98110 77889', experience: '5 Years', experienceYears: 5, experienceLevel: 'Experienced' as const, performance: 95, status: 'Available' as const },
+      { id: '43', name: 'Sample_IRM', email: 'vishnunagaraj808@gmail.com', phone: '+91 98450 74125', experience: '3 Years', experienceYears: 3, experienceLevel: 'Mid-Level' as const, performance: 90, status: 'Available' as const },
     ];
   }
 

@@ -314,7 +314,7 @@ export const SalesLayout: React.FC<SalesLayoutProps> = ({
       {/* Global Persistent Call Surfaces (Section 3.3 & 7.6) */}
       <IncomingCallPopup />
       <InCallBar />
-      <DispositionModal />
+      {currentRoute !== 'customers' && <DispositionModal />}
 
       {/* Return Summary Panel */}
       {showEndedPanel && recentlyEnded && (
