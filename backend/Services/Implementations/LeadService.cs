@@ -92,9 +92,13 @@ public class LeadService : ILeadService
 
         if (role == "irm" && agentId.HasValue)
         {
-            // In IRM My Leads, show a lead only when its status is exactly Interested,
-            // its assigned agent ID matches the logged-in IRM, and company matches
-            query = query.Where(l => l.AssignedAgentId == agentId.Value && l.Status == "Interested");
+            var irmIdStr = agentId.Value.ToString();
+            // In IRM My Leads, show a lead when its status is Interested and assigned to this IRM
+            query = query.Where(l => (l.AssignedAgentId == agentId.Value ||
+                                      (l.CustomFieldsJson != null &&
+                                       (l.CustomFieldsJson.Contains($"\"assignedIrmId\":\"{irmIdStr}\"") ||
+                                        l.CustomFieldsJson.Contains($"\"assignedIrmId\":{irmIdStr}")))) &&
+                                     l.Status == "Interested");
         }
         else if (role == "sales_executive" && agentId.HasValue)
         {
@@ -122,7 +126,9 @@ public class LeadService : ILeadService
             query = query.Where(l => l.CompanyId == companyId.Value);
         }
 
-        if ((role == "sales_executive" || role == "irm") && agentId.HasValue)
+        // Only standard sales executives are restricted strictly to their own AssignedAgentId.
+        // IRMs and admins can access and update leads within their company.
+        if (role == "sales_executive" && agentId.HasValue)
         {
             query = query.Where(l => l.AssignedAgentId == agentId.Value);
         }

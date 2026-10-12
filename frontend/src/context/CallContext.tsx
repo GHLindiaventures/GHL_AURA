@@ -716,7 +716,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (notes) {
             matchedLead.notes = `${matchedLead.notes ? matchedLead.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] Follow-up Required: ${notes}`;
           }
-          await apiSaveLead(matchedLead);
+          await apiSaveLead(matchedLead).catch(err => {
+            console.warn('[CallContext] apiSaveLead failed/skipped for lead (Follow-up Required):', err);
+          });
           storageService.saveLead(matchedLead);
         } else if (leadId) {
           const numId = parseInt(String(leadId).replace(/\D/g, ''), 10);
@@ -842,7 +844,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (notes) {
               matchedLead.notes = `${matchedLead.notes ? matchedLead.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] Call Back: ${notes}`;
             }
-            await apiSaveLead(matchedLead);
+            await apiSaveLead(matchedLead).catch(err => {
+              console.warn('[CallContext] apiSaveLead failed/skipped for lead (Call Back):', err);
+            });
             storageService.saveLead(matchedLead);
           }
         } else {
@@ -853,7 +857,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (notes) {
               matchedLead.notes = `${matchedLead.notes ? matchedLead.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] Call Back: ${notes}`;
             }
-            await apiSaveLead(matchedLead);
+            await apiSaveLead(matchedLead).catch(err => {
+              console.warn('[CallContext] apiSaveLead failed/skipped for lead (Call Back):', err);
+            });
             storageService.saveLead(matchedLead);
           } else {
             const newLead: Lead = {
@@ -896,7 +902,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (matchedLead) {
           matchedLead.status = 'Not Interested';
           matchedLead.customFields = { ...matchedLead.customFields, dispositionReason: reasonText };
-          await apiSaveLead(matchedLead);
+          await apiSaveLead(matchedLead).catch(err => {
+            console.warn('[CallContext] apiSaveLead failed/skipped for lead (Not Interested):', err);
+          });
           storageService.saveLead(matchedLead);
         } else {
           const newLead: Lead = {
@@ -936,7 +944,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (matchedLead) {
           matchedLead.status = 'Junk';
           matchedLead.customFields = { ...matchedLead.customFields, dispositionReason: reasonText };
-          await apiSaveLead(matchedLead);
+          await apiSaveLead(matchedLead).catch(err => {
+            console.warn('[CallContext] apiSaveLead failed/skipped for lead (Wrong Number):', err);
+          });
           storageService.saveLead(matchedLead);
         } else {
           const newLead: Lead = {
@@ -1048,7 +1058,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (notes) {
               matchedLead.notes = `${matchedLead.notes ? matchedLead.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] No Response: ${notes}`;
             }
-            await apiSaveLead(matchedLead);
+            await apiSaveLead(matchedLead).catch(err => {
+              console.warn('[CallContext] apiSaveLead failed/skipped for lead (No Response):', err);
+            });
             storageService.saveLead(matchedLead);
           }
         } else {
@@ -1059,7 +1071,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
             if (notes) {
               matchedLead.notes = `${matchedLead.notes ? matchedLead.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] No Response: ${notes}`;
             }
-            await apiSaveLead(matchedLead);
+            await apiSaveLead(matchedLead).catch(err => {
+              console.warn('[CallContext] apiSaveLead failed/skipped for lead (No Response):', err);
+            });
             storageService.saveLead(matchedLead);
           } else {
             const newLead: Lead = {
@@ -1142,7 +1156,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (notes) {
             matchedLead.notes = `${matchedLead.notes ? matchedLead.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] Converted: ${notes}`;
           }
-          await apiSaveLead(matchedLead);
+          await apiSaveLead(matchedLead).catch(err => {
+            console.warn('[CallContext] apiSaveLead failed/skipped for lead (Converted):', err);
+          });
           storageService.saveLead(matchedLead);
         }
 
@@ -1183,7 +1199,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
             matchedLead.status = 'Contacted';
           }
           matchedLead.notes = `${matchedLead.notes ? matchedLead.notes + '\n\n' : ''}${contactedNote}`;
-          await apiSaveLead(matchedLead);
+          await apiSaveLead(matchedLead).catch(err => {
+            console.warn('[CallContext] apiSaveLead failed/skipped for lead (Contacted):', err);
+          });
           storageService.saveLead(matchedLead);
         }
       }
