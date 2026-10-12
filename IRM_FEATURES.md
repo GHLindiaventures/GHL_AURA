@@ -216,14 +216,20 @@ Comprehensive wealth portfolio and relationship ledger:
 
 Specialized compliance and operational tracking for unorthodox call outcomes:
 
-- **Purpose:**
+- **Purpose & Auto-Advancement Flow:**
   - When an IRM marks a call outcome as "Other" in any module (Follow-up, KYC, Opportunities, Investor 360), the interaction is logged here to prevent dropped conversations.
-- **Module Attribution Tabs:**
-  - Filter across `All`, `Follow-up`, `KYC`, `Opportunities`, `Investor 360`.
-- **Contextual Details:**
-  - Captures custom reason, agent name, timestamp, and contact metadata.
-- **Drawer Inspection & Redial:**
-  - View full history drawer and redial the contact directly from the table.
+  - Automatically completes pending follow-ups for the contact and normalizes UTC scheduling timestamps.
+  - Sets `Lead.Status = "Other"` and isolates the contact so they do not clutter standard follow-up queues.
+  - Calling a contact from the Other hub and updating their disposition automatically unblocks the record (`nexus_moved_other_records`, `nexus_dismissed_other_records`) and advances them out of the Other repository back into the appropriate functional lifecycle.
+- **Move to Source Page Action:**
+  - One-click "Move to Source" restores the contact back to their originating module (`kyc`, `follow_up`, `opportunities`, `my_leads`).
+- **Unified Actions Column & Guaranteed Alignment:**
+  - Single consolidated `ACTIONS` column (eliminating duplicate headers) housing Call, Move, and More (`⋮`) actions.
+  - Hardened CSS with `white-space: nowrap; flex-shrink: 0; height: 30px;` prevents button squishing or text wrapping.
+- **Zero-Deletion Compliance:**
+  - Delete and permanent dismiss actions are completely removed for IRMs to protect corporate lead assets.
+- **Active Handover Visibility:**
+  - When an IRM covers for an absent colleague via `work_handovers`, the covering IRM automatically sees and manages the original owner's "Other" contacts.
 
 ---
 
@@ -325,6 +331,21 @@ To prevent missed follow-ups or compliance delays when an IRM takes leave:
   - Investor 360 contacts
 - Tracks coverage state via `IrmCoverageAssignments` table with timestamp and reason.
 - **One-Click Revert:** Once leave concludes, the admin clicks **End Coverage**, which automatically restores all records back to the original IRM.
+
+---
+
+### 4.2. Strict Zero-Deletion Governance for IRMs
+To safeguard valuable investor relationships and ensure complete institutional audit trails, IRM users are completely barred from deleting leads or investor records:
+
+- **Frontend Enforcement:**
+  - `LeadsPage.tsx` (`My Leads`): `Delete Lead` row action is hidden for role `irm`.
+  - `InvestorsPage.tsx` (`Investor 360`): `Delete Investor` row action is hidden for role `irm`.
+  - `OpportunitiesPage.tsx` (`Opportunities`): `Delete` row action is hidden for role `irm`.
+  - `IrmOtherPage.tsx` (`Other Contacts`): Permanent removal and dismiss buttons are removed from the action menu and detail drawer.
+- **Backend API Role Restrictions:**
+  - `DELETE /api/ghl/investors/{id}`: Restricts roles strictly to `[Authorize(Roles = "company_admin,super_admin")]`.
+  - `DELETE /api/ghl/investment-opportunities/{id}`: Restricts roles strictly to `[Authorize(Roles = "company_admin,super_admin")]`.
+  - `DELETE /api/sales-executive/leads/{id}`: Restricts deletion to `[Authorize(Roles = "company_admin,super_admin")]`. IRMs receive `403 Forbidden` if attempted.
 
 ---
 
