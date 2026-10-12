@@ -188,7 +188,7 @@ public class WorkHandoverService : IWorkHandoverService
         // 1. Leads
         var openLeads = await _db.Leads
             .Where(l => l.CompanyId == companyId && l.AssignedAgentId == fromUser.Id &&
-                        l.Status != "Converted" && l.Status != "Not Interested" && l.Status != "Junk")
+                        (handover.RoleCode == "irm" || (l.Status != "Converted" && l.Status != "Not Interested" && l.Status != "Junk")))
             .ToListAsync(ct);
         foreach (var lead in openLeads)
         {
@@ -250,7 +250,7 @@ public class WorkHandoverService : IWorkHandoverService
         // 4. Open GhlDeals
         var openDeals = await _db.GhlDeals
             .Where(d => d.CompanyId == companyId && d.AssignedAgentId == fromUser.Id &&
-                        d.Stage != "won" && d.Stage != "lost" && d.Stage != "converted")
+                        (handover.RoleCode == "irm" || (d.Stage != "won" && d.Stage != "lost" && d.Stage != "converted")))
             .ToListAsync(ct);
         foreach (var deal in openDeals)
         {
@@ -289,7 +289,7 @@ public class WorkHandoverService : IWorkHandoverService
         // 6. Open GhlInvestmentOpportunities
         var openOpps = await _db.GhlInvestmentOpportunities
             .Where(o => o.CompanyId == companyId && o.AssignedAgentId == fromUser.Id &&
-                        o.Stage != "Closed Won" && o.Stage != "Closed Lost")
+                        (handover.RoleCode == "irm" || (o.Stage != "Closed Won" && o.Stage != "Closed Lost")))
             .ToListAsync(ct);
         foreach (var opp in openOpps)
         {
@@ -349,10 +349,10 @@ public class WorkHandoverService : IWorkHandoverService
             });
         }
 
-        // 9. Open InvestorKycs
+        // 9. InvestorKycs
         var kycs = await _db.InvestorKycs
             .Where(k => k.CompanyId == companyId && k.IrmId == fromUser.Id &&
-                        k.Status != KycStatus.Approved && k.Status != KycStatus.Rejected)
+                        (handover.RoleCode == "irm" || (k.Status != KycStatus.Approved && k.Status != KycStatus.Rejected)))
             .ToListAsync(ct);
         foreach (var kyc in kycs)
         {
@@ -1133,19 +1133,22 @@ public class WorkHandoverService : IWorkHandoverService
 
     private async Task<WorkHandoverCountsDto> CalculateCountsAsync(int companyId, int userId, CancellationToken ct)
     {
+        var user = await _db.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Id == userId && u.CompanyId == companyId, ct);
+        var isIrm = user?.Role?.Code == "irm";
+
         var leads = await _db.Leads.CountAsync(l => l.CompanyId == companyId && l.AssignedAgentId == userId &&
-            l.Status != "Converted" && l.Status != "Not Interested" && l.Status != "Junk", ct);
+            (isIrm || (l.Status != "Converted" && l.Status != "Not Interested" && l.Status != "Junk")), ct);
         var customers = await _db.Customers.CountAsync(c => c.CompanyId == companyId && c.AssignedAgentId == userId, ct);
         var followups = await _db.Followups.CountAsync(f => f.CompanyId == companyId && f.AssignedAgentId == userId && f.Status == FollowupStatus.Pending, ct);
         var deals = await _db.GhlDeals.CountAsync(d => d.CompanyId == companyId && d.AssignedAgentId == userId &&
-            d.Stage != "won" && d.Stage != "lost" && d.Stage != "converted", ct);
+            (isIrm || (d.Stage != "won" && d.Stage != "lost" && d.Stage != "converted")), ct);
         var ghlInvestors = await _db.GhlInvestors.CountAsync(i => i.CompanyId == companyId && i.AssignedAgentId == userId, ct);
         var opps = await _db.GhlInvestmentOpportunities.CountAsync(o => o.CompanyId == companyId && o.AssignedAgentId == userId &&
-            o.Stage != "Closed Won" && o.Stage != "Closed Lost", ct);
+            (isIrm || (o.Stage != "Closed Won" && o.Stage != "Closed Lost")), ct);
         var consults = await _db.Consultations.CountAsync(c => c.CompanyId == companyId && c.ConsultantId == userId && c.Status == ConsultationStatus.Scheduled, ct);
         var investors = await _db.Investors.CountAsync(i => i.CompanyId == companyId && i.AssignedIrmId == userId, ct);
         var kycs = await _db.InvestorKycs.CountAsync(k => k.CompanyId == companyId && k.IrmId == userId &&
-            k.Status != KycStatus.Approved && k.Status != KycStatus.Rejected, ct);
+            (isIrm || (k.Status != KycStatus.Approved && k.Status != KycStatus.Rejected)), ct);
         var cards = await _db.IrmPipelineCards.CountAsync(c => c.CompanyId == companyId && c.AssignedIrmId == userId, ct);
 
         return new WorkHandoverCountsDto
@@ -1168,26 +1171,167 @@ public class WorkHandoverService : IWorkHandoverService
         var startTime = handover.StartedAt;
         var endTime = handover.EndedAt ?? DateTime.UtcNow;
 
+        var activities = new List<HandoverActivityDetailDto>();
+
         // 1. Calls made by covering user
+        var calls = await _db.CallRecords
+            .Where(c => c.CompanyId == handover.CompanyId && c.AgentId == handover.CoveringUserId &&
+                        c.Timestamp >= startTime && c.Timestamp <= endTime)
+            .OrderByDescending(c => c.Timestamp)
+            .Take(50)
+            .ToListAsync(ct);
         var callsCount = await _db.CallRecords
             .CountAsync(c => c.CompanyId == handover.CompanyId && c.AgentId == handover.CoveringUserId &&
                              c.Timestamp >= startTime && c.Timestamp <= endTime, ct);
+
+        foreach (var call in calls)
+        {
+            var dur = call.DurationSeconds > 0 ? $"{call.DurationSeconds / 60}m {call.DurationSeconds % 60}s" : "0s";
+            activities.Add(new HandoverActivityDetailDto
+            {
+                Category = "Call",
+                Title = $"Call with {call.ContactName ?? "Client"}",
+                Description = $"Duration: {dur} | Disposition: {call.Disposition ?? "Completed"}{(string.IsNullOrWhiteSpace(call.Notes) ? "" : $" | Notes: {call.Notes}")}",
+                Timestamp = call.Timestamp.ToString("o"),
+                Outcome = call.Disposition ?? "Completed"
+            });
+        }
+
+        var investorCalls = await _db.InvestorCalls
+            .Include(c => c.Investor)
+            .Where(c => c.CompanyId == handover.CompanyId && c.IrmId == handover.CoveringUserId &&
+                        c.CalledAt >= startTime && c.CalledAt <= endTime)
+            .OrderByDescending(c => c.CalledAt)
+            .Take(50)
+            .ToListAsync(ct);
         var investorCallsCount = await _db.InvestorCalls
             .CountAsync(c => c.CompanyId == handover.CompanyId && c.IrmId == handover.CoveringUserId &&
                              c.CalledAt >= startTime && c.CalledAt <= endTime, ct);
 
+        foreach (var ic in investorCalls)
+        {
+            var dur = ic.DurationSeconds > 0 ? $"{ic.DurationSeconds / 60}m {ic.DurationSeconds % 60}s" : "0s";
+            activities.Add(new HandoverActivityDetailDto
+            {
+                Category = "Call",
+                Title = $"Investor Call with {ic.Investor?.Name ?? (string.IsNullOrWhiteSpace(ic.InvestorName) ? "Investor" : ic.InvestorName)}",
+                Description = $"Duration: {dur} | Outcome: {ic.Outcome}{(string.IsNullOrWhiteSpace(ic.Notes) ? "" : $" | Notes: {ic.Notes}")}",
+                Timestamp = ic.CalledAt.ToString("o"),
+                Outcome = ic.Outcome.ToString()
+            });
+        }
+
         // 2. Follow-ups completed
         var followupsCompleted = await _db.Followups
             .CountAsync(f => f.HandoverId == handover.Id && f.Status == FollowupStatus.Completed, ct);
+        var completedFollowupsList = await _db.Followups
+            .Where(f => f.HandoverId == handover.Id && f.Status == FollowupStatus.Completed)
+            .OrderByDescending(f => f.UpdatedAt ?? f.CreatedAt)
+            .Take(30)
+            .ToListAsync(ct);
+        foreach (var f in completedFollowupsList)
+        {
+            activities.Add(new HandoverActivityDetailDto
+            {
+                Category = "Followup",
+                Title = $"Follow-up completed: {f.ContactName}",
+                Description = string.IsNullOrWhiteSpace(f.Notes) ? $"Follow-up scheduled on {f.ScheduledAt:g} was completed" : f.Notes,
+                Timestamp = (f.UpdatedAt ?? f.CreatedAt).ToString("o"),
+                Outcome = "Completed"
+            });
+        }
 
         // 3. New records created during coverage
         var createdCount = handover.Items.Count(i => i.Origin == "created_during_coverage");
+        var createdItems = handover.Items.Where(i => i.Origin == "created_during_coverage").Take(30).ToList();
+        foreach (var ci in createdItems)
+        {
+            activities.Add(new HandoverActivityDetailDto
+            {
+                Category = "New Record",
+                Title = $"New {ci.EntityType} added during coverage",
+                Description = $"{ci.EntityType} #{ci.EntityId} created by covering officer",
+                Timestamp = ci.CreatedAt.ToString("o"),
+                Outcome = "Created"
+            });
+        }
 
-        // 4. Closed / Converted records
+        // 4. Closed / Converted records & Deal Activities
         var convertedLeads = await _db.Leads
             .CountAsync(l => l.HandoverId == handover.Id && (l.Status == "Converted" || l.Status == "Not Interested" || l.Status == "Junk"), ct);
+        var convertedLeadsList = await _db.Leads
+            .Where(l => l.HandoverId == handover.Id && (l.Status == "Converted" || l.Status == "Not Interested" || l.Status == "Junk"))
+            .Take(20)
+            .ToListAsync(ct);
+        foreach (var l in convertedLeadsList)
+        {
+            activities.Add(new HandoverActivityDetailDto
+            {
+                Category = "Lead",
+                Title = $"Lead status updated: {l.Name}",
+                Description = $"Moved to {l.Status}{(string.IsNullOrWhiteSpace(l.Notes) ? "" : $" | Notes: {l.Notes}")}",
+                Timestamp = l.UpdatedAt?.ToString("o") ?? l.CreatedAt.ToString("o"),
+                Outcome = l.Status
+            });
+        }
+
         var closedDeals = await _db.GhlDeals
             .CountAsync(d => d.HandoverId == handover.Id && (d.Stage == "won" || d.Stage == "lost" || d.Stage == "converted"), ct);
+        var closedDealsList = await _db.GhlDeals
+            .Where(d => d.HandoverId == handover.Id && (d.Stage == "won" || d.Stage == "lost" || d.Stage == "converted"))
+            .Take(20)
+            .ToListAsync(ct);
+        foreach (var d in closedDealsList)
+        {
+            var valStr = d.Value > 0 ? $"₹{d.Value:N0}" : "";
+            activities.Add(new HandoverActivityDetailDto
+            {
+                Category = "Deal",
+                Title = $"Deal {d.Title} ({d.CustomerName})",
+                Description = $"Stage: {d.Stage.ToUpper()}{(string.IsNullOrEmpty(valStr) ? "" : $" | Value: {valStr}")}{(string.IsNullOrWhiteSpace(d.Notes) ? "" : $" | Notes: {d.Notes}")}",
+                Timestamp = d.StageEnteredAt?.ToString("o") ?? d.CreatedAt.ToString("o"),
+                Outcome = d.Stage
+            });
+        }
+
+        // 5. KYC verifications
+        var kycActions = await _db.InvestorKycs
+            .Include(k => k.Investor)
+            .Where(k => (k.HandoverId == handover.Id || (k.CompanyId == handover.CompanyId && k.IrmId == handover.CoveringUserId)) &&
+                        k.UpdatedAt >= startTime && k.UpdatedAt <= endTime)
+            .Take(20)
+            .ToListAsync(ct);
+        foreach (var k in kycActions)
+        {
+            var investorName = k.Investor?.Name ?? (string.IsNullOrWhiteSpace(k.InvestorName) ? "Investor" : k.InvestorName);
+            var remarks = !string.IsNullOrWhiteSpace(k.Remarks) ? k.Remarks : (!string.IsNullOrWhiteSpace(k.ReviewRemarks) ? k.ReviewRemarks : "Processed");
+            activities.Add(new HandoverActivityDetailDto
+            {
+                Category = "KYC",
+                Title = $"KYC {k.Status}: {investorName}",
+                Description = $"Investor: {investorName} | Remarks: {remarks}",
+                Timestamp = k.UpdatedAt?.ToString("o") ?? k.CreatedAt.ToString("o"),
+                Outcome = k.Status.ToString()
+            });
+        }
+
+        // Sort all activities descending by timestamp
+        activities = activities
+            .OrderByDescending(a => DateTime.TryParse(a.Timestamp, out var dt) ? dt : DateTime.MinValue)
+            .ToList();
+
+        var highlights = new List<string>();
+        if (callsCount + investorCallsCount > 0) highlights.Add($"{callsCount + investorCallsCount} calls connected");
+        if (followupsCompleted > 0) highlights.Add($"{followupsCompleted} follow-ups completed");
+        if (closedDeals > 0) highlights.Add($"{closedDeals} deals won/converted");
+        if (convertedLeads > 0) highlights.Add($"{convertedLeads} leads processed/converted");
+        if (kycActions.Count > 0) highlights.Add($"{kycActions.Count} KYC reviews performed");
+        if (createdCount > 0) highlights.Add($"{createdCount} new records created during coverage");
+
+        if (highlights.Count == 0)
+        {
+            highlights.Add("No client interactions were logged during this coverage period.");
+        }
 
         return new WorkHandoverProgressDto
         {
@@ -1196,12 +1340,8 @@ public class WorkHandoverService : IWorkHandoverService
             StatusChangesCount = convertedLeads + closedDeals,
             NewRecordsCreatedCount = createdCount,
             RecordsConvertedOrClosedCount = convertedLeads + closedDeals,
-            Highlights = new List<string>
-            {
-                $"{callsCount + investorCallsCount} calls connected",
-                $"{followupsCompleted} follow-ups completed",
-                $"{createdCount} new records created during coverage"
-            }
+            Highlights = highlights,
+            Activities = activities
         };
     }
 
@@ -1330,10 +1470,12 @@ public class WorkHandoverService : IWorkHandoverService
             else if (roleCode == "irm")
             {
                 var openInvestors = await _db.Investors.CountAsync(i => i.CompanyId == companyId && i.AssignedIrmId == c.Id, ct);
-                var openKycs = await _db.InvestorKycs.CountAsync(k => k.CompanyId == companyId && k.IrmId == c.Id && k.Status != KycStatus.Approved && k.Status != KycStatus.Rejected, ct);
+                var openKycs = await _db.InvestorKycs.CountAsync(k => k.CompanyId == companyId && k.IrmId == c.Id, ct);
                 var openConsultations = await _db.Consultations.CountAsync(con => con.CompanyId == companyId && con.ConsultantId == c.Id && con.Status == ConsultationStatus.Scheduled, ct);
                 var openCards = await _db.IrmPipelineCards.CountAsync(card => card.CompanyId == companyId && card.AssignedIrmId == c.Id, ct);
-                openItems = openInvestors + openKycs + openConsultations + openCards;
+                var openDeals = await _db.GhlDeals.CountAsync(d => d.CompanyId == companyId && d.AssignedAgentId == c.Id, ct);
+                var openLeads = await _db.Leads.CountAsync(l => l.CompanyId == companyId && l.AssignedAgentId == c.Id, ct);
+                openItems = openInvestors + openKycs + openConsultations + openCards + openDeals + openLeads;
             }
 
             suggestions.Add(new backend.DTOs.Admin.CoverSuggestionDto

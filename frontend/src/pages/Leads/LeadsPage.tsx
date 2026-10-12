@@ -1623,6 +1623,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
       icon: <Trash2 size={14} color="#ef4444" className="leads-action-icon" />,
       danger: true,
       onClick: l => handleDeleteLead(l),
+      hidden: () => isIrm,
     },
   ];
 

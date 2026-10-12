@@ -357,7 +357,7 @@ export const OpportunitiesPage: React.FC = () => {
       label: 'Delete',
       icon: <Trash2 size={14} color="#dc2626" style={{ marginRight: 6 }} />,
       onClick: o => handleDeleteOpp(o),
-      hidden: () => isGhlAdmin,
+      hidden: () => isIrm || isGhlAdmin,
     },
   ];
 
@@ -392,8 +392,11 @@ export const OpportunitiesPage: React.FC = () => {
       return false;
     });
 
+    const isKnownInvestorId = Boolean(linkedInvestorId && investors.some(inv => String(inv.id) === String(linkedInvestorId)));
+    const targetInvestorId = existingInv ? existingInv.id : (isKnownInvestorId ? linkedInvestorId : '');
+
     const investorPayload: Investor = {
-      id: existingInv ? existingInv.id : linkedInvestorId,
+      id: targetInvestorId,
       companyId: tenant?.id || '',
       name: deal.customerName,
       phone: deal.phone || '',

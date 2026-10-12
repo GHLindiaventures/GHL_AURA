@@ -498,6 +498,53 @@ public class SalesExecutiveCallsController : ControllerBase
                 {
                     lead.Status = "Junk";
                 }
+                else if (string.Equals(dispo, "Other", StringComparison.OrdinalIgnoreCase))
+                {
+                    lead.Status = "Other";
+
+                    // Reclassified to Other: complete its pending follow-ups so they leave the Follow-ups page
+                    var leadIdStr = lead.Id.ToString();
+                    var leadPrefixedStr = $"lead-{lead.Id}";
+                    var cleanLeadPhone = lead.Phone ?? dto.ContactPhone ?? string.Empty;
+                    var phoneDigits = System.Text.RegularExpressions.Regex.Replace(cleanLeadPhone, @"\D", "");
+                    var last10 = phoneDigits.Length >= 10 ? phoneDigits.Substring(phoneDigits.Length - 10) : phoneDigits;
+
+                    var pendingFollowups = await _context.Followups
+                        .Where(f => f.CompanyId == lead.CompanyId &&
+                                    f.Status == backend.Models.Enums.FollowupStatus.Pending &&
+                                    (f.ContactId == leadIdStr ||
+                                     f.ContactId == leadPrefixedStr ||
+                                     (!string.IsNullOrEmpty(last10) && f.ContactPhone.Contains(last10))))
+                        .ToListAsync(ct);
+                    foreach (var pf in pendingFollowups)
+                    {
+                        pf.Status = backend.Models.Enums.FollowupStatus.Completed;
+                        pf.OutcomeNotes = $"Reclassified to Other: {storedReason ?? "Marked as Other"}";
+                        pf.UpdatedAt = DateTime.UtcNow;
+                    }
+                }
+            }
+        }
+
+        // Close pending follow-ups for Other by Customer or Phone even if no lead matched
+        if (string.Equals(dto.Disposition?.Trim(), "Other", StringComparison.OrdinalIgnoreCase))
+        {
+            var cleanPhone = dto.ContactPhone ?? string.Empty;
+            var phoneDigits = System.Text.RegularExpressions.Regex.Replace(cleanPhone, @"\D", "");
+            var last10 = phoneDigits.Length >= 10 ? phoneDigits.Substring(phoneDigits.Length - 10) : "";
+
+            var pendingFollowupsToClose = await _context.Followups
+                .Where(f => f.CompanyId == companyId.Value &&
+                            f.Status == backend.Models.Enums.FollowupStatus.Pending &&
+                            ((dto.CustomerId.HasValue && f.InvestorId == dto.CustomerId.Value) ||
+                             (!string.IsNullOrEmpty(last10) && f.ContactPhone.Contains(last10))))
+                .ToListAsync(ct);
+
+            foreach (var pf in pendingFollowupsToClose)
+            {
+                pf.Status = backend.Models.Enums.FollowupStatus.Completed;
+                pf.OutcomeNotes = $"Reclassified to Other: {storedReason ?? "Marked as Other"}";
+                pf.UpdatedAt = DateTime.UtcNow;
             }
         }
 

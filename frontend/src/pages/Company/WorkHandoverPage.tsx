@@ -891,6 +891,62 @@ export const WorkHandoverPage: React.FC<WorkHandoverPageProps> = ({ initialParam
                                   {returnSummary.highlights.map((h: string, i: number) => <li key={i}>{h}</li>)}
                                 </ul>
                               )}
+                              {returnSummary.activities && returnSummary.activities.length > 0 && (
+                                <div style={{ marginTop: 8 }}>
+                                  <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-primary)', marginBottom: 6 }}>
+                                    Itemized Actions Done ({returnSummary.activities.length}):
+                                  </div>
+                                  <div style={{ maxHeight: 200, overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: 6 }}>
+                                    {returnSummary.activities.map((act: any, idx: number) => (
+                                      <div
+                                        key={idx}
+                                        style={{
+                                          background: 'rgba(255, 255, 255, 0.04)',
+                                          padding: '8px 12px',
+                                          borderRadius: 6,
+                                          display: 'flex',
+                                          justifyContent: 'space-between',
+                                          alignItems: 'center',
+                                          fontSize: 12,
+                                        }}
+                                      >
+                                        <div>
+                                          <span
+                                            style={{
+                                              display: 'inline-block',
+                                              padding: '2px 6px',
+                                              borderRadius: 4,
+                                              fontSize: 10,
+                                              fontWeight: 700,
+                                              marginRight: 8,
+                                              background:
+                                                act.category === 'Call'
+                                                  ? '#3b82f6'
+                                                  : act.category === 'Deal'
+                                                  ? '#10b981'
+                                                  : act.category === 'KYC'
+                                                  ? '#8b5cf6'
+                                                  : act.category === 'Followup'
+                                                  ? '#f59e0b'
+                                                  : '#64748b',
+                                              color: '#fff',
+                                            }}
+                                          >
+                                            {act.category}
+                                          </span>
+                                          <strong style={{ color: 'var(--text-primary)' }}>{act.title}</strong>
+                                          <span style={{ color: 'var(--text-secondary)', marginLeft: 8 }}>{act.description}</span>
+                                        </div>
+                                        {act.timestamp && (
+                                          <span style={{ color: 'var(--text-secondary)', fontSize: 11, whiteSpace: 'nowrap', marginLeft: 12 }}>
+                                            {new Date(act.timestamp).toLocaleDateString()}
+                                          </span>
+                                        )}
+                                      </div>
+                                    ))}
+                                  </div>
+                                </div>
+                              )}
                             </div>
                           </td>
                         </tr>

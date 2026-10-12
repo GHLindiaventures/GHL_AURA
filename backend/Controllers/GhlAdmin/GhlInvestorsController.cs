@@ -161,6 +161,48 @@ public class GhlInvestorsController : ControllerBase
             Enum.TryParse<InvestorStatus>(dto.Status.Replace(" ", ""), true, out status);
         }
 
+        // Check if the current agent is covering someone under an active handover
+        var activeHandover = await _db.WorkHandovers
+            .FirstOrDefaultAsync(h => h.CompanyId == companyId.Value && h.CoveringUserId == agentId.Value && h.Status == "active", ct);
+        int? inheritedHandoverId = activeHandover?.Id;
+        int? inheritedOriginalOwnerId = activeHandover?.OriginalUserId;
+
+        // Check if investor with same phone or email already exists in company
+        Investor? existingInvestor = null;
+        if (!string.IsNullOrWhiteSpace(dto.Phone))
+        {
+            var phoneDigits = new string(dto.Phone.Where(char.IsDigit).ToArray());
+            if (phoneDigits.Length >= 10) phoneDigits = phoneDigits[^10..];
+            existingInvestor = await _db.Investors
+                .Include(i => i.AssignedIrm)
+                .FirstOrDefaultAsync(i => i.CompanyId == companyId.Value && i.Phone.EndsWith(phoneDigits), ct);
+        }
+        if (existingInvestor == null && !string.IsNullOrWhiteSpace(dto.Email))
+        {
+            existingInvestor = await _db.Investors
+                .Include(i => i.AssignedIrm)
+                .FirstOrDefaultAsync(i => i.CompanyId == companyId.Value && i.Email.ToLower() == dto.Email.Trim().ToLower(), ct);
+        }
+
+        if (existingInvestor != null)
+        {
+            if (dto.Name != null) existingInvestor.Name = dto.Name.Trim();
+            if (dto.Phone != null) existingInvestor.Phone = dto.Phone.Trim();
+            if (dto.Email != null) existingInvestor.Email = dto.Email.Trim();
+            existingInvestor.Status = status;
+            if (dto.InvestmentCapacity != null) existingInvestor.InvestmentCapacity = OptionalFieldNormalizer.Normalize(dto.InvestmentCapacity) ?? string.Empty;
+            if (dto.PreferredAssetClass != null) existingInvestor.PreferredAssetClass = OptionalFieldNormalizer.Normalize(dto.PreferredAssetClass) ?? string.Empty;
+            if (dto.ReferralSource != null) existingInvestor.ReferralSource = dto.ReferralSource.Trim();
+            if (dto.CommittedAUM != null) existingInvestor.CommittedAum = dto.CommittedAUM.Trim();
+            if (dto.InvestmentMandate != null) existingInvestor.InvestmentMandate = dto.InvestmentMandate.Trim();
+            if (dto.RiskTolerance != null) existingInvestor.RiskTolerance = dto.RiskTolerance.Trim();
+            if (dto.Notes != null) existingInvestor.Notes = dto.Notes.Trim();
+            existingInvestor.UpdatedAt = DateTime.UtcNow;
+
+            await _db.SaveChangesAsync(ct);
+            return Ok(ApiResponse<GhlInvestorResponseDto>.SuccessResult(MapToDto(existingInvestor), "Investor updated."));
+        }
+
         var investor = new Investor
         {
             CompanyId = companyId.Value,
@@ -178,10 +220,26 @@ public class GhlInvestorsController : ControllerBase
             RiskTolerance = dto.RiskTolerance?.Trim(),
             Notes = dto.Notes.Trim(),
             CreatedAt = DateTime.UtcNow,
+            HandoverId = inheritedHandoverId,
+            OriginalOwnerId = inheritedOriginalOwnerId
         };
 
         _db.Investors.Add(investor);
         await _db.SaveChangesAsync(ct);
+
+        if (inheritedHandoverId.HasValue)
+        {
+            _db.WorkHandoverItems.Add(new WorkHandoverItem
+            {
+                HandoverId = inheritedHandoverId.Value,
+                EntityType = "Investor",
+                EntityId = investor.Id,
+                Origin = "created_during_coverage",
+                CreatedAt = DateTime.UtcNow
+            });
+            await _db.SaveChangesAsync(ct);
+        }
+
         await _db.Entry(investor).Reference(i => i.AssignedIrm).LoadAsync(ct);
 
         return CreatedAtAction(nameof(GetInvestor), new { id = investor.Id },
@@ -202,6 +260,25 @@ public class GhlInvestorsController : ControllerBase
         var investor = await _db.Investors
             .Include(i => i.AssignedIrm)
             .FirstOrDefaultAsync(i => i.Id == id && i.CompanyId == _currentUser.CompanyId, ct);
+
+        if (investor == null)
+        {
+            // Fallback: match by phone or email if the provided ID was a Lead ID or Deal CustomerId
+            if (!string.IsNullOrWhiteSpace(dto.Phone))
+            {
+                var phoneDigits = new string(dto.Phone.Where(char.IsDigit).ToArray());
+                if (phoneDigits.Length >= 10) phoneDigits = phoneDigits[^10..];
+                investor = await _db.Investors
+                    .Include(i => i.AssignedIrm)
+                    .FirstOrDefaultAsync(i => i.CompanyId == _currentUser.CompanyId && i.Phone.EndsWith(phoneDigits), ct);
+            }
+            if (investor == null && !string.IsNullOrWhiteSpace(dto.Email))
+            {
+                investor = await _db.Investors
+                    .Include(i => i.AssignedIrm)
+                    .FirstOrDefaultAsync(i => i.CompanyId == _currentUser.CompanyId && i.Email.ToLower() == dto.Email.Trim().ToLower(), ct);
+            }
+        }
 
         if (investor == null)
             return NotFound(ApiResponse<GhlInvestorResponseDto>.FailureResult("Investor not found."));
@@ -227,7 +304,7 @@ public class GhlInvestorsController : ControllerBase
 
     // ── DELETE /api/ghl/investors/{id} ────────────────────────────────────────
     [HttpDelete("{id:int}")]
-    [Authorize(Roles = "company_admin,super_admin,irm")]
+    [Authorize(Roles = "company_admin,super_admin")]
     public async Task<ActionResult<ApiResponse<bool>>> DeleteInvestor(int id, CancellationToken ct)
     {
         if (User.IsGhlAdmin())

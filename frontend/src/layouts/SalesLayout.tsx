@@ -322,7 +322,7 @@ export const SalesLayout: React.FC<SalesLayoutProps> = ({
           isOpen={showEndedPanel}
           onClose={() => setShowEndedPanel(false)}
           title="Updated while you were away"
-          size="md"
+          size="lg"
         >
           <div style={{ padding: '20px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
             <p style={{ margin: 0, color: 'var(--text-secondary)' }}>
@@ -357,6 +357,63 @@ export const SalesLayout: React.FC<SalesLayoutProps> = ({
                     <li key={i}>{h}</li>
                   ))}
                 </ul>
+              </div>
+            )}
+
+            {recentlyEnded.progress?.activities && recentlyEnded.progress.activities.length > 0 && (
+              <div>
+                <strong style={{ color: 'var(--text-primary)', display: 'block', marginBottom: '8px' }}>
+                  Itemized Actions Done by {recentlyEnded.coveringUserName} ({recentlyEnded.progress.activities.length}):
+                </strong>
+                <div style={{ maxHeight: '240px', overflowY: 'auto', display: 'flex', flexDirection: 'column', gap: '8px', paddingRight: '4px' }}>
+                  {recentlyEnded.progress.activities.map((act, i) => (
+                    <div
+                      key={i}
+                      style={{
+                        background: 'var(--bg-secondary)',
+                        padding: '10px 14px',
+                        borderRadius: '6px',
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        fontSize: '12px'
+                      }}
+                    >
+                      <div>
+                        <span
+                          style={{
+                            display: 'inline-block',
+                            padding: '2px 8px',
+                            borderRadius: '4px',
+                            fontSize: '10px',
+                            fontWeight: 700,
+                            marginRight: '8px',
+                            background:
+                              act.category === 'Call'
+                                ? '#3b82f6'
+                                : act.category === 'Deal'
+                                ? '#10b981'
+                                : act.category === 'KYC'
+                                ? '#8b5cf6'
+                                : act.category === 'Followup'
+                                ? '#f59e0b'
+                                : '#64748b',
+                            color: '#ffffff'
+                          }}
+                        >
+                          {act.category}
+                        </span>
+                        <strong style={{ color: 'var(--text-primary)' }}>{act.title}</strong>
+                        <div style={{ color: 'var(--text-secondary)', marginTop: '2px' }}>{act.description}</div>
+                      </div>
+                      {act.timestamp && (
+                        <span style={{ color: 'var(--text-secondary)', fontSize: '11px', whiteSpace: 'nowrap', marginLeft: '12px' }}>
+                          {new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                      )}
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
 

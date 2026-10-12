@@ -152,6 +152,31 @@ public sealed class CallService(ApplicationDbContext context, ICurrentUserServic
                     lead.Status = "No Response";
                     if (request.FollowupAt.HasValue) lead.NextFollowupDate = request.FollowupAt.Value;
                 }
+                else if (request.Disposition is "Other")
+                {
+                    lead.Status = "Other";
+
+                    // Reclassified to Other: complete pending follow-ups so they leave the Follow-ups page
+                    var leadIdStr = lead.Id.ToString();
+                    var leadPrefixedStr = $"lead-{lead.Id}";
+                    var cleanLeadPhone = lead.Phone ?? request.ContactPhone ?? string.Empty;
+                    var phoneDigits = System.Text.RegularExpressions.Regex.Replace(cleanLeadPhone, @"\D", "");
+                    var last10 = phoneDigits.Length >= 10 ? phoneDigits.Substring(phoneDigits.Length - 10) : phoneDigits;
+
+                    var pendingFollowups = await context.Set<Followup>()
+                        .Where(f => f.CompanyId == lead.CompanyId &&
+                                    f.Status == backend.Models.Enums.FollowupStatus.Pending &&
+                                    (f.ContactId == leadIdStr ||
+                                     f.ContactId == leadPrefixedStr ||
+                                     (!string.IsNullOrEmpty(last10) && f.ContactPhone.Contains(last10))))
+                        .ToListAsync(cancellationToken);
+                    foreach (var pf in pendingFollowups)
+                    {
+                        pf.Status = backend.Models.Enums.FollowupStatus.Completed;
+                        pf.OutcomeNotes = $"Reclassified to Other: {request.Reason ?? "Marked as Other"}";
+                        pf.UpdatedAt = DateTime.UtcNow;
+                    }
+                }
             }
             if (lead != null && request.Disposition is "Follow-up Required" or "Follow Up Required" or "Call Back" or "No Response") 
             {

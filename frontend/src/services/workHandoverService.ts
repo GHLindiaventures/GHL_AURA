@@ -44,6 +44,14 @@ export interface HandoverItemDto {
   createdAt: string;
 }
 
+export interface HandoverActivityDetailDto {
+  category: string;
+  title: string;
+  description: string;
+  timestamp?: string;
+  outcome?: string;
+}
+
 export interface WorkHandoverProgressDto {
   callsMadeCount: number;
   followupsCompletedCount: number;
@@ -52,6 +60,7 @@ export interface WorkHandoverProgressDto {
   recordsConvertedOrClosedCount: number;
   recordsSkippedCount: number;
   highlights: string[];
+  activities?: HandoverActivityDetailDto[];
 }
 
 // Matches backend WorkHandoverDto exactly

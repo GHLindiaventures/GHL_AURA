@@ -38,7 +38,17 @@ public class IrmFollowupService : IIrmFollowupService
             var matcher = await _otherService.GetOtherMatcherAsync(companyId, "follow_up", ct);
             if (matcher.HasAnyOther)
             {
-                list = list.Where(f => !matcher.IsInOther(f.ContactPhone, f.InvestorId, null, f.ContactName)).ToList();
+                list = list.Where(f =>
+                {
+                    int? lid = null;
+                    if (!string.IsNullOrEmpty(f.ContactId))
+                    {
+                        var cleanContactId = f.ContactId.Replace("lead-", "").Trim();
+                        if (int.TryParse(cleanContactId, out var parsedLid))
+                            lid = parsedLid;
+                    }
+                    return !matcher.IsInOther(f.ContactPhone, f.InvestorId, lid, f.ContactName);
+                }).ToList();
             }
         }
         return ApiResponse<List<FollowupDto>>.SuccessResponse(list.Select(MapToDto).ToList());

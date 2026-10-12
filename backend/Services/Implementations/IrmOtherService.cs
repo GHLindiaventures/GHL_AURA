@@ -145,9 +145,23 @@ public class IrmOtherService : IIrmOtherService
         var matcher = new ContactOtherMatcher();
         var query = _context.CallRecords.AsNoTracking()
             .Where(c => c.CompanyId == companyId);
+
+        var coveredAgentIds = new HashSet<int>();
         if (irmId.HasValue && irmId.Value > 0)
         {
-            query = query.Where(c => c.AgentId == irmId.Value);
+            coveredAgentIds.Add(irmId.Value);
+            var nowUtc = DateTime.UtcNow;
+            var activeHandoverOwnerIds = await _context.WorkHandovers.AsNoTracking()
+                .Where(w => w.CompanyId == companyId &&
+                            w.CoveringUserId == irmId.Value &&
+                            w.Status == "active")
+                .Select(w => w.OriginalUserId)
+                .ToListAsync(ct);
+            foreach (var oId in activeHandoverOwnerIds)
+            {
+                coveredAgentIds.Add(oId);
+            }
+            query = query.Where(c => coveredAgentIds.Contains(c.AgentId));
         }
         var allCalls = await query
             .OrderByDescending(c => c.Timestamp)
@@ -194,6 +208,23 @@ public class IrmOtherService : IIrmOtherService
         string? search,
         CancellationToken ct = default)
     {
+        var coveredAgentIds = new HashSet<int>();
+        if (irmId.HasValue && irmId.Value > 0)
+        {
+            coveredAgentIds.Add(irmId.Value);
+            var nowUtc = DateTime.UtcNow;
+            var activeHandoverOwnerIds = await _context.WorkHandovers.AsNoTracking()
+                .Where(w => w.CompanyId == companyId &&
+                            w.CoveringUserId == irmId.Value &&
+                            w.Status == "active")
+                .Select(w => w.OriginalUserId)
+                .ToListAsync(ct);
+            foreach (var oId in activeHandoverOwnerIds)
+            {
+                coveredAgentIds.Add(oId);
+            }
+        }
+
         var allCalls = await _context.CallRecords.AsNoTracking()
             .Where(c => c.CompanyId == companyId)
             .OrderByDescending(c => c.Timestamp)
@@ -220,7 +251,7 @@ public class IrmOtherService : IIrmOtherService
 
                 if (string.Equals(latestCall.Disposition?.Trim(), "Other", StringComparison.OrdinalIgnoreCase))
                 {
-                    if (irmId.HasValue && irmId.Value > 0 && latestCall.AgentId != irmId.Value)
+                    if (irmId.HasValue && irmId.Value > 0 && !coveredAgentIds.Contains(latestCall.AgentId))
                     {
                         continue;
                     }

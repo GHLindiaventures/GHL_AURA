@@ -1185,12 +1185,12 @@ export const FollowupsPage: React.FC = () => {
     try {
       const niJunkLeadIds = new Set<string>(
         allLeads
-          .filter((l: Lead) => l.status === 'Not Interested' || l.status === 'Junk')
+          .filter((l: Lead) => l.status === 'Not Interested' || l.status === 'Junk' || l.status === 'Other')
           .map((l: Lead) => l.id)
       );
       const niJunkPhones = new Set<string>(
         allLeads
-          .filter((l: Lead) => l.status === 'Not Interested' || l.status === 'Junk')
+          .filter((l: Lead) => l.status === 'Not Interested' || l.status === 'Junk' || l.status === 'Other')
           .map((l: Lead) => (l.phone || '').replace(/\D/g, '').slice(-10))
           .filter(Boolean)
       );
@@ -1206,6 +1206,31 @@ export const FollowupsPage: React.FC = () => {
     } catch (err) {
       console.error('Error in GHL NI/Junk cross-reference filter:', err);
     }
+  }
+
+  // ── Other status leads leave the Follow-ups page (transferred to Other module) ───
+  try {
+    const otherLeadIds = new Set<string>(
+      allLeads
+        .filter((l: Lead) => l.status === 'Other')
+        .map((l: Lead) => String(l.id))
+    );
+    const otherPhones = new Set<string>(
+      allLeads
+        .filter((l: Lead) => l.status === 'Other')
+        .map((l: Lead) => (l.phone || '').replace(/\D/g, '').slice(-10))
+        .filter(Boolean)
+    );
+
+    processedFollowups = processedFollowups.filter(f => {
+      if (f.contactId && f.contactId !== 'contact-new' && otherLeadIds.has(String(f.contactId)))
+        return false;
+      const fPhone = (f.contactPhone || '').replace(/\D/g, '').slice(-10);
+      if (fPhone && otherPhones.has(fPhone)) return false;
+      return true;
+    });
+  } catch (err) {
+    console.error('Error in Other-lead followup filter:', err);
   }
 
   // ── Interested leads leave the sales Follow-ups page ───────────────────────

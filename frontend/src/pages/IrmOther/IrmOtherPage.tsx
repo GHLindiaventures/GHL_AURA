@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
+import { createPortal } from 'react-dom';
 import {
   FolderArchive,
   Phone,
@@ -19,12 +20,13 @@ import {
   CheckCircle2,
   Trash2,
   CornerUpLeft,
+  MoreVertical,
 } from 'lucide-react';
 import { IrmOtherRecord } from '../../types';
 import { getIrmOtherRecords, moveIrmOtherRecord, filterOtherRecords } from '../../services/ghlApiService';
 import { useAuth } from '../../context/AuthContext';
 import { useCall } from '../../context/CallContext';
-import { DataTable, Column, RowAction } from '../../components/common/DataTable';
+import { DataTable, Column } from '../../components/common/DataTable';
 import { Drawer } from '../../components/common/Drawer';
 import './IrmOtherPage.css';
 
@@ -235,6 +237,12 @@ export const IrmOtherPage: React.FC<IrmOtherPageProps> = ({ onNavigate }) => {
     targetName: string;
     targetRoute: string;
   } | null>(null);
+  const [menuAnchor, setMenuAnchor] = useState<{
+    record: IrmOtherRecord;
+    top?: number;
+    bottom?: number;
+    right: number;
+  } | null>(null);
 
   const handleMoveContact = useCallback(
     async (record: IrmOtherRecord) => {
@@ -302,7 +310,7 @@ export const IrmOtherPage: React.FC<IrmOtherPageProps> = ({ onNavigate }) => {
         key: 'contact',
         header: 'Contact Name',
         sortable: true,
-        width: '20%',
+        width: '18%',
         render: record => {
           const initials = (record.contactName || 'U')
             .split(' ')
@@ -329,7 +337,7 @@ export const IrmOtherPage: React.FC<IrmOtherPageProps> = ({ onNavigate }) => {
       {
         key: 'phone',
         header: 'Phone / Email',
-        width: '18%',
+        width: '15%',
         render: record => (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <span style={{ fontWeight: 600, fontSize: 13, color: 'var(--text-primary)' }}>
@@ -347,7 +355,7 @@ export const IrmOtherPage: React.FC<IrmOtherPageProps> = ({ onNavigate }) => {
         key: 'callModule',
         header: 'Source Module',
         sortable: true,
-        width: '14%',
+        width: '12%',
         render: record => {
           const conf = MODULE_DISPLAY_CONFIG[record.callModule] || {
             label: record.moduleDisplayName || record.callModule,
@@ -367,7 +375,7 @@ export const IrmOtherPage: React.FC<IrmOtherPageProps> = ({ onNavigate }) => {
       {
         key: 'reason',
         header: 'Mandatory Reason',
-        width: '22%',
+        width: '20%',
         render: record => (
           <div className="irm-reason-cell">
             <div className="irm-reason-pill" title={record.reason}>
@@ -381,7 +389,7 @@ export const IrmOtherPage: React.FC<IrmOtherPageProps> = ({ onNavigate }) => {
         key: 'agentName',
         header: 'Assigned IRM',
         sortable: true,
-        width: '12%',
+        width: '11%',
         render: record => (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
             <User size={13} color="var(--text-muted)" />
@@ -412,12 +420,15 @@ export const IrmOtherPage: React.FC<IrmOtherPageProps> = ({ onNavigate }) => {
         },
       },
       {
-        key: 'quickActions',
+        key: 'actions',
         header: 'Actions',
-        align: 'center',
-        width: '160px',
+        align: 'right',
+        width: '200px',
         render: record => (
-          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
+          <div
+            style={{ display: 'inline-flex', alignItems: 'center', justifyContent: 'flex-end', gap: 6 }}
+            onClick={e => e.stopPropagation()}
+          >
             <button
               type="button"
               className="irm-other-call-btn"
@@ -429,7 +440,7 @@ export const IrmOtherPage: React.FC<IrmOtherPageProps> = ({ onNavigate }) => {
               }}
             >
               <Phone size={12} style={{ flexShrink: 0 }} />
-              <span style={{ whiteSpace: 'nowrap' }}>Call</span>
+              <span>Call</span>
             </button>
             <button
               type="button"
@@ -441,56 +452,41 @@ export const IrmOtherPage: React.FC<IrmOtherPageProps> = ({ onNavigate }) => {
                 e.stopPropagation();
                 handleMoveContact(record);
               }}
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 4,
-                padding: '6px 10px',
-                borderRadius: 6,
-                fontSize: 12,
-                fontWeight: 600,
-                color: '#3b82f6',
-                backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                border: '1px solid rgba(59, 130, 246, 0.3)',
-                cursor: movingCallId === record.callId ? 'not-allowed' : 'pointer',
-                opacity: movingCallId === record.callId ? 0.6 : 1,
-                transition: 'all 0.15s ease',
+            >
+              <CornerUpLeft size={12} style={{ flexShrink: 0 }} />
+              <span>{movingCallId === record.callId ? 'Moving...' : 'Move'}</span>
+            </button>
+            <button
+              type="button"
+              className="irm-other-more-btn"
+              title="More options"
+              aria-label="More options"
+              onClick={e => {
+                e.stopPropagation();
+                const rect = e.currentTarget.getBoundingClientRect();
+                const spaceBelow = window.innerHeight - rect.bottom;
+                if (spaceBelow < 150) {
+                  setMenuAnchor({
+                    record,
+                    bottom: window.innerHeight - rect.top + 4,
+                    right: window.innerWidth - rect.right,
+                  });
+                } else {
+                  setMenuAnchor({
+                    record,
+                    top: rect.bottom + 4,
+                    right: window.innerWidth - rect.right,
+                  });
+                }
               }}
             >
-              <CornerUpLeft size={12} />
-              <span>{movingCallId === record.callId ? 'Moving...' : 'Move'}</span>
+              <MoreVertical size={15} />
             </button>
           </div>
         ),
       },
     ],
     [handleCallContact, handleMoveContact, movingCallId]
-  );
-
-  const rowActions: RowAction<IrmOtherRecord>[] = useMemo(
-    () => [
-      {
-        label: 'Call Contact',
-        icon: <Phone size={14} color="#059669" style={{ marginRight: 6 }} />,
-        onClick: r => handleCallContact(r),
-      },
-      {
-        label: 'Move to Source Page',
-        icon: <CornerUpLeft size={14} color="#2563eb" style={{ marginRight: 6 }} />,
-        onClick: r => handleMoveContact(r),
-      },
-      {
-        label: 'View Details',
-        icon: <ChevronRight size={14} style={{ marginRight: 6 }} />,
-        onClick: r => setSelectedRecord(r),
-      },
-      {
-        label: 'Remove from List',
-        icon: <Trash2 size={14} color="#ef4444" style={{ marginRight: 6 }} />,
-        onClick: r => handleDismissContact(r),
-      },
-    ],
-    [handleCallContact, handleMoveContact, handleDismissContact]
   );
 
   return (
@@ -750,7 +746,6 @@ export const IrmOtherPage: React.FC<IrmOtherPageProps> = ({ onNavigate }) => {
         columns={columns}
         data={filteredRecords}
         keyExtractor={record => `${record.callId}-${record.contactPhone}-${record.callModule}`}
-        rowActions={rowActions}
         onRowClick={record => setSelectedRecord(record)}
         emptyTitle="No records in Other module"
         emptyDescription={
@@ -763,6 +758,61 @@ export const IrmOtherPage: React.FC<IrmOtherPageProps> = ({ onNavigate }) => {
         pageSize={15}
         hideSearch={true}
       />
+
+      {/* ── Portaled Quick Action Dropdown ─────────────────────────────────── */}
+      {menuAnchor &&
+        createPortal(
+          <>
+            <div
+              style={{ position: 'fixed', inset: 0, zIndex: 9998 }}
+              onClick={() => setMenuAnchor(null)}
+            />
+            <div
+              className="card animate-slide-down"
+              style={{
+                position: 'fixed',
+                top: menuAnchor.top,
+                bottom: menuAnchor.bottom,
+                right: menuAnchor.right,
+                zIndex: 9999,
+                minWidth: 175,
+                padding: '6px',
+                boxShadow: 'var(--shadow-lg)',
+                border: '1px solid var(--border-base)',
+                backgroundColor: 'var(--bg-surface)',
+                borderRadius: 'var(--radius-md)',
+              }}
+            >
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ width: '100%', justifyContent: 'flex-start', gap: 8, fontSize: 13 }}
+                onClick={() => {
+                  const rec = menuAnchor.record;
+                  setMenuAnchor(null);
+                  setSelectedRecord(rec);
+                }}
+              >
+                <ChevronRight size={14} />
+                <span>View Details</span>
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost btn-sm"
+                style={{ width: '100%', justifyContent: 'flex-start', gap: 8, fontSize: 13, color: '#3b82f6' }}
+                onClick={() => {
+                  const rec = menuAnchor.record;
+                  setMenuAnchor(null);
+                  handleMoveContact(rec);
+                }}
+              >
+                <CornerUpLeft size={14} color="#3b82f6" />
+                <span>Move to {menuAnchor.record.moduleDisplayName || 'Source'}</span>
+              </button>
+            </div>
+          </>,
+          document.body
+        )}
 
       {/* ── Contact Detail Drawer ────────────────────────────────────────────── */}
       {selectedRecord && (
@@ -829,16 +879,6 @@ export const IrmOtherPage: React.FC<IrmOtherPageProps> = ({ onNavigate }) => {
                 >
                   <CornerUpLeft size={13} />
                   <span>Move to {selectedRecord.moduleDisplayName || 'Source'}</span>
-                </button>
-                <button
-                  type="button"
-                  className="btn btn-sm btn-secondary"
-                  style={{ color: '#ef4444', borderColor: 'rgba(239, 68, 68, 0.4)', display: 'flex', alignItems: 'center', gap: 6 }}
-                  onClick={() => handleDismissContact(selectedRecord)}
-                  title="Remove from Other Contacts list"
-                >
-                  <Trash2 size={13} />
-                  <span>Remove</span>
                 </button>
               </div>
             </div>

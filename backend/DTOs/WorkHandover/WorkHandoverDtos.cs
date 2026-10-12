@@ -50,6 +50,15 @@ public class ReturnSelectedItemsRequestDto
     public List<int> ItemIds { get; set; } = new();
 }
 
+public class HandoverActivityDetailDto
+{
+    public string Category { get; set; } = string.Empty; // "Call" | "Deal" | "KYC" | "Followup" | "New Record"
+    public string Title { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public string? Timestamp { get; set; }
+    public string? Outcome { get; set; }
+}
+
 public class WorkHandoverProgressDto
 {
     public int CallsMadeCount { get; set; }
@@ -59,6 +68,7 @@ public class WorkHandoverProgressDto
     public int RecordsConvertedOrClosedCount { get; set; }
     public int RecordsSkippedCount { get; set; }
     public List<string> Highlights { get; set; } = new();
+    public List<HandoverActivityDetailDto> Activities { get; set; } = new();
 }
 
 public class WorkHandoverItemDto

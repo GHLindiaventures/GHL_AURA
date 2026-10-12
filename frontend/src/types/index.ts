@@ -121,7 +121,7 @@ export interface Lead {
   email: string;
   location: string;
   source: string;
-  status: 'New' | 'Contacted' | 'Qualified' | 'Proposal' | 'Negotiation' | 'Converted' | 'Lost' | 'Not Interested' | 'Junk' | 'Callback' | 'No Response' | 'Follow-up Required' | 'Interested';
+  status: 'New' | 'Contacted' | 'Qualified' | 'Proposal' | 'Negotiation' | 'Converted' | 'Lost' | 'Not Interested' | 'Junk' | 'Callback' | 'No Response' | 'Follow-up Required' | 'Interested' | 'Other';
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
   assignedAgentId: string;
   assignedAgentName: string;

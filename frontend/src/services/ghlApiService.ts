@@ -790,9 +790,61 @@ export async function getCalls(companyId?: string): Promise<CallRecord[]> {
   return raw.map(mapCallRecord);
 }
 
+export function unblockOtherRecord(identifiers: {
+  phone?: string;
+  leadId?: string | number;
+  customerId?: string | number;
+  callId?: string | number;
+}): void {
+  try {
+    const rawDismissed = typeof window !== 'undefined' ? localStorage.getItem('nexus_dismissed_other_records') : null;
+    const rawMoved = typeof window !== 'undefined' ? localStorage.getItem('nexus_moved_other_records') : null;
+    if (!rawDismissed && !rawMoved) return;
+
+    const phoneDigits = identifiers.phone ? identifiers.phone.replace(/\D/g, '').slice(-10) : '';
+    const phoneRaw = identifiers.phone ? identifiers.phone.trim() : '';
+    const callKey = identifiers.callId ? String(identifiers.callId).trim() : '';
+    const leadKey = identifiers.leadId ? `lead_${String(identifiers.leadId).replace(/\D/g, '')}` : '';
+    const custKey = identifiers.customerId ? `cust_${String(identifiers.customerId).replace(/\D/g, '')}` : '';
+
+    const filterList = (list: string[]) => {
+      return list.filter(k => {
+        const item = String(k).trim();
+        if (callKey && item === callKey) return false;
+        if (phoneRaw && item === phoneRaw) return false;
+        if (phoneDigits && (item === phoneDigits || item.includes(phoneDigits))) return false;
+        if (leadKey && item === leadKey) return false;
+        if (custKey && item === custKey) return false;
+        return true;
+      });
+    };
+
+    if (rawDismissed) {
+      const parsed: string[] = JSON.parse(rawDismissed);
+      localStorage.setItem('nexus_dismissed_other_records', JSON.stringify(filterList(parsed)));
+    }
+    if (rawMoved) {
+      const parsed: string[] = JSON.parse(rawMoved);
+      localStorage.setItem('nexus_moved_other_records', JSON.stringify(filterList(parsed)));
+    }
+  } catch (e) {
+    console.warn('[unblockOtherRecord] Error clearing blacklist keys:', e);
+  }
+}
+
 export async function logCall(call: CallRecord): Promise<CallRecord> {
   const parsedLeadId = call.leadId ? nid(call.leadId) : undefined;
   const parsedCustomerId = call.customerId ? nid(call.customerId) : undefined;
+
+  if (call.disposition === 'Other') {
+    unblockOtherRecord({
+      phone: call.contactPhone,
+      leadId: parsedLeadId || call.leadId,
+      customerId: parsedCustomerId || call.customerId,
+      callId: call.id,
+    });
+  }
+
   const payload = {
     contactName: call.contactName,
     contactPhone: call.contactPhone,

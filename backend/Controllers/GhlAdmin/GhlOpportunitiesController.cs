@@ -228,7 +228,7 @@ public class GhlOpportunitiesController : ControllerBase
 
     // ── DELETE /api/ghl/investment-opportunities/{id} ─────────────────────────
     [HttpDelete("{id:int}")]
-    [Authorize(Roles = "company_admin,super_admin,irm")]
+    [Authorize(Roles = "company_admin,super_admin")]
     public async Task<ActionResult<ApiResponse<bool>>> DeleteOpportunity(int id, CancellationToken ct)
     {
         if (User.IsGhlAdmin())

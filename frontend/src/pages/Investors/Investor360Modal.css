@@ -1,12 +1,13 @@
 /* ==========================================================================
-   Investor 360 Modal - Ultra Premium Design System
+   Investor 360 Workspace & Modal - Ultra Premium Design System
    Calibrated for luxury SaaS aesthetics (Linear / Stripe level finish)
    Full Light Mode & Dark Mode reactive support
    ========================================================================== */
 
 /* ── Light Mode Tokens (Default) ─────────────────────────────────────────── */
 .iv-container,
-.iv-container.light-theme {
+.iv-container.light-theme,
+.iv-workspace-canvas.light-theme {
   --iv-bg: #ffffff;
   --iv-backdrop: rgba(15, 23, 42, 0.6);
   --iv-border: rgba(226, 232, 240, 0.9);
@@ -100,7 +101,11 @@
 .iv-container.dark-theme,
 .dark-theme .iv-container,
 .admin-theme .iv-container,
-[data-theme='dark'] .iv-container {
+[data-theme='dark'] .iv-container,
+.iv-workspace-canvas.dark-theme,
+.dark-theme .iv-workspace-canvas,
+.admin-theme .iv-workspace-canvas,
+[data-theme='dark'] .iv-workspace-canvas {
   --iv-bg: #0c1220;
   --iv-backdrop: rgba(0, 0, 0, 0.78);
   --iv-border: #1e293b;
@@ -190,7 +195,124 @@
   --iv-shadow: 0 30px 70px rgba(0, 0, 0, 0.75), 0 0 1px 1px rgba(255, 255, 255, 0.05);
 }
 
-/* ── Modal Backdrop ──────────────────────────────────────────────────────── */
+/* ── Workspace Canvas (Full Green-Box Content Area) ──────────────────────── */
+.iv-workspace-canvas {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  animation: ivFadeIn 0.22s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+/* Top Back Navigation Bar */
+.iv-top-bar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 12px 18px;
+  background: var(--iv-card-bg);
+  border: 1px solid var(--iv-card-border);
+  border-radius: 14px;
+  box-shadow: var(--iv-card-shadow);
+  flex-wrap: wrap;
+}
+
+.iv-top-left {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.iv-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: var(--iv-btn-bg);
+  border: 1px solid var(--iv-btn-border);
+  color: var(--iv-text-primary);
+  padding: 8px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  user-select: none;
+}
+
+.iv-back-btn:hover {
+  background: var(--iv-btn-hover);
+  border-color: var(--iv-accent);
+  transform: translateX(-2px);
+}
+
+.iv-breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.iv-crumb-muted {
+  color: var(--iv-text-muted);
+}
+
+.iv-crumb-sep {
+  color: var(--iv-text-faint);
+}
+
+.iv-crumb-current {
+  color: var(--iv-text-primary);
+  font-weight: 680;
+}
+
+.iv-top-right-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.iv-action-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 8px 16px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 650;
+  cursor: pointer;
+  transition: all 0.18s ease;
+  user-select: none;
+}
+
+.iv-action-secondary {
+  background: var(--iv-btn-bg);
+  border: 1px solid var(--iv-btn-border);
+  color: var(--iv-btn-text);
+}
+
+.iv-action-secondary:hover {
+  background: var(--iv-btn-hover);
+  border-color: var(--iv-card-hover-border);
+  transform: translateY(-1px);
+}
+
+.iv-action-call {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: #ffffff;
+  border: none;
+  font-weight: 700;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.iv-action-call:hover {
+  background: linear-gradient(135deg, #059669 0%, #047857 100%);
+  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.4);
+  transform: translateY(-1px);
+}
+
+/* ── Modal Backdrop (When used in pop-up mode) ────────────────────────────── */
 .iv-modal-backdrop {
   position: fixed;
   inset: 0;
@@ -210,7 +332,7 @@
   to { opacity: 1; }
 }
 
-/* ── Main Container (Fixed Size, Luxury Rounded Cards) ───────────────────── */
+/* ── Main Container (Standard Modal & Inline Canvas) ─────────────────────── */
 .iv-container {
   width: 100%;
   max-width: 940px;
@@ -229,6 +351,17 @@
   flex-direction: column;
   animation: ivSlideUp 0.28s cubic-bezier(0.16, 1, 0.3, 1);
   position: relative;
+}
+
+/* Inline Workspace Container Mode (Fills 100% of the Green Area) */
+.iv-container.iv-inline-container {
+  max-width: 100%;
+  height: auto;
+  min-height: calc(100vh - 180px);
+  max-height: none;
+  border-radius: 16px;
+  animation: none;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
 }
 
 @keyframes ivSlideUp {
@@ -250,13 +383,13 @@
   box-shadow: 0 0 12px var(--iv-accent-glow);
 }
 
-/* ── Header ──────────────────────────────────────────────────────────────── */
+/* ── Header / Hero Profile Banner ────────────────────────────────────────── */
 .iv-hd {
   display: flex;
   justify-content: space-between;
-  align-items: flex-start;
+  align-items: center;
   gap: 16px;
-  padding: 20px 26px 16px;
+  padding: 22px 28px 18px;
   flex-shrink: 0;
   border-bottom: 1px solid var(--iv-header-border);
   background: var(--iv-bg);
@@ -268,8 +401,8 @@
 }
 
 .iv-av {
-  width: 54px;
-  height: 54px;
+  width: 58px;
+  height: 58px;
   border-radius: 16px;
   background: var(--iv-av-bg);
   border: 1.5px solid var(--iv-av-border);
@@ -278,7 +411,7 @@
   align-items: center;
   justify-content: center;
   font-weight: 800;
-  font-size: 18px;
+  font-size: 20px;
   letter-spacing: -0.02em;
   box-shadow: 0 4px 14px var(--iv-accent-glow);
   transition: transform 0.2s ease;
@@ -309,40 +442,74 @@
   flex-direction: column;
 }
 
-.iv-hd-name {
-  margin: 0;
-  font-size: 21px;
-  font-weight: 750;
-  color: var(--iv-text-primary);
-  letter-spacing: -0.02em;
+.iv-hd-title-row {
   display: flex;
   align-items: center;
-  gap: 8px;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.iv-hd-name {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 780;
+  color: var(--iv-text-primary);
+  letter-spacing: -0.02em;
+}
+
+.iv-status-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: 11.5px;
+  font-weight: 650;
+}
+
+.iv-status-verified {
+  background: rgba(16, 185, 129, 0.14);
+  color: #10b981;
+  border: 1px solid rgba(16, 185, 129, 0.35);
 }
 
 .iv-hd-meta {
-  margin: 4px 0 0;
+  margin: 6px 0 0;
   font-size: 13px;
   color: var(--iv-text-muted);
   display: flex;
   align-items: center;
-  gap: 6px;
+  gap: 8px;
   flex-wrap: wrap;
+}
+
+.iv-meta-dot {
+  color: var(--iv-text-faint);
+}
+
+.iv-meta-location {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--iv-text-secondary);
 }
 
 .iv-copy-pill {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  padding: 2px 7px;
+  gap: 5px;
+  padding: 2px 8px;
   border-radius: 6px;
   cursor: pointer;
   transition: all 0.15s ease;
   user-select: none;
   font-family: inherit;
+  background: rgba(148, 163, 184, 0.08);
+  border: 1px solid rgba(148, 163, 184, 0.15);
 }
+
 .iv-copy-pill:hover {
-  background: rgba(148, 163, 184, 0.15);
+  background: rgba(148, 163, 184, 0.18);
   color: var(--iv-text-primary);
 }
 
@@ -377,18 +544,24 @@
 .iv-st {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 12px;
-  padding: 14px 26px;
+  gap: 14px;
+  padding: 16px 28px;
   flex-shrink: 0;
   background: var(--iv-bg-subtle);
   border-bottom: 1px solid var(--iv-header-border);
+}
+
+@media (max-width: 900px) {
+  .iv-st {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .iv-k {
   background: var(--iv-bg-stat);
   border: 1px solid var(--iv-card-border);
   border-radius: 14px;
-  padding: 11px 14px;
+  padding: 12px 16px;
   box-shadow: var(--iv-card-shadow);
   transition: all 0.2s ease;
   display: flex;
@@ -419,7 +592,7 @@
 
 .iv-k-val {
   margin-top: 5px;
-  font-size: 14px;
+  font-size: 15px;
   font-weight: 750;
   white-space: nowrap;
   overflow: hidden;
@@ -439,7 +612,7 @@
 .iv-tabs {
   display: flex;
   gap: 6px;
-  padding: 8px 26px;
+  padding: 8px 28px;
   border-bottom: 1px solid var(--iv-tabs-border);
   overflow-x: auto;
   background: var(--iv-tabs-bg);
@@ -450,8 +623,8 @@
   background: transparent;
   border: 1px solid transparent;
   color: var(--iv-tabs-text);
-  padding: 8px 16px;
-  font-size: 12.5px;
+  padding: 9px 18px;
+  font-size: 13px;
   font-weight: 600;
   border-radius: 10px;
   white-space: nowrap;
@@ -476,7 +649,7 @@
 
 .iv-tab-counter {
   font-size: 11px;
-  padding: 1px 6px;
+  padding: 1px 7px;
   border-radius: 999px;
   background: rgba(148, 163, 184, 0.2);
   color: inherit;
@@ -490,7 +663,7 @@
 
 /* ── Scrollable Body Area ────────────────────────────────────────────────── */
 .iv-body {
-  padding: 20px 26px;
+  padding: 24px 28px;
   overflow-y: auto;
   flex: 1;
   display: flex;
@@ -523,13 +696,64 @@
   background: var(--iv-scroll-thumb-hover);
 }
 
+/* ── Bento Grid Layouts (Full-Width Responsive Arrangement) ──────────────── */
+.iv-overview-bento {
+  display: grid;
+  grid-template-columns: 1.65fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .iv-overview-bento {
+    grid-template-columns: 1fr;
+  }
+}
+
+.iv-bento-col-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.iv-bento-col-side {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.iv-kyc-bento {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+  align-items: start;
+}
+
+@media (max-width: 1024px) {
+  .iv-kyc-bento {
+    grid-template-columns: 1fr;
+  }
+}
+
+.iv-bento-col {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+.iv-activity-bento {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
 /* ── Section Cards ───────────────────────────────────────────────────────── */
 .iv-card {
   background: var(--iv-card-bg);
   border: 1px solid var(--iv-card-border);
   border-radius: 14px;
-  padding: 16px 20px;
-  margin-bottom: 14px;
+  padding: 18px 22px;
+  margin-bottom: 0;
   box-shadow: var(--iv-card-shadow);
   transition: border-color 0.18s ease;
 }
@@ -538,17 +762,13 @@
   border-color: var(--iv-card-hover-border);
 }
 
-.iv-card:last-child {
-  margin-bottom: 0;
-}
-
 .iv-card-header {
   display: flex;
   align-items: center;
   justify-content: space-between;
   margin-bottom: 14px;
   border-bottom: 1px solid rgba(148, 163, 184, 0.12);
-  padding-bottom: 8px;
+  padding-bottom: 9px;
 }
 
 .iv-lb {
@@ -563,10 +783,21 @@
   gap: 7px;
 }
 
+/* Multi-column Parameter Grids */
 .iv-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px 26px;
+}
+
+.iv-grid.iv-grid-3col {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 900px) {
+  .iv-grid.iv-grid-3col {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 
 .iv-grid-item {
@@ -577,7 +808,7 @@
 .iv-grid span {
   font-size: 11px;
   color: var(--iv-text-muted);
-  margin-bottom: 3px;
+  margin-bottom: 4px;
   font-weight: 550;
 }
 
@@ -588,6 +819,72 @@
   line-height: 1.4;
 }
 
+/* Notes memo container */
+.iv-notes-box {
+  background: var(--iv-bg-subtle);
+  border: 1px solid var(--iv-card-border);
+  border-radius: 10px;
+  padding: 14px 16px;
+  border-left: 3.5px solid var(--iv-accent);
+}
+
+/* Consultant / Advisor Card */
+.iv-advisor-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 14px;
+  background: var(--iv-bg-subtle);
+  border-radius: 12px;
+  border: 1px solid var(--iv-card-border);
+}
+
+.iv-advisor-avatar {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 750;
+  font-size: 16px;
+  flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(2, 132, 199, 0.3);
+}
+
+.iv-advisor-name {
+  font-weight: 700;
+  font-size: 14px;
+  color: var(--iv-text-primary);
+}
+
+.iv-advisor-role {
+  font-size: 11.5px;
+  color: var(--iv-text-muted);
+  margin-top: 1px;
+}
+
+/* Portfolio Readiness List */
+.iv-readiness-list {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.iv-readiness-item {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 12px;
+  border-radius: 9px;
+  background: var(--iv-bg-subtle);
+  border: 1px solid var(--iv-card-border);
+  font-size: 12px;
+  color: var(--iv-text-secondary);
+}
+
 /* ── KYC Verification Banners ────────────────────────────────────────────── */
 .iv-ver {
   display: flex;
@@ -596,14 +893,14 @@
   background: var(--iv-ver-bg);
   border: 1px solid var(--iv-ver-border);
   border-radius: 14px;
-  padding: 14px 18px;
-  margin-bottom: 14px;
+  padding: 14px 20px;
+  margin-bottom: 16px;
   box-shadow: 0 4px 12px rgba(5, 150, 105, 0.08);
 }
 
 .iv-ver-icon-wrap {
-  width: 38px;
-  height: 38px;
+  width: 40px;
+  height: 40px;
   border-radius: 10px;
   background: rgba(16, 185, 129, 0.18);
   display: flex;
@@ -689,7 +986,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 11px 12px;
+  padding: 12px 14px;
   border-radius: 10px;
   transition: background 0.15s ease;
   border-bottom: 1px solid var(--iv-row-border);
@@ -717,7 +1014,7 @@
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 16px 26px;
+  padding: 16px 28px;
   border-top: 1px solid var(--iv-footer-border);
   background: var(--iv-footer-bg);
   flex-shrink: 0;

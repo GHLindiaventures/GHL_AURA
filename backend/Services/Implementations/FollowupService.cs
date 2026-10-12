@@ -162,7 +162,17 @@ public class FollowupService : IFollowupService
         if (otherMatcher.HasAnyOther)
         {
             entities = entities
-                .Where(f => !otherMatcher.IsInOther(f.ContactPhone, f.InvestorId, f.LeadId, f.ContactName))
+                .Where(f =>
+                {
+                    int? lid = f.LeadId;
+                    if (!lid.HasValue && !string.IsNullOrEmpty(f.ContactId))
+                    {
+                        var cleanContactId = f.ContactId.Replace("lead-", "").Trim();
+                        if (int.TryParse(cleanContactId, out var parsedLid))
+                            lid = parsedLid;
+                    }
+                    return !otherMatcher.IsInOther(f.ContactPhone, f.InvestorId, lid, f.ContactName);
+                })
                 .ToList();
         }
 
@@ -333,6 +343,12 @@ public class FollowupService : IFollowupService
         // Only deduplicate exact rapid resubmissions (exact same contact ID, exact same scheduled time, and identical notes created within 60 seconds)
         var cleanContactId = dto.ContactId.Trim();
         var cleanNotes = (dto.Notes ?? string.Empty).Trim();
+        var scheduledAtUtc = dto.ScheduledAt.Kind switch
+        {
+            DateTimeKind.Utc => dto.ScheduledAt,
+            DateTimeKind.Local => dto.ScheduledAt.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(dto.ScheduledAt, DateTimeKind.Utc)
+        };
 
         var existingPending = await _context.Followups
             .Include(f => f.AssignedAgent)
@@ -341,7 +357,7 @@ public class FollowupService : IFollowupService
                 f.CompanyId == companyId.Value &&
                 f.Status == FollowupStatus.Pending &&
                 f.ContactId == cleanContactId &&
-                f.ScheduledAt == dto.ScheduledAt &&
+                f.ScheduledAt == scheduledAtUtc &&
                 f.Notes == cleanNotes &&
                 f.CreatedAt >= DateTime.UtcNow.AddSeconds(-60))
             .FirstOrDefaultAsync(ct);
@@ -385,7 +401,7 @@ public class FollowupService : IFollowupService
             }
 
             // Reuse and update the existing active pending follow-up (idempotency)
-            existingPending.ScheduledAt = dto.ScheduledAt;
+            existingPending.ScheduledAt = scheduledAtUtc;
             if (!string.IsNullOrWhiteSpace(dto.Priority)) existingPending.Priority = dto.Priority.Trim();
             if (!string.IsNullOrWhiteSpace(dto.Notes)) existingPending.Notes = dto.Notes.Trim();
             if (!string.IsNullOrWhiteSpace(dto.ContactEmail)) existingPending.ContactEmail = dto.ContactEmail.Trim();
@@ -434,7 +450,7 @@ public class FollowupService : IFollowupService
             ContactName = dto.ContactName.Trim(),
             ContactPhone = dto.ContactPhone.Trim(),
             ContactEmail = resolvedEmail ?? string.Empty,
-            ScheduledAt = dto.ScheduledAt,
+            ScheduledAt = scheduledAtUtc,
             Priority = string.IsNullOrWhiteSpace(dto.Priority) ? "Medium" : dto.Priority.Trim(),
             Status = FollowupStatus.Pending,
             Notes = dto.Notes?.Trim() ?? string.Empty,
@@ -551,7 +567,16 @@ public class FollowupService : IFollowupService
             return ApiResponse<FollowupResponseDto>.FailureResult("Access denied: GHL Admin has read-only access to IRM follow-up data.");
         }
 
-        if (dto.ScheduledAt.HasValue) followup.ScheduledAt = dto.ScheduledAt.Value;
+        if (dto.ScheduledAt.HasValue)
+        {
+            var schedUtc = dto.ScheduledAt.Value.Kind switch
+            {
+                DateTimeKind.Utc => dto.ScheduledAt.Value,
+                DateTimeKind.Local => dto.ScheduledAt.Value.ToUniversalTime(),
+                _ => DateTime.SpecifyKind(dto.ScheduledAt.Value, DateTimeKind.Utc)
+            };
+            followup.ScheduledAt = schedUtc;
+        }
         if (!string.IsNullOrWhiteSpace(dto.Priority)) followup.Priority = dto.Priority.Trim();
         if (!string.IsNullOrWhiteSpace(dto.Status) && Enum.TryParse<FollowupStatus>(dto.Status, true, out var parsedSt))
         {

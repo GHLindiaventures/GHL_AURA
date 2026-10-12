@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useRef } from 'react';
-import { CallDisposition, CallRecord, Lead, Customer, Deal } from '../types';
+import { CallDisposition, CallRecord, Lead, Customer, Deal, Followup } from '../types';
 import {
   logCall as apiLogCall,
   saveLead as apiSaveLead,
@@ -11,6 +11,7 @@ import {
   getLeads as apiGetLeads,
   getCustomers as apiGetCustomers,
   transitionFollowupToKyc,
+  unblockOtherRecord,
 } from '../services/ghlApiService';
 import { storageService } from '../services/storageService';
 import { apiClient } from '../services/apiClient';
@@ -582,6 +583,10 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
       if (!matchedLead && lastCallRecord.contactName) {
         matchedLead = combinedLeads.find((l: Lead) => (l.name || '').trim().toLowerCase() === lastCallRecord.contactName.trim().toLowerCase());
+      }
+      if (!matchedLead && lastCallRecord.sourceFollowupId?.startsWith('flw-lead-')) {
+        const synthLeadId = lastCallRecord.sourceFollowupId.replace('flw-lead-', '');
+        matchedLead = combinedLeads.find((l: Lead) => String(l.id) === synthLeadId);
       }
 
       if (!matchedLead && leadId) {
@@ -1204,19 +1209,41 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         }
       }
 
-      // 10. Other -> If originated from a follow-up, mark the source follow-up as completed
+      // 10. Other -> Move contact to Other module, remove from Follow-ups
       else if (disposition === 'Other') {
+        if (matchedLead) {
+          matchedLead.status = 'Other';
+          matchedLead.notes = `${matchedLead.notes ? matchedLead.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] Other: ${reason || notes || ''}`;
+          if (!matchedLead.customFields) matchedLead.customFields = {};
+          matchedLead.customFields.dispositionReason = reason || notes || 'Other';
+          await apiSaveLead(matchedLead).catch(() => {});
+          storageService.saveLead(matchedLead);
+          setLeads(prev => prev.map(l => l.id === matchedLead!.id ? matchedLead! : l));
+        }
+
         if (existingFollowup) {
+          const completedFollowup: Followup = {
+            ...existingFollowup,
+            status: 'Completed',
+            notes: `${existingFollowup.notes ? existingFollowup.notes + ' | ' : ''}Reclassified to Other: ${reason || notes || ''}`,
+          };
           try {
-            await apiSaveFollowup({
-              ...existingFollowup,
-              status: 'Completed',
-              notes: `${existingFollowup.notes ? existingFollowup.notes + ' | ' : ''}Reclassified to Other: ${reason || notes || ''}`,
-            });
+            await apiSaveFollowup(completedFollowup);
           } catch (err) {
             console.error('[CallContext] Failed to mark source follow-up completed on Other:', err);
           }
+          storageService.saveFollowup(completedFollowup);
+        } else if (lastCallRecord.sourceFollowupId) {
+          try {
+            await apiSaveFollowup({
+              id: lastCallRecord.sourceFollowupId,
+              companyId: tenant.id,
+              status: 'Completed',
+              notes: `Reclassified to Other: ${reason || notes || ''}`,
+            } as any);
+          } catch {}
         }
+
         if (matchedDeal) {
           matchedDeal.notes = `${matchedDeal.notes ? matchedDeal.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] Other: ${reason || notes || ''}`;
           await apiSaveDeal(matchedDeal).catch(() => {});
@@ -1227,6 +1254,14 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
           await apiSaveCustomer(matchedCustomer).catch(() => {});
           storageService.saveCustomer(matchedCustomer);
         }
+
+        // Clear any stale local dismissal/moved flags so contact shows in Other page
+        unblockOtherRecord({
+          phone: lastCallRecord.contactPhone,
+          leadId: matchedLead?.id || lastCallRecord.matchedRecord?.id,
+          customerId: matchedCustomer?.id,
+          callId: lastCallRecord.id,
+        });
       }
     }
 
