@@ -38,6 +38,27 @@ import { User as UserModel } from '../../types';
 import './FollowupsPage.css';
 import '../Leads/LeadsPage.css';
 
+export const isFollowupReturned = (f: Followup, matchingLead?: Lead | null): boolean => {
+  if (f.isReturnedFromHandover) return true;
+  if (f.returnedFromCoveringUserName) return true;
+  const cf = f.customFields;
+  if (cf?.returnedFromHandover === 'true' || cf?.returnedFromHandover === true || Boolean(cf?.returnedFromCoveringUserName)) return true;
+  if (matchingLead) {
+    if (matchingLead.isReturnedFromHandover) return true;
+    const lcf = matchingLead.customFields;
+    if (lcf?.returnedFromHandover === 'true' || lcf?.returnedFromHandover === true || Boolean(lcf?.returnedFromCoveringUserName)) return true;
+  }
+  return false;
+};
+
+export const getFollowupReturnedCoveringName = (f: Followup, matchingLead?: Lead | null): string => {
+  return f.returnedFromCoveringUserName || f.customFields?.returnedFromCoveringUserName || matchingLead?.returnedFromCoveringUserName || matchingLead?.customFields?.returnedFromCoveringUserName || 'Covering Agent';
+};
+
+export const getFollowupReturnedDate = (f: Followup, matchingLead?: Lead | null): string | undefined => {
+  return f.returnedAt || f.customFields?.returnedAt || matchingLead?.returnedAt || matchingLead?.customFields?.returnedAt;
+};
+
 export const FollowupsPage: React.FC = () => {
   const { tenant, user } = useAuth();
   const { initiateCall } = useCall();
@@ -50,11 +71,17 @@ export const FollowupsPage: React.FC = () => {
   const [handoverFilter, setHandoverFilter] = useState('Mine');
 
   const handoverOptions = useMemo(() => {
-    const names = Array.from(new Set(followups.map(f => f.handedOverFromName).filter(Boolean)));
-    if (names.length === 0) return [];
+    const coveringNames = Array.from(new Set(followups.map(f => f.handedOverFromName).filter(Boolean)));
+    const returnedItems = followups.filter(f => isFollowupReturned(f));
+    const returnedNames = Array.from(new Set(returnedItems.map(f => getFollowupReturnedCoveringName(f)).filter(Boolean)));
+
+    if (coveringNames.length === 0 && returnedNames.length === 0) return [];
     return [
-      { value: 'Mine', label: 'Mine' },
-      ...names.map(name => ({ value: `Handover_${name}`, label: `Handed over from ${name}` }))
+      { value: 'All', label: 'All Follow-ups' },
+      { value: 'Mine', label: 'Mine (Regular)' },
+      ...coveringNames.map(name => ({ value: `Handover_${name}`, label: `Covering for ${name}` })),
+      ...(returnedNames.length > 0 ? [{ value: 'Returned', label: 'Returned from Handover' }] : []),
+      ...returnedNames.map(name => ({ value: `Returned_${name}`, label: `Returned from ${name}` }))
     ];
   }, [followups]);
   const [rescheduleItem, setRescheduleItem] = useState<Followup | null>(null);
@@ -183,6 +210,13 @@ export const FollowupsPage: React.FC = () => {
               notes: l.notes || 'Lead marked Follow-up Required',
               assignedAgentId: String(l.assignedAgentId || ''),
               assignedAgentName: l.assignedAgentName || '',
+              handoverId: l.handoverId,
+              handedOverFromName: l.handedOverFromName,
+              handoverPlannedEnd: l.handoverPlannedEnd,
+              isReturnedFromHandover: l.isReturnedFromHandover,
+              returnedFromCoveringUserName: l.returnedFromCoveringUserName,
+              returnedAt: l.returnedAt,
+              customFields: l.customFields,
             });
           }
         }
@@ -927,8 +961,13 @@ export const FollowupsPage: React.FC = () => {
   const activePendingFollowups = processedFollowups.filter(f => {
     if (f.status !== 'Pending') return false;
     if (handoverOptions.length > 0) {
-      if (handoverFilter === 'Mine' && f.handoverId) return false;
-      if (handoverFilter !== 'Mine' && handoverFilter !== 'All') {
+      if (handoverFilter === 'Mine' && (f.handoverId || isFollowupReturned(f))) return false;
+      if (handoverFilter === 'Returned') {
+        if (!isFollowupReturned(f)) return false;
+      } else if (handoverFilter.startsWith('Returned_')) {
+        const name = handoverFilter.replace('Returned_', '');
+        if (!isFollowupReturned(f) || getFollowupReturnedCoveringName(f) !== name) return false;
+      } else if (handoverFilter.startsWith('Handover_')) {
         const name = handoverFilter.replace('Handover_', '');
         if (f.handedOverFromName !== name) return false;
       }
@@ -938,8 +977,13 @@ export const FollowupsPage: React.FC = () => {
 
   const filteredFollowups = processedFollowups.filter(f => {
     if (handoverOptions.length > 0) {
-      if (handoverFilter === 'Mine' && f.handoverId) return false;
-      if (handoverFilter !== 'Mine' && handoverFilter !== 'All') {
+      if (handoverFilter === 'Mine' && (f.handoverId || isFollowupReturned(f))) return false;
+      if (handoverFilter === 'Returned') {
+        if (!isFollowupReturned(f)) return false;
+      } else if (handoverFilter.startsWith('Returned_')) {
+        const name = handoverFilter.replace('Returned_', '');
+        if (!isFollowupReturned(f) || getFollowupReturnedCoveringName(f) !== name) return false;
+      } else if (handoverFilter.startsWith('Handover_')) {
         const name = handoverFilter.replace('Handover_', '');
         if (f.handedOverFromName !== name) return false;
       }
@@ -1192,7 +1236,7 @@ export const FollowupsPage: React.FC = () => {
                 onClick={canOpenDrawer ? () => setDrawerFollowup(f) : undefined}
                 style={canOpenDrawer ? { cursor: 'pointer' } : undefined}
               >
-                {f.handedOverFromName && (
+                {f.handedOverFromName ? (
                   <div style={{
                     fontSize: 10,
                     fontWeight: 600,
@@ -1207,7 +1251,25 @@ export const FollowupsPage: React.FC = () => {
                   }} title={`Handed over from ${f.handedOverFromName}`}>
                     Covering for {f.handedOverFromName}
                   </div>
-                )}
+                ) : isFollowupReturned(f) ? (
+                  <div style={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    padding: '2px 7px',
+                    borderRadius: 4,
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    color: '#34d399',
+                    border: '1px solid rgba(16, 185, 129, 0.35)',
+                    position: 'absolute',
+                    top: 12,
+                    right: 12,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 3,
+                  }} title={`Returned from coverage by ${getFollowupReturnedCoveringName(f)}${getFollowupReturnedDate(f) ? ` on ${new Date(getFollowupReturnedDate(f)!).toLocaleDateString()}` : ''}`}>
+                    ↩ Returned from {getFollowupReturnedCoveringName(f)}
+                  </div>
+                ) : null}
                 <div className="followup-item-left">
                   <div>
                     <div
@@ -1235,6 +1297,26 @@ export const FollowupsPage: React.FC = () => {
                           title={`Handed over from ${f.handedOverFromName}`}
                         >
                           Covering for {f.handedOverFromName}
+                        </span>
+                      )}
+
+                      {!f.handedOverFromName && isFollowupReturned(f) && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 600,
+                            padding: '2px 7px',
+                            borderRadius: 6,
+                            background: 'rgba(16, 185, 129, 0.15)',
+                            color: '#34d399',
+                            border: '1px solid rgba(16, 185, 129, 0.35)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                          }}
+                          title={`Returned from coverage by ${getFollowupReturnedCoveringName(f)}${getFollowupReturnedDate(f) ? ` on ${new Date(getFollowupReturnedDate(f)!).toLocaleDateString()}` : ''}`}
+                        >
+                          ↩ Returned from {getFollowupReturnedCoveringName(f)}
                         </span>
                       )}
 
@@ -1573,6 +1655,29 @@ export const FollowupsPage: React.FC = () => {
                           {drawerFollowupRole}
                         </span>
                       )}
+                    </div>
+                  </div>
+                )}
+
+                {isFollowupReturned(drawerFollowup, matchingLead) && (
+                  <div style={{
+                    margin: '10px 0',
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    background: 'rgba(16, 185, 129, 0.12)',
+                    border: '1px solid rgba(16, 185, 129, 0.35)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                  }}>
+                    <span style={{ fontSize: 16 }}>↩️</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#34d399' }}>
+                        Returned from Coverage by {getFollowupReturnedCoveringName(drawerFollowup, matchingLead)}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                        This contact was covered while you were away and handed back to you{getFollowupReturnedDate(drawerFollowup, matchingLead) ? ` on ${new Date(getFollowupReturnedDate(drawerFollowup, matchingLead)!).toLocaleDateString()}` : ''}. Review recent call logs and updated notes below.
+                      </div>
                     </div>
                   </div>
                 )}

@@ -164,6 +164,9 @@ export interface Lead {
   handedOverFromName?: string;
   handoverPlannedEnd?: string;
   originalOwnerId?: number;
+  isReturnedFromHandover?: boolean;
+  returnedFromCoveringUserName?: string;
+  returnedAt?: string;
   updatedAt?: string;
   normalizedEmail?: string;
 }
@@ -200,6 +203,9 @@ export interface Customer {
   handedOverFromName?: string;
   handoverPlannedEnd?: string;
   originalOwnerId?: number;
+  isReturnedFromHandover?: boolean;
+  returnedFromCoveringUserName?: string;
+  returnedAt?: string;
   /** Set only for virtual Customer 360 entries built from an 'Interested' lead (not a row in the Customers table). */
   isLeadRecord?: boolean;
   sourceLeadId?: string;
@@ -251,6 +257,9 @@ export interface Deal {
   handedOverFromName?: string;
   handoverPlannedEnd?: string;
   originalOwnerId?: number;
+  isReturnedFromHandover?: boolean;
+  returnedFromCoveringUserName?: string;
+  returnedAt?: string;
 }
 
 export interface DealActivity {
@@ -343,6 +352,10 @@ export interface Followup {
   handedOverFromName?: string;
   handoverPlannedEnd?: string;
   originalOwnerId?: number;
+  isReturnedFromHandover?: boolean;
+  returnedFromCoveringUserName?: string;
+  returnedAt?: string;
+  customFields?: Record<string, any>;
 }
 
 export interface PropertyProject {

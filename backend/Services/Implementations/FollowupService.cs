@@ -149,7 +149,25 @@ public class FollowupService : IFollowupService
             .Take(pageSize)
             .ToListAsync(ct);
 
-        var items = entities.Select(MapToDto).ToList();
+        var fIds = entities.Select(f => f.Id).ToList();
+        var returnedFItems = await _context.WorkHandoverItems
+            .AsNoTracking()
+            .Include(whi => whi.Handover).ThenInclude(wh => wh!.CoveringUser)
+            .Where(whi => whi.EntityType == "Followup" && fIds.Contains(whi.EntityId) && whi.ReturnOutcome == "returned")
+            .OrderByDescending(whi => whi.ReturnedAt)
+            .ToListAsync(ct);
+        var returnedByF = returnedFItems.GroupBy(i => i.EntityId).ToDictionary(g => g.Key, g => g.First());
+
+        var items = entities.Select(f => {
+            var dto = MapToDto(f);
+            if (returnedByF.TryGetValue(f.Id, out var retItem))
+            {
+                dto.IsReturnedFromHandover = true;
+                dto.ReturnedFromCoveringUserName = retItem.Handover?.CoveringUser?.Name;
+                dto.ReturnedAt = retItem.ReturnedAt;
+            }
+            return dto;
+        }).ToList();
 
         return ApiResponse<PagedResult<FollowupResponseDto>>.SuccessResult(
             PagedResult<FollowupResponseDto>.Create(items, totalCount, page, pageSize),

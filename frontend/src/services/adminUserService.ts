@@ -85,8 +85,6 @@ export const adminUserService = {
     try {
       localStorage.setItem('nexus_dev_users', JSON.stringify(users));
       localStorage.setItem('nexus_users', JSON.stringify(users));
-      window.dispatchEvent(new Event('nexus_storage_updated'));
-      window.dispatchEvent(new Event('nexus_admin_updated'));
     } catch {}
     return users;
   },
@@ -116,6 +114,7 @@ export const adminUserService = {
     };
     const res = await apiClient.post<ApiResponse<AdminUserDto>>(`/AdminUsers?companyId=${companyIdNum}`, payload);
     if (!res.success) throw new Error(res.message);
+    window.dispatchEvent(new Event('nexus_admin_updated'));
     return mapDtoToUser(res.data);
   },
 
@@ -136,6 +135,7 @@ export const adminUserService = {
     }
     const res = await apiClient.put<ApiResponse<AdminUserDto>>(`/AdminUsers/${id}`, payload);
     if (!res.success) throw new Error(res.message);
+    window.dispatchEvent(new Event('nexus_admin_updated'));
     return mapDtoToUser(res.data);
   },
 
@@ -150,11 +150,13 @@ export const adminUserService = {
       newRoleId: roleId
     });
     if (!res.success) throw new Error(res.message);
+    window.dispatchEvent(new Event('nexus_admin_updated'));
     return mapDtoToUser(res.data);
   },
 
   deleteUser: async (id: string, companyId: string): Promise<void> => {
     const res = await apiClient.delete<ApiResponse<boolean>>(`/AdminUsers/${id}?companyId=${companyId}`);
     if (!res.success) throw new Error(res.message);
+    window.dispatchEvent(new Event('nexus_admin_updated'));
   }
 };

@@ -200,7 +200,18 @@ public class LeadService : ILeadService
             .GroupBy(wh => wh.OriginalUserId)
             .ToDictionary(g => g.Key, g => g.First());
 
-        var items = entities.Select(lead => MapToDtoEnriched(lead, historiesByLead, handoversByOriginalUser)).ToList();
+        var returnedLeadItems = await _context.WorkHandoverItems
+            .AsNoTracking()
+            .Include(whi => whi.Handover).ThenInclude(wh => wh!.CoveringUser)
+            .Where(whi => whi.EntityType == "Lead" && leadIds.Contains(whi.EntityId) && whi.ReturnOutcome == "returned")
+            .OrderByDescending(whi => whi.ReturnedAt)
+            .ToListAsync(ct);
+
+        var returnedByLead = returnedLeadItems
+            .GroupBy(i => i.EntityId)
+            .ToDictionary(g => g.Key, g => g.First());
+
+        var items = entities.Select(lead => MapToDtoEnriched(lead, historiesByLead, handoversByOriginalUser, returnedByLead)).ToList();
 
         return ApiResponse<PagedResult<LeadResponseDto>>.SuccessResult(
             PagedResult<LeadResponseDto>.Create(items, totalCount, page, pageSize),
@@ -1090,6 +1101,14 @@ public class LeadService : ILeadService
         bool isCovered = lead.HandoverId.HasValue && lead.Handover?.CoveringUser != null;
         string? coveredByName = isCovered ? lead.Handover?.CoveringUser?.Name : null;
 
+        bool isReturned = customFields.TryGetValue("returnedFromHandover", out var retVal) && retVal == "true";
+        string? returnedCoveringName = customFields.TryGetValue("returnedFromCoveringUserName", out var rcn) ? rcn : null;
+        DateTime? returnedAt = null;
+        if (customFields.TryGetValue("returnedAt", out var retAtStr) && DateTime.TryParse(retAtStr, out var parsedRetAt))
+        {
+            returnedAt = parsedRetAt;
+        }
+
         return new LeadResponseDto
         {
             Id = lead.Id,
@@ -1124,16 +1143,31 @@ public class LeadService : ILeadService
             HandoverId = lead.HandoverId,
             HandedOverFromName = lead.OriginalOwner?.Name,
             HandoverPlannedEnd = lead.Handover?.PlannedEndAt,
-            OriginalOwnerId = lead.OriginalOwnerId
+            OriginalOwnerId = lead.OriginalOwnerId,
+            IsReturnedFromHandover = isReturned,
+            ReturnedFromCoveringUserName = returnedCoveringName,
+            ReturnedAt = returnedAt
         };
     }
 
     private static LeadResponseDto MapToDtoEnriched(
         Lead lead,
         Dictionary<int, List<LeadAssignmentHistory>> historiesByLead,
-        Dictionary<int, WorkHandover> handoversByOriginalUser)
+        Dictionary<int, WorkHandover> handoversByOriginalUser,
+        Dictionary<int, WorkHandoverItem>? returnedByLead = null)
     {
         var dto = MapToDto(lead);
+        if (returnedByLead != null && returnedByLead.TryGetValue(lead.Id, out var retItem))
+        {
+            dto.IsReturnedFromHandover = true;
+            dto.ReturnedFromCoveringUserName = retItem.Handover?.CoveringUser?.Name ?? dto.ReturnedFromCoveringUserName;
+            dto.ReturnedAt = retItem.ReturnedAt ?? dto.ReturnedAt;
+            dto.CustomFields["returnedFromHandover"] = "true";
+            if (!string.IsNullOrEmpty(dto.ReturnedFromCoveringUserName))
+                dto.CustomFields["returnedFromCoveringUserName"] = dto.ReturnedFromCoveringUserName;
+            if (dto.ReturnedAt.HasValue)
+                dto.CustomFields["returnedAt"] = dto.ReturnedAt.Value.ToString("o");
+        }
         var leadHists = historiesByLead.TryGetValue(lead.Id, out var lh) ? lh : new List<LeadAssignmentHistory>();
 
         if (string.IsNullOrWhiteSpace(dto.AssignedSalesExecutiveName))

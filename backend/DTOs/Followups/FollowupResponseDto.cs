@@ -25,4 +25,8 @@ public class FollowupResponseDto
     public string? HandedOverFromName { get; set; }
     public DateTime? HandoverPlannedEnd { get; set; }
     public int? OriginalOwnerId { get; set; }
+
+    public bool IsReturnedFromHandover { get; set; }
+    public string? ReturnedFromCoveringUserName { get; set; }
+    public DateTime? ReturnedAt { get; set; }
 }

@@ -80,9 +80,27 @@ const leadToCustomer = (l: Lead): Customer => {
     handoverId: l.handoverId,
     handedOverFromName: l.handedOverFromName,
     handoverPlannedEnd: l.handoverPlannedEnd,
+    isReturnedFromHandover: l.isReturnedFromHandover,
+    returnedFromCoveringUserName: l.returnedFromCoveringUserName,
+    returnedAt: l.returnedAt,
     isLeadRecord: true,
     sourceLeadId: l.id,
   };
+};
+
+export const isCustomerReturned = (c: Customer): boolean => {
+  if (c.isReturnedFromHandover) return true;
+  if (c.returnedFromCoveringUserName) return true;
+  const cf = c.customFields;
+  return cf?.returnedFromHandover === 'true' || cf?.returnedFromHandover === true || Boolean(cf?.returnedFromCoveringUserName);
+};
+
+export const getReturnedCustomerCoveringName = (c: Customer): string => {
+  return c.returnedFromCoveringUserName || c.customFields?.returnedFromCoveringUserName || 'Covering Agent';
+};
+
+export const getReturnedCustomerDate = (c: Customer): string | undefined => {
+  return c.returnedAt || c.customFields?.returnedAt;
 };
 
 interface AutoRecommendation {
@@ -167,11 +185,17 @@ export const CustomersPage: React.FC = () => {
   const [handoverFilter, setHandoverFilter] = useState('Mine');
 
   const handoverOptions = useMemo(() => {
-    const names = Array.from(new Set(scopedCustomers.map(c => c.handedOverFromName).filter(Boolean)));
-    if (names.length === 0) return [];
+    const coveringNames = Array.from(new Set(scopedCustomers.map(c => c.handedOverFromName).filter(Boolean)));
+    const returnedItems = scopedCustomers.filter(c => isCustomerReturned(c));
+    const returnedNames = Array.from(new Set(returnedItems.map(c => getReturnedCustomerCoveringName(c)).filter(Boolean)));
+
+    if (coveringNames.length === 0 && returnedNames.length === 0) return [];
     return [
-      { value: 'Mine', label: 'Mine' },
-      ...names.map(name => ({ value: `Handover_${name}`, label: `Handed over from ${name}` }))
+      { value: 'All', label: 'All Customers' },
+      { value: 'Mine', label: 'Mine (Regular)' },
+      ...coveringNames.map(name => ({ value: `Handover_${name}`, label: `Covering for ${name}` })),
+      ...(returnedNames.length > 0 ? [{ value: 'Returned', label: 'Returned from Handover' }] : []),
+      ...returnedNames.map(name => ({ value: `Returned_${name}`, label: `Returned from ${name}` }))
     ];
   }, [scopedCustomers]);
 
@@ -227,7 +251,7 @@ export const CustomersPage: React.FC = () => {
       setLeads(cLeads);
       if (cIrms && cIrms.length > 0) {
         setIrms(cIrms);
-        storageService.set('company_irms', cIrms);
+        storageService.setIrms(cIrms);
       }
 
       const firstVisible = isExec
@@ -276,8 +300,13 @@ export const CustomersPage: React.FC = () => {
       if (assignmentFilter === 'Unassigned' && (c.assignedIrmName || c.assignedIrmId)) return false;
     }
     if (handoverOptions.length > 0) {
-      if (handoverFilter === 'Mine' && c.handoverId) return false;
-      if (handoverFilter !== 'Mine' && handoverFilter !== 'All') {
+      if (handoverFilter === 'Mine' && (c.handoverId || isCustomerReturned(c))) return false;
+      if (handoverFilter === 'Returned') {
+        if (!isCustomerReturned(c)) return false;
+      } else if (handoverFilter.startsWith('Returned_')) {
+        const name = handoverFilter.replace('Returned_', '');
+        if (!isCustomerReturned(c) || getReturnedCustomerCoveringName(c) !== name) return false;
+      } else if (handoverFilter.startsWith('Handover_')) {
         const name = handoverFilter.replace('Handover_', '');
         if (c.handedOverFromName !== name) return false;
       }
@@ -458,7 +487,7 @@ export const CustomersPage: React.FC = () => {
       const freshIrms = await getCompanyIrms(tenant?.id);
       if (freshIrms && freshIrms.length > 0) {
         setIrms(freshIrms);
-        storageService.set('company_irms', freshIrms);
+        storageService.setIrms(freshIrms);
         currentIrms = freshIrms;
       }
     } catch (e) {
@@ -1070,6 +1099,25 @@ export const CustomersPage: React.FC = () => {
                             Covering for {c.handedOverFromName}
                           </span>
                         )}
+                        {!c.handedOverFromName && isCustomerReturned(c) && (
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              padding: '2px 7px',
+                              borderRadius: 6,
+                              background: 'rgba(16, 185, 129, 0.15)',
+                              color: '#34d399',
+                              border: '1px solid rgba(16, 185, 129, 0.35)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3,
+                            }}
+                            title={`Returned from coverage by ${getReturnedCustomerCoveringName(c)}${getReturnedCustomerDate(c) ? ` on ${new Date(getReturnedCustomerDate(c)!).toLocaleDateString()}` : ''}`}
+                          >
+                            ↩ Returned from {getReturnedCustomerCoveringName(c)}
+                          </span>
+                        )}
                       </div>
                       <StatusChip status={c.status} size="sm" />
                     </div>
@@ -1123,6 +1171,41 @@ export const CustomersPage: React.FC = () => {
                 <div className="customer-cockpit-name-row">
                   <h2 className="customer-cockpit-name">{selectedCustomer.name}</h2>
                   <StatusChip status={selectedCustomer.status} />
+                  {selectedCustomer.handedOverFromName && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        padding: '3px 8px',
+                        borderRadius: 6,
+                        background: 'rgba(99, 102, 241, 0.15)',
+                        color: '#818cf8',
+                        border: '1px solid rgba(99, 102, 241, 0.3)',
+                      }}
+                      title={`Handed over from ${selectedCustomer.handedOverFromName}`}
+                    >
+                      Covering for {selectedCustomer.handedOverFromName}
+                    </span>
+                  )}
+                  {!selectedCustomer.handedOverFromName && isCustomerReturned(selectedCustomer) && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        padding: '3px 8px',
+                        borderRadius: 6,
+                        background: 'rgba(16, 185, 129, 0.15)',
+                        color: '#34d399',
+                        border: '1px solid rgba(16, 185, 129, 0.35)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 3,
+                      }}
+                      title={`Returned from coverage by ${getReturnedCustomerCoveringName(selectedCustomer)}${getReturnedCustomerDate(selectedCustomer) ? ` on ${new Date(getReturnedCustomerDate(selectedCustomer)!).toLocaleDateString()}` : ''}`}
+                    >
+                      ↩ Returned from {getReturnedCustomerCoveringName(selectedCustomer)}
+                    </span>
+                  )}
                 </div>
                 <div className="customer-cockpit-meta-row">
                   <span>📞 {selectedCustomer.phone}</span>
@@ -1169,6 +1252,28 @@ export const CustomersPage: React.FC = () => {
             <div className="customer-tab-content">
               {activeTab === 'overview' && (
                 <div className="customer-overview-stack">
+                  {isCustomerReturned(selectedCustomer) && (
+                    <div style={{
+                      margin: '0 0 16px 0',
+                      padding: '12px 16px',
+                      borderRadius: 8,
+                      background: 'rgba(16, 185, 129, 0.12)',
+                      border: '1px solid rgba(16, 185, 129, 0.35)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                    }}>
+                      <span style={{ fontSize: 18 }}>↩️</span>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#34d399' }}>
+                          Returned from Coverage by {getReturnedCustomerCoveringName(selectedCustomer)}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                          This account was covered while you were away and handed back to you{getReturnedCustomerDate(selectedCustomer) ? ` on ${new Date(getReturnedCustomerDate(selectedCustomer)!).toLocaleDateString()}` : ''}. Review recent call interactions, notes, and activity timeline below.
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div className="card customer-profile-card">
                     <h4 className="customer-section-heading">
                       Account & Commercial Profile

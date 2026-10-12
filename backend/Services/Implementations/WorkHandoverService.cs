@@ -575,6 +575,14 @@ public class WorkHandoverService : IWorkHandoverService
                             lead.HandoverId = null;
                             lead.OriginalOwnerId = null;
                             lead.UpdatedAt = DateTime.UtcNow;
+
+                            var cf = DeserializeCustomFields(lead.CustomFieldsJson);
+                            cf["returnedFromHandover"] = "true";
+                            cf["returnedFromCoveringUserName"] = handover.CoveringUser?.Name ?? "Covering Agent";
+                            cf["returnedFromCoveringUserId"] = handover.CoveringUserId.ToString();
+                            cf["returnedAt"] = DateTime.UtcNow.ToString("o");
+                            lead.CustomFieldsJson = JsonSerializer.Serialize(cf);
+
                             item.ReturnedAt = DateTime.UtcNow;
                             item.ReturnOutcome = "returned";
                             returnedCount++;
@@ -604,6 +612,14 @@ public class WorkHandoverService : IWorkHandoverService
                             customer.HandoverId = null;
                             customer.OriginalOwnerId = null;
                             customer.UpdatedAt = DateTime.UtcNow;
+
+                            var cf = DeserializeCustomFields(customer.CustomFieldsJson);
+                            cf["returnedFromHandover"] = "true";
+                            cf["returnedFromCoveringUserName"] = handover.CoveringUser?.Name ?? "Covering Agent";
+                            cf["returnedFromCoveringUserId"] = handover.CoveringUserId.ToString();
+                            cf["returnedAt"] = DateTime.UtcNow.ToString("o");
+                            customer.CustomFieldsJson = JsonSerializer.Serialize(cf);
+
                             item.ReturnedAt = DateTime.UtcNow;
                             item.ReturnOutcome = "returned";
                             returnedCount++;
@@ -969,6 +985,14 @@ public class WorkHandoverService : IWorkHandoverService
                         lead.HandoverId = null;
                         lead.OriginalOwnerId = null;
                         lead.UpdatedAt = DateTime.UtcNow;
+
+                        var cf = DeserializeCustomFields(lead.CustomFieldsJson);
+                        cf["returnedFromHandover"] = "true";
+                        cf["returnedFromCoveringUserName"] = handover.CoveringUser?.Name ?? "Covering Agent";
+                        cf["returnedFromCoveringUserId"] = handover.CoveringUserId.ToString();
+                        cf["returnedAt"] = DateTime.UtcNow.ToString("o");
+                        lead.CustomFieldsJson = JsonSerializer.Serialize(cf);
+
                         item.ReturnedAt = DateTime.UtcNow;
                         item.ReturnOutcome = "returned";
                         returnedCount++;
@@ -983,6 +1007,14 @@ public class WorkHandoverService : IWorkHandoverService
                         cust.HandoverId = null;
                         cust.OriginalOwnerId = null;
                         cust.UpdatedAt = DateTime.UtcNow;
+
+                        var cf = DeserializeCustomFields(cust.CustomFieldsJson);
+                        cf["returnedFromHandover"] = "true";
+                        cf["returnedFromCoveringUserName"] = handover.CoveringUser?.Name ?? "Covering Agent";
+                        cf["returnedFromCoveringUserId"] = handover.CoveringUserId.ToString();
+                        cf["returnedAt"] = DateTime.UtcNow.ToString("o");
+                        cust.CustomFieldsJson = JsonSerializer.Serialize(cf);
+
                         item.ReturnedAt = DateTime.UtcNow;
                         item.ReturnOutcome = "returned";
                         returnedCount++;

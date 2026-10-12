@@ -60,6 +60,20 @@ export const normalizeEmail = (email?: string): string | null => {
   return clean.length > 0 ? clean : null;
 };
 
+export const isLeadReturned = (l: Lead): boolean => {
+  if (l.isReturnedFromHandover) return true;
+  const cf = l.customFields;
+  return cf?.returnedFromHandover === 'true' || cf?.returnedFromHandover === true || Boolean(cf?.returnedFromCoveringUserName);
+};
+
+export const getReturnedCoveringName = (l: Lead): string => {
+  return l.returnedFromCoveringUserName || l.customFields?.returnedFromCoveringUserName || 'Covering Agent';
+};
+
+export const getReturnedDate = (l: Lead): string | undefined => {
+  return l.returnedAt || l.customFields?.returnedAt;
+};
+
 const CAPACITY_OPTIONS = [
   'Contact for Co-Invest Details',
   '₹1 Cr – ₹5 Cr',
@@ -251,11 +265,18 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
   const [dateTo, setDateTo] = useState<string>('');
 
   const handoverOptions = useMemo(() => {
-    const names = Array.from(new Set(scopedLeads.map(l => l.handedOverFromName).filter(Boolean)));
-    if (names.length === 0) return [];
+    const coveringNames = Array.from(new Set(scopedLeads.map(l => l.handedOverFromName).filter(Boolean)));
+    const returnedLeads = scopedLeads.filter(l => isLeadReturned(l));
+    const returnedNames = Array.from(new Set(returnedLeads.map(l => getReturnedCoveringName(l)).filter(Boolean)));
+
+    if (coveringNames.length === 0 && returnedNames.length === 0) return [];
+
     return [
-      { value: 'Mine', label: 'Mine' },
-      ...names.map(name => ({ value: `Handover_${name}`, label: `Handed over from ${name}` }))
+      { value: 'All', label: 'All Leads' },
+      { value: 'Mine', label: 'Mine (Regular)' },
+      ...coveringNames.map(name => ({ value: `Handover_${name}`, label: `Covering for ${name}` })),
+      ...(returnedNames.length > 0 ? [{ value: 'Returned', label: 'Returned from Handover' }] : []),
+      ...returnedNames.map(name => ({ value: `Returned_${name}`, label: `Returned from ${name}` }))
     ];
   }, [scopedLeads]);
 
@@ -581,8 +602,13 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
     }
 
     if (handoverOptions.length > 0) {
-      if (handoverFilter === 'Mine' && lead.handoverId) return false;
-      if (handoverFilter !== 'Mine' && handoverFilter !== 'All') {
+      if (handoverFilter === 'Mine' && (lead.handoverId || isLeadReturned(lead))) return false;
+      if (handoverFilter === 'Returned') {
+        if (!isLeadReturned(lead)) return false;
+      } else if (handoverFilter.startsWith('Returned_')) {
+        const name = handoverFilter.replace('Returned_', '');
+        if (!isLeadReturned(lead) || getReturnedCoveringName(lead) !== name) return false;
+      } else if (handoverFilter.startsWith('Handover_')) {
         const name = handoverFilter.replace('Handover_', '');
         if (lead.handedOverFromName !== name) return false;
       }
@@ -1469,6 +1495,25 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
                 Covering for {l.handedOverFromName}
               </span>
             )}
+            {!l.handedOverFromName && isLeadReturned(l) && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  padding: '2px 7px',
+                  borderRadius: 6,
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  color: '#34d399',
+                  border: '1px solid rgba(16, 185, 129, 0.35)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3,
+                }}
+                title={`Returned from coverage by ${getReturnedCoveringName(l)}${getReturnedDate(l) ? ` on ${new Date(getReturnedDate(l)!).toLocaleDateString()}` : ''}`}
+              >
+                ↩ Returned from {getReturnedCoveringName(l)}
+              </span>
+            )}
           </div>
           <div className="lead-name-sub">{l.phone}</div>
         </div>
@@ -1742,6 +1787,29 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
                     Assigned : <strong>{selectedLead.assignedAgentName}</strong>
                   </div>
                 </div>
+
+                {isLeadReturned(selectedLead) && (
+                  <div style={{
+                    margin: '10px 0',
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    background: 'rgba(16, 185, 129, 0.12)',
+                    border: '1px solid rgba(16, 185, 129, 0.35)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                  }}>
+                    <span style={{ fontSize: 16 }}>↩️</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#34d399' }}>
+                        Returned from Coverage by {getReturnedCoveringName(selectedLead)}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                        This lead was covered while you were away and handed back to you{getReturnedDate(selectedLead) ? ` on ${new Date(getReturnedDate(selectedLead)!).toLocaleDateString()}` : ''}. Review recent call logs and updated notes below.
+                      </div>
+                    </div>
+                  </div>
+                )}
 
                 {/* ── Contact & Profile Details ── */}
                 <div className="card lead-detail-card">

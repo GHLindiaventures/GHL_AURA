@@ -440,6 +440,9 @@ function mapLead(l: Record<string, any>): Lead {
     handedOverFromName: l.handedOverFromName ?? undefined,
     handoverPlannedEnd: l.handoverPlannedEnd ?? undefined,
     originalOwnerId: l.originalOwnerId ?? undefined,
+    isReturnedFromHandover: l.isReturnedFromHandover ?? (l.customFields?.returnedFromHandover === 'true' || l.customFields?.returnedFromHandover === true) ?? false,
+    returnedFromCoveringUserName: l.returnedFromCoveringUserName ?? l.customFields?.returnedFromCoveringUserName ?? undefined,
+    returnedAt: l.returnedAt ?? l.customFields?.returnedAt ?? undefined,
     nextFollowupDate: l.nextFollowupDate,
     createdAt: l.createdAt ?? new Date().toISOString(),
     notes: l.notes ?? '',
@@ -601,6 +604,14 @@ function mapFollowup(f: Record<string, any>): Followup {
     assignedAgentName: f.assignedAgentName ?? f.assignedToName ?? '',
     assignedRole: f.assignedRole ?? f.assignedToRole ?? f.assignedAgentRole ?? undefined,
     completedAt: f.completedAt,
+    handoverId: f.handoverId ?? undefined,
+    handedOverFromName: f.handedOverFromName ?? undefined,
+    handoverPlannedEnd: f.handoverPlannedEnd ?? undefined,
+    originalOwnerId: f.originalOwnerId ?? undefined,
+    isReturnedFromHandover: f.isReturnedFromHandover ?? (f.customFields?.returnedFromHandover === 'true' || f.customFields?.returnedFromHandover === true) ?? false,
+    returnedFromCoveringUserName: f.returnedFromCoveringUserName ?? f.customFields?.returnedFromCoveringUserName ?? undefined,
+    returnedAt: f.returnedAt ?? f.customFields?.returnedAt ?? undefined,
+    customFields: f.customFields ?? {},
   };
 }
 
@@ -695,6 +706,13 @@ function mapCustomer(c: Record<string, any>): Customer {
     totalValue: c.totalValue ?? 0,
     createdAt: c.createdAt ?? new Date().toISOString(),
     notes: c.notes ?? '',
+    handoverId: c.handoverId ?? undefined,
+    handedOverFromName: c.handedOverFromName ?? undefined,
+    handoverPlannedEnd: c.handoverPlannedEnd ?? undefined,
+    originalOwnerId: c.originalOwnerId ?? undefined,
+    isReturnedFromHandover: c.isReturnedFromHandover ?? (c.customFields?.returnedFromHandover === 'true' || c.customFields?.returnedFromHandover === true) ?? false,
+    returnedFromCoveringUserName: c.returnedFromCoveringUserName ?? c.customFields?.returnedFromCoveringUserName ?? undefined,
+    returnedAt: c.returnedAt ?? c.customFields?.returnedAt ?? undefined,
     customFields: c.customFields ?? {},
   };
 }
@@ -1049,7 +1067,7 @@ export async function getCompanyIrms(companyId?: string): Promise<IrmProfile[]> 
         experienceLevel: 'Experienced' as const,
         performance: 95,
       }));
-      storageService.set('company_irms', mapped);
+      storageService.setIrms(mapped);
       return mapped;
     }
     return storageService.getIrms(companyId);

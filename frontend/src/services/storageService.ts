@@ -83,7 +83,11 @@ class StorageService {
   }
 
   setIrms(irms: IrmProfile[]): void {
-    this.set('company_irms', irms);
+    try {
+      localStorage.setItem('nexus_company_irms', JSON.stringify(irms));
+    } catch (e) {
+      console.error('Failed to save irms to localStorage', e);
+    }
   }
 
   // Tenants
