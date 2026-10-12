@@ -22,7 +22,6 @@ import {
 } from 'lucide-react';
 import { Customer, CallRecord, Followup, Deal, Lead, IrmProfile, CustomFieldDefinition } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { useCall } from '../../context/CallContext';
 import { storageService } from '../../services/storageService';
 import { isMockMode } from '../../config/environment';
 import {
@@ -116,7 +115,6 @@ interface AutoRecommendation {
 
 export const CustomersPage: React.FC = () => {
   const { tenant, user } = useAuth();
-  const { initiateCall } = useCall();
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
@@ -1144,16 +1142,6 @@ export const CustomersPage: React.FC = () => {
                       <span className="customer-list-val">
                         {getCustomerValueDisplay(c)}
                       </span>
-                      <button
-                        className="btn btn-call btn-sm btn-icon customer-list-call-btn"
-                        onClick={e => {
-                          e.stopPropagation();
-                          if (c.isLeadRecord) initiateCall(c.name, c.phone, 'lead', c.sourceLeadId);
-                          else initiateCall(c.name, c.phone, 'customer', c.id);
-                        }}
-                      >
-                        <Phone size={12} />
-                      </button>
                     </div>
                   </div>
                 );
@@ -1212,20 +1200,6 @@ export const CustomersPage: React.FC = () => {
                   {selectedCustomer.email && <span>✉️ {selectedCustomer.email}</span>}
                   <span>📍 {selectedCustomer.location}</span>
                 </div>
-              </div>
-
-              {/* Quick Actions */}
-              <div className="customer-cockpit-actions">
-                <button
-                  className="btn btn-primary customer-call-btn"
-                  onClick={() =>
-                    selectedCustomer.isLeadRecord
-                      ? initiateCall(selectedCustomer.name, selectedCustomer.phone, 'lead', selectedCustomer.sourceLeadId)
-                      : initiateCall(selectedCustomer.name, selectedCustomer.phone, 'customer', selectedCustomer.id)
-                  }
-                >
-                  <Phone size={15} /> Click to Call
-                </button>
               </div>
             </div>
 
@@ -1564,7 +1538,7 @@ export const CustomersPage: React.FC = () => {
                         ? 'No Connect via Agent call records found for this customer.'
                         : callCategoryFilter === 'irm'
                         ? 'No Connect via IRM call records found for this customer.'
-                        : 'No call records logged yet with this customer. Click "Click to Call" to initiate a call.'}
+                        : 'No call records logged yet with this customer.'}
                     </div>
                   ) : (
                     displayedCustomerCalls.map(c => {
