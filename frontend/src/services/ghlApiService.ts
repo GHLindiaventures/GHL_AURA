@@ -1038,7 +1038,7 @@ export async function getCompanyIrms(companyId?: string): Promise<IrmProfile[]> 
   try {
     const res = await apiClient.get<ApiResponse<any[]>>('/sales-executive/consultations/irms');
     if (res && res.success && Array.isArray(res.data) && res.data.length > 0) {
-      return res.data.map(u => ({
+      const mapped: IrmProfile[] = res.data.map(u => ({
         id: String(u.id),
         name: u.name,
         email: u.email || '',
@@ -1049,10 +1049,12 @@ export async function getCompanyIrms(companyId?: string): Promise<IrmProfile[]> 
         experienceLevel: 'Experienced' as const,
         performance: 95,
       }));
+      storageService.set('company_irms', mapped);
+      return mapped;
     }
-    return [];
+    return storageService.getIrms(companyId);
   } catch (err) {
     console.warn('[ghlApiService] getCompanyIrms failed:', err);
-    return [];
+    return storageService.getIrms(companyId);
   }
 }

@@ -25,7 +25,7 @@ interface AdminUserDto {
   isCovered?: boolean;
 }
 
-const mapDtoToUser = (dto: AdminUserDto): User => {
+const mapDtoToUser = (dto: AdminUserDto, companyId?: string): User => {
   let statusStr: 'Active' | 'Invited' | 'Disabled' = 'Active';
   if (dto.status === 1) statusStr = 'Invited';
   if (dto.status === 2) statusStr = 'Disabled';
@@ -51,11 +51,16 @@ const mapDtoToUser = (dto: AdminUserDto): User => {
     roleName = 'Sales Executive';
   }
 
+  const cId = companyId || '1';
+  const cSlug = (cId === '1' || cId === 't-ghl-01' ? 'ghl' : cId) as any;
+
   return {
     id: dto.id.toString(),
     name: dto.name,
     email: dto.email,
     phone: dto.phone || '',
+    companyId: cId,
+    companySlug: cSlug,
     role: {
       id: (dto.roleId || (roleCode === 'company_admin' ? 2 : roleCode === 'irm' ? 4 : roleCode === 'super_admin' ? 1 : 3)).toString(),
       permissions: [],
@@ -76,11 +81,12 @@ export const adminUserService = {
   getUsers: async (companyId: string): Promise<User[]> => {
     const res = await apiClient.get<ApiResponse<AdminUserDto[]>>(`/AdminUsers?companyId=${companyId}`);
     if (!res.success) throw new Error(res.message);
-    const users = (res.data || []).map(mapDtoToUser);
+    const users = (res.data || []).map(dto => mapDtoToUser(dto, companyId));
     try {
       localStorage.setItem('nexus_dev_users', JSON.stringify(users));
       localStorage.setItem('nexus_users', JSON.stringify(users));
       window.dispatchEvent(new Event('nexus_storage_updated'));
+      window.dispatchEvent(new Event('nexus_admin_updated'));
     } catch {}
     return users;
   },

@@ -34,6 +34,7 @@ import {
   getDeals,
   getLeads,
   saveLead as apiSaveLead,
+  getCompanyIrms,
 } from '../../services/ghlApiService';
 import { StatusChip } from '../../components/common/StatusChip';
 import { DocumentUploader } from '../../components/common/DocumentUploader';
@@ -101,7 +102,7 @@ export const CustomersPage: React.FC = () => {
 
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [leads, setLeads] = useState<Lead[]>([]);
-  const irms = useMemo(() => storageService.getIrms(tenant?.id), [tenant?.id]);
+  const [irms, setIrms] = useState<IrmProfile[]>(() => storageService.getIrms(tenant?.id));
 
   // Role-based scoping: Sales Executives see only their own customers.
   // Managers / Admins / Super Admins see the full company customer list (no filter).
@@ -211,18 +212,23 @@ export const CustomersPage: React.FC = () => {
 
   const loadData = async () => {
     try {
-      const [custs, cCalls, cFollowups, cDeals, cLeads] = await Promise.all([
+      const [custs, cCalls, cFollowups, cDeals, cLeads, cIrms] = await Promise.all([
         getCustomers(tenant?.id),
         getCalls(tenant?.id),
         getFollowups(tenant?.id),
         getDeals(tenant?.id),
         getLeads(tenant?.id),
+        getCompanyIrms(tenant?.id).catch(() => storageService.getIrms(tenant?.id)),
       ]);
       setCustomers(custs);
       setCalls(cCalls);
       setFollowups(cFollowups);
       setDeals(cDeals);
       setLeads(cLeads);
+      if (cIrms && cIrms.length > 0) {
+        setIrms(cIrms);
+        storageService.set('company_irms', cIrms);
+      }
 
       const firstVisible = isExec
         ? custs.filter(c =>
@@ -243,9 +249,11 @@ export const CustomersPage: React.FC = () => {
     const handleUpdate = () => loadData();
     window.addEventListener('nexus_storage_updated', handleUpdate);
     window.addEventListener('nexus_handover_updated', handleUpdate);
+    window.addEventListener('nexus_admin_updated', handleUpdate);
     return () => {
       window.removeEventListener('nexus_storage_updated', handleUpdate);
       window.removeEventListener('nexus_handover_updated', handleUpdate);
+      window.removeEventListener('nexus_admin_updated', handleUpdate);
     };
   }, [tenant?.id]);
 
@@ -375,9 +383,9 @@ export const CustomersPage: React.FC = () => {
     return { tier: 'Normal', label: raw || (totalVal > 0 ? formatCurrency(totalVal) : 'Standard Ticket') };
   };
 
-  const runAutoAssignmentAlgorithm = (custs: Customer[]): AutoRecommendation[] => {
+  const runAutoAssignmentAlgorithm = (custs: Customer[], activeIrms = irms): AutoRecommendation[] => {
     const liveCountMap: Record<string, number> = {};
-    irms.forEach((irm: IrmProfile) => {
+    activeIrms.forEach((irm: IrmProfile) => {
       liveCountMap[irm.id] = allCustomers.filter(c => c.assignedIrmName === irm.name || c.assignedIrmId === irm.id).length;
     });
 
@@ -392,8 +400,8 @@ export const CustomersPage: React.FC = () => {
 
     sortedCusts.forEach(c => {
       const { tier, label } = getCustomerCapacityTier(c);
-      const availableIrms = irms.filter((i: IrmProfile) => i.status === 'Available');
-      const pool = availableIrms.length > 0 ? availableIrms : irms;
+      const availableIrms = activeIrms.filter((i: IrmProfile) => i.status === 'Available');
+      const pool = availableIrms.length > 0 ? availableIrms : activeIrms;
 
       let chosenIrm: IrmProfile;
       let reason: string;
@@ -444,17 +452,29 @@ export const CustomersPage: React.FC = () => {
     return recommendations;
   };
 
-  const handleSendAssignment = () => {
+  const handleSendAssignment = async () => {
+    let currentIrms = irms;
+    try {
+      const freshIrms = await getCompanyIrms(tenant?.id);
+      if (freshIrms && freshIrms.length > 0) {
+        setIrms(freshIrms);
+        storageService.set('company_irms', freshIrms);
+        currentIrms = freshIrms;
+      }
+    } catch (e) {
+      console.warn('Failed to refresh IRMs on assign modal open:', e);
+    }
+
     if (assignSubMode === 'manual') {
       if (selectedCustomerIds.size === 0) return;
       const selectedCusts = scopedCustomers.filter(c => selectedCustomerIds.has(c.id) && isCustomerEligibleForIrm(c));
       if (selectedCusts.length === 0) return;
 
-      setSelectedIrmId(irms[0]?.id || '');
+      setSelectedIrmId(prev => (prev && currentIrms.some(i => i.id === prev) ? prev : currentIrms[0]?.id || ''));
       setIsManualModalOpen(true);
     } else {
       if (eligibleUnassignedCustomers.length === 0) return;
-      const recs = runAutoAssignmentAlgorithm(eligibleUnassignedCustomers);
+      const recs = runAutoAssignmentAlgorithm(eligibleUnassignedCustomers, currentIrms);
       setAutoRecommendations(recs);
       setIsAutoPreviewModalOpen(true);
     }

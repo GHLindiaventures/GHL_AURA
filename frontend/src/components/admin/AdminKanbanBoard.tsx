@@ -105,8 +105,9 @@ export const AdminKanbanBoard: React.FC<AdminKanbanBoardProps> = ({
 
         // Seed fallbacks from the database in case API returns empty
         if (irmMap.size === 0) {
+          irmMap.set('karnan', { id: '50', name: 'karnan' });
           irmMap.set('dhinakaran', { id: '5', name: 'Dhinakaran' });
-          irmMap.set('test_irm', { id: '30', name: 'Test_IRM' });
+          irmMap.set('sample_irm', { id: '43', name: 'Sample_IRM' });
         }
         if (salesMap.size === 0) {
           salesMap.set('naveen', { id: '3', name: 'Naveen' });
@@ -118,7 +119,9 @@ export const AdminKanbanBoard: React.FC<AdminKanbanBoardProps> = ({
         console.warn('Could not fetch DB users for Kanban person dropdown:', e);
         if (mounted) {
           setIrmUsers([
-            { id: '5', name: 'Dhinakaran' }
+            { id: '50', name: 'karnan' },
+            { id: '5', name: 'Dhinakaran' },
+            { id: '43', name: 'Sample_IRM' },
           ]);
           setSalesUsers([
             { id: '3', name: 'Naveen' }
