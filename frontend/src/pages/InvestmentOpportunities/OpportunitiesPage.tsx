@@ -965,7 +965,7 @@ export const OpportunitiesPage: React.FC = () => {
           <div className="page-header">
         <div>
           <h1 className="page-title">
-            <Briefcase size={24} color={isGhlIrm ? '#ec4899' : '#0284c7'} />{' '}
+            <Briefcase size={24} color={isGhlIrm ? '#84cc16' : '#0284c7'} />{' '}
             {isGhlIrm ? 'Investment Opportunities & Term Sheets' : 'Investment Opportunities Syndicate'}
           </h1>
           <p className="page-subtitle">
