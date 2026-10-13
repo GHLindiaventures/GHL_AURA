@@ -328,7 +328,7 @@ public class SalesExecutiveCallsController : ControllerBase
             {
                 if (!IrmOtherService.ModuleOutcomes.TryGetValue(normalizedModule, out var allowedOutcomes))
                 {
-                    return BadRequest(ApiResponse<CallRecordResponseDto>.FailureResult($"Invalid module '{dto.Module}'. Allowed IRM modules are: my_leads, follow_up, kyc, opportunities, investor_360, all_leads."));
+                    return BadRequest(ApiResponse<CallRecordResponseDto>.FailureResult($"Invalid module '{dto.Module}'. Allowed IRM modules are: my_leads, follow_up, kyc, opportunities, investor_360, all_leads, other."));
                 }
 
                 var dispo = dto.Disposition?.Trim() ?? string.Empty;
@@ -594,7 +594,7 @@ public class SalesExecutiveCallsController : ControllerBase
             {
                 if (!IrmOtherService.ModuleOutcomes.TryGetValue(normalizedModule, out var allowedOutcomes))
                 {
-                    return BadRequest(ApiResponse<CallRecordDto>.FailureResult($"Invalid module '{request.Module}'. Allowed IRM modules are: my_leads, follow_up, kyc, opportunities, investor_360, all_leads."));
+                    return BadRequest(ApiResponse<CallRecordDto>.FailureResult($"Invalid module '{request.Module}'. Allowed IRM modules are: my_leads, follow_up, kyc, opportunities, investor_360, all_leads, other."));
                 }
 
                 var dispo = request.Disposition?.Trim() ?? string.Empty;

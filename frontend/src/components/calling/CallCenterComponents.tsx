@@ -1160,16 +1160,18 @@ export const DispositionModal: React.FC = () => {
     if (clean === 'followup' || clean === 'followups') return 'follow_up';
     if (clean === 'investor360' || clean === 'investors' || clean === 'investor') return 'investor_360';
     if (clean === 'opportunity' || clean === 'opps') return 'opportunities';
+    if (clean === 'other' || clean === 'others' || clean === 'other_follow_up' || clean === 'other_followup') return 'other';
     return clean;
   };
 
   const IRM_MODULE_OUTCOMES: Record<string, CallDisposition[]> = {
-    all_leads: ['Follow-up Required', 'Call Back', 'Ready for KYC', 'Other', 'No Response', 'Contacted'],
+    all_leads: ['Follow-up Required', 'Call Back', 'Ready for KYC', 'Other', 'No Response'],
     my_leads: ['Follow-up Required', 'No Response', 'Call Back'],
     follow_up: ['Follow-up Required', 'Other', 'No Response', 'Call Back', 'Ready for KYC'],
     kyc: ['Contacted', 'Other', 'No Response', 'Call Back'],
     opportunities: ['Contacted', 'Other', 'No Response', 'Call Back'],
     investor_360: ['Contacted', 'Other', 'No Response', 'Call Back'],
+    other: ['Call Back', 'Other', 'No Response', 'Follow-up Required', 'Ready for KYC'],
   };
 
   // Reset all form state fresh for every new call
@@ -1186,10 +1188,12 @@ export const DispositionModal: React.FC = () => {
 
     const currentModule = normalizeModule(lastCallRecord.callModule) ||
       (lastCallRecord.sourceFollowupId ? 'follow_up' : (lastCallRecord.matchedRecord?.type === 'lead' ? 'my_leads' : 'investor_360'));
+    const isFromOther = !!(lastCallRecord as any)?.isFromOther || currentModule === 'other' || (typeof window !== 'undefined' && window.location?.pathname?.includes('/other'));
 
     let defaultDispo: CallDisposition;
     if (isIrm) {
-      const allowed = IRM_MODULE_OUTCOMES[currentModule] || ['Contacted', 'Other', 'No Response', 'Call Back'];
+      const rawAllowed = IRM_MODULE_OUTCOMES[currentModule] || ['Call Back', 'Other', 'No Response'];
+      const allowed = isFromOther ? rawAllowed.filter(d => d !== 'Contacted') : rawAllowed;
       if (isSimulated || isNotConnected) {
         defaultDispo = allowed.includes('No Response') ? 'No Response' : allowed[0];
       } else {
@@ -1231,7 +1235,7 @@ export const DispositionModal: React.FC = () => {
     getMessagingChannels().then(ch => {
       if (ch && ch.length) setChannelsStatus(ch);
     }).catch(console.error);
-  }, [lastCallRecord?.id, lastCallRecord?.matchedRecord?.type, lastCallRecord?.sourceFollowupId, lastCallRecord?.callModule, user?.role?.code, tenant?.id]);
+  }, [lastCallRecord?.id, lastCallRecord?.matchedRecord?.type, lastCallRecord?.sourceFollowupId, lastCallRecord?.callModule, (lastCallRecord as any)?.isFromOther, user?.role?.code, tenant?.id]);
 
   if (!showDispositionModal || !lastCallRecord) return null;
 
@@ -1243,6 +1247,7 @@ export const DispositionModal: React.FC = () => {
 
   const currentModule = normalizeModule(lastCallRecord.callModule) ||
     (lastCallRecord.sourceFollowupId ? 'follow_up' : (lastCallRecord.matchedRecord?.type === 'lead' ? 'my_leads' : 'investor_360'));
+  const isFromOther = !!(lastCallRecord as any)?.isFromOther || currentModule === 'other' || (typeof window !== 'undefined' && window.location?.pathname?.includes('/other'));
 
   const allDispositions: CallDisposition[] = [
     'Interested',
@@ -1256,8 +1261,13 @@ export const DispositionModal: React.FC = () => {
 
   const FOLLOWUP_CALL_OUTCOMES: CallDisposition[] = ['Interested', 'Follow-up Required', 'Call Back', 'Not Interested', 'No Response'];
 
+  const rawAllowed: CallDisposition[] = IRM_MODULE_OUTCOMES[currentModule] || ['Call Back', 'Other', 'No Response'];
+  const irmDispositions: CallDisposition[] = isFromOther
+    ? rawAllowed.filter(d => d !== 'Contacted')
+    : rawAllowed;
+
   const dispositions: CallDisposition[] = isIrm
-    ? (IRM_MODULE_OUTCOMES[currentModule] || ['Contacted', 'Other', 'No Response', 'Call Back'])
+    ? irmDispositions
     : (isFollowupCall
         ? FOLLOWUP_CALL_OUTCOMES
         : (isGhlSalesExec || tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01' || tenant?.id === '1' || tenant?.slug === '1')

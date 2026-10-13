@@ -1326,6 +1326,7 @@ export async function getIrmCallOutcomes(module?: string): Promise<Record<string
     kyc: ['Contacted', 'Other', 'No Response', 'Call Back'],
     opportunities: ['Contacted', 'Other', 'No Response', 'Call Back'],
     investor_360: ['Contacted', 'Other', 'No Response', 'Call Back'],
+    other: ['Call Back', 'Other', 'No Response', 'Follow-up Required', 'Ready for KYC'],
   };
 }
 

@@ -49,6 +49,7 @@ interface ActiveCall {
   // The disposition modal uses this to restrict available Call Outcome options.
   sourceFollowupId?: string;
   callModule?: string;
+  isFromOther?: boolean;
   customerId?: string;
   leadId?: string;
   isSimulated?: boolean;
@@ -69,7 +70,8 @@ interface CallContextType {
     recordType?: 'lead' | 'customer',
     recordId?: string,
     sourceFollowupId?: string,
-    callModule?: string
+    callModule?: string,
+    isFromOther?: boolean
   ) => void;
   simulateIncomingCall: (name?: string, phone?: string) => void;
   acceptCall: () => void;
@@ -256,7 +258,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     recordType: 'lead' | 'customer' = 'lead',
     recordId?: string,
     sourceFollowupId?: string,
-    callModule?: string
+    callModule?: string,
+    isFromOther?: boolean
   ) => {
     const callId = `call-${Date.now()}`;
     const newCall: ActiveCall = {
@@ -282,6 +285,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       meetingLink: null,
       sourceFollowupId,
       callModule,
+      isFromOther,
     };
     setActiveCall(newCall);
 
@@ -458,7 +462,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const finishedCall: ActiveCall = { 
         ...activeCall, 
         status: 'ended' as CallStatus,
-        duration: activeCall.duration || 0
+        duration: activeCall.duration || 0,
+        isFromOther: activeCall.isFromOther,
       };
       setLastCallRecord(finishedCall);
       setActiveCall(null);
@@ -559,6 +564,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         reason: reason || undefined,
         callModule: lastCallRecord.callModule,
         module: lastCallRecord.callModule,
+        isFromOther: lastCallRecord.isFromOther,
         leadId: rawLeadId,
         customerId: rawCustomerId,
         twilioCallSid: lastCallRecord.twilioCallSid,

@@ -317,6 +317,7 @@ export interface CallRecord {
   reason?: string;
   callModule?: string;
   module?: string;
+  isFromOther?: boolean;
   providerCallId?: string;
   twilioCallSid?: string;
   contactId?: string;

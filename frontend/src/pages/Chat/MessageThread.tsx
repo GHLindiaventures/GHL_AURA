@@ -82,7 +82,7 @@ export const MessageThread: React.FC<Props> = ({
   const [emojiPickerId, setEmojiPickerId] = useState<string | null>(null);
   const [touchActiveMsgId, setTouchActiveMsgId] = useState<string | null>(null);
   const [typingEntry, setTypingEntry] = useState<cs.TypingEntry | null>(null);
-  
+
   // File Share Pre-Send Modal
   const [showFileModal, setShowFileModal] = useState(false);
 
@@ -268,7 +268,7 @@ export const MessageThread: React.FC<Props> = ({
           if (isCallCard) {
             try {
               callPayload = JSON.parse(msg.content.slice(6, -1));
-            } catch {}
+            } catch { }
           }
 
           return (
