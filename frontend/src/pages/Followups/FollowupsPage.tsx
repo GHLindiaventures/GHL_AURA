@@ -10,6 +10,8 @@ import {
   ShieldCheck,
   CheckCircle,
   Pencil,
+  X,
+  CalendarRange,
 } from 'lucide-react';
 import { Followup, CallRecord, Deal, Lead, Customer } from '../../types';
 import { storageService } from '../../services/storageService';
@@ -21,22 +23,47 @@ import {
   saveFollowup as apiSaveFollowup,
   getCalls,
   getLeads,
+  getDeals,
   saveDeal as apiSaveDeal,
   saveLead as apiSaveLead,
+  saveCustomer as apiSaveCustomer,
   isTenantMatch,
+  transitionFollowupToKyc,
 } from '../../services/ghlApiService';
 import { StatusChip } from '../../components/common/StatusChip';
 import { Modal } from '../../components/common/Modal';
 import { Drawer } from '../../components/common/Drawer';
 import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawerContent';
-import {
-  FollowupRoleFilter,
-  SALES_EXECUTIVE_USERS,
-  IRM_USERS,
-} from '../../mock_data/adminFollowupsData';
+type FollowupRoleFilter = 'sales_executive' | 'irm';
 import { DateRangePreset } from '../../types/kanban';
+import { adminUserService } from '../../services/adminUserService';
+import { fetchIrmAllLeads, IrmAllLeadsSummary } from '../../services/irmAllLeadsService';
+import { User as UserModel } from '../../types';
+import { getAgentRoleInfo, getAssigningSalesAgentInfo } from '../../utils/agentRoleUtils';
+import { formatSmartScheduleDate, isDateToday, isDateOverdue } from '../../utils/dateUtils';
 import './FollowupsPage.css';
 import '../Leads/LeadsPage.css';
+
+export const isFollowupReturned = (f: Followup, matchingLead?: Lead | null): boolean => {
+  if (f.isReturnedFromHandover) return true;
+  if (f.returnedFromCoveringUserName) return true;
+  const cf = f.customFields;
+  if (cf?.returnedFromHandover === 'true' || cf?.returnedFromHandover === true || Boolean(cf?.returnedFromCoveringUserName)) return true;
+  if (matchingLead) {
+    if (matchingLead.isReturnedFromHandover) return true;
+    const lcf = matchingLead.customFields;
+    if (lcf?.returnedFromHandover === 'true' || lcf?.returnedFromHandover === true || Boolean(lcf?.returnedFromCoveringUserName)) return true;
+  }
+  return false;
+};
+
+export const getFollowupReturnedCoveringName = (f: Followup, matchingLead?: Lead | null): string => {
+  return f.returnedFromCoveringUserName || f.customFields?.returnedFromCoveringUserName || matchingLead?.returnedFromCoveringUserName || matchingLead?.customFields?.returnedFromCoveringUserName || 'Covering Agent';
+};
+
+export const getFollowupReturnedDate = (f: Followup, matchingLead?: Lead | null): string | undefined => {
+  return f.returnedAt || f.customFields?.returnedAt || matchingLead?.returnedAt || matchingLead?.customFields?.returnedAt;
+};
 
 export const FollowupsPage: React.FC = () => {
   const { tenant, user } = useAuth();
@@ -45,7 +72,130 @@ export const FollowupsPage: React.FC = () => {
   const [followups, setFollowups] = useState<Followup[]>([]);
   const [callsList, setCallsList] = useState<CallRecord[]>([]);
   const [allLeads, setAllLeads] = useState<Lead[]>([]);
+  const [users, setUsers] = useState<UserModel[]>([]);
+  const [irmSummaryData, setIrmSummaryData] = useState<IrmAllLeadsSummary | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'due' | 'overdue'>('all');
+  const [handoverFilter, setHandoverFilter] = useState('Mine');
+
+  // ── IRM Date Range Filter State (Only for IRM) ───────────────────────────
+  const [irmStartDate, setIrmStartDate] = useState<string>('');
+  const [irmEndDate, setIrmEndDate] = useState<string>('');
+  const [irmDatePreset, setIrmDatePreset] = useState<'all' | 'today' | 'tomorrow' | 'this_week' | 'this_month' | 'overdue' | 'custom'>('all');
+
+  const getLocalDateString = (d: Date): string => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const handleApplyIrmPreset = (preset: 'all' | 'today' | 'tomorrow' | 'this_week' | 'this_month' | 'overdue') => {
+    setIrmDatePreset(preset);
+    const now = new Date();
+
+    if (preset === 'all' || preset === 'overdue') {
+      setIrmStartDate('');
+      setIrmEndDate('');
+      return;
+    }
+
+    if (preset === 'today') {
+      const todayStr = getLocalDateString(now);
+      setIrmStartDate(todayStr);
+      setIrmEndDate(todayStr);
+      return;
+    }
+
+    if (preset === 'tomorrow') {
+      const tom = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      const tomStr = getLocalDateString(tom);
+      setIrmStartDate(tomStr);
+      setIrmEndDate(tomStr);
+      return;
+    }
+
+    if (preset === 'this_week') {
+      const startStr = getLocalDateString(now);
+      const endOfWeek = new Date(now.getTime() + 6 * 24 * 60 * 60 * 1000);
+      const endStr = getLocalDateString(endOfWeek);
+      setIrmStartDate(startStr);
+      setIrmEndDate(endStr);
+      return;
+    }
+
+    if (preset === 'this_month') {
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      setIrmStartDate(getLocalDateString(startOfMonth));
+      setIrmEndDate(getLocalDateString(endOfMonth));
+      return;
+    }
+  };
+
+  const handleIrmDateChange = (field: 'start' | 'end', value: string) => {
+    setIrmDatePreset('custom');
+    if (field === 'start') {
+      setIrmStartDate(value);
+    } else {
+      setIrmEndDate(value);
+    }
+  };
+
+  const handleClearIrmDateFilter = () => {
+    setIrmDatePreset('all');
+    setIrmStartDate('');
+    setIrmEndDate('');
+  };
+
+  const isFollowupInIrmDateRange = (f: Followup): boolean => {
+    if (!isIrm) return true;
+    if (irmDatePreset === 'all' && !irmStartDate && !irmEndDate) return true;
+
+    if (irmDatePreset === 'overdue') {
+      return isDateOverdue(f.scheduledAt || f.scheduledDate) && !isDateToday(f.scheduledAt || f.scheduledDate);
+    }
+
+    if (irmDatePreset === 'today') {
+      return isDateToday(f.scheduledAt || f.scheduledDate);
+    }
+
+    const schedStr = (f.scheduledAt || '').trim();
+    const dateStr = (f.scheduledDate || '').trim();
+    const parsedTime = Date.parse(schedStr) || (dateStr ? Date.parse(dateStr) : NaN);
+
+    if (irmStartDate || irmEndDate) {
+      if (isNaN(parsedTime)) {
+        const s = schedStr.toLowerCase();
+        if (s.includes('today')) {
+          const nowStr = getLocalDateString(new Date());
+          if (irmStartDate && nowStr < irmStartDate) return false;
+          if (irmEndDate && nowStr > irmEndDate) return false;
+          return true;
+        }
+        return true;
+      }
+      const start = irmStartDate ? new Date(`${irmStartDate}T00:00:00`).getTime() : 0;
+      const end = irmEndDate ? new Date(`${irmEndDate}T23:59:59.999`).getTime() : Infinity;
+      return parsedTime >= start && parsedTime <= end;
+    }
+
+    return true;
+  };
+
+  const handoverOptions = useMemo(() => {
+    const coveringNames = Array.from(new Set(followups.map(f => f.handedOverFromName).filter(Boolean)));
+    const returnedItems = followups.filter(f => isFollowupReturned(f));
+    const returnedNames = Array.from(new Set(returnedItems.map(f => getFollowupReturnedCoveringName(f)).filter(Boolean)));
+
+    if (coveringNames.length === 0 && returnedNames.length === 0) return [];
+    return [
+      { value: 'All', label: 'All Follow-ups' },
+      { value: 'Mine', label: 'Mine (Regular)' },
+      ...coveringNames.map(name => ({ value: `Handover_${name}`, label: `Covering for ${name}` })),
+      ...(returnedNames.length > 0 ? [{ value: 'Returned', label: 'Returned from Handover' }] : []),
+      ...returnedNames.map(name => ({ value: `Returned_${name}`, label: `Returned from ${name}` }))
+    ];
+  }, [followups]);
   const [rescheduleItem, setRescheduleItem] = useState<Followup | null>(null);
   const [newDate, setNewDate] = useState('');
 
@@ -54,14 +204,16 @@ export const FollowupsPage: React.FC = () => {
 
   // IRM Custom Preferences state
   const [isEditingPref, setIsEditingPref] = useState<boolean>(false);
-  const [prefAssetClass, setPrefAssetClass] = useState<string>('CO-AIF');
-  const [prefHorizon, setPrefHorizon] = useState<string>('3-5 Years');
+  const [prefAssetClass, setPrefAssetClass] = useState<string>('');
+  const [prefHorizon, setPrefHorizon] = useState<string>('');
   const [isPrefConfirmed, setIsPrefConfirmed] = useState<boolean>(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // IRM Investment Capacity state
   const [isEditingCapacity, setIsEditingCapacity] = useState<boolean>(false);
   const [capacityValue, setCapacityValue] = useState<string>('');
+  const [investmentAmountValue, setInvestmentAmountValue] = useState<string>('');
+  const [isEditingAmount, setIsEditingAmount] = useState<boolean>(false);
   const INVESTMENT_CAPACITY_OPTIONS = ['₹1 Cr – ₹5 Cr', '₹5 Cr – ₹10 Cr', '₹10 Cr – ₹25 Cr', '₹25 Cr+'];
 
   const showToast = (msg: string) => {
@@ -79,14 +231,16 @@ export const FollowupsPage: React.FC = () => {
     (roleCode as string) === 'company_admin' ||
     (roleCode as string) === 'admin' ||
     roleCode === 'super_admin';
-  const isGhlSalesExec = tenant?.slug === 'ghl' && isExec;
+  const isGhlSalesExec =
+    (tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01' || tenant?.id === '1' || tenant?.slug === '1' || tenant?.name?.toLowerCase().includes('ghl') || user?.companySlug === 'ghl') &&
+    isExec;
   const isIrm = roleCode === 'irm';
-  const canOpenDrawer = isGhlSalesExec || isAdmin || isIrm;
+  const canOpenDrawer = isGhlSalesExec || isExec || isAdmin || isIrm;
 
   // ── Admin Filter States ──────────────────────────────────────────────────
   const [selectedRole, setSelectedRole] = useState<FollowupRoleFilter>('sales_executive');
   const [selectedPerson, setSelectedPerson] = useState<string>('All');
-  const [dateRangePreset, setDateRangePreset] = useState<DateRangePreset>('this_month');
+  const [dateRangePreset, setDateRangePreset] = useState<DateRangePreset>('all');
   const [customStartDate, setCustomStartDate] = useState<string>(() => {
     const d = new Date();
     d.setDate(1); // 1st of current month
@@ -101,23 +255,149 @@ export const FollowupsPage: React.FC = () => {
   };
 
   const personOptions = useMemo(() => {
-    if (selectedRole === 'sales_executive') {
-      return storageService.getAgents ? storageService.getAgents(tenant?.id) : SALES_EXECUTIVE_USERS;
+    if (users && users.length > 0) {
+      if (selectedRole === 'sales_executive') {
+        const sales = users.filter(u => {
+          const code = (u.role?.code || '').toLowerCase();
+          const roleId = String(u.role?.id || '');
+          const roleName = (u.role?.name || '').toLowerCase();
+          return code === 'sales_executive' || roleId === '3' || roleName.includes('sales');
+        });
+        if (sales.length > 0) return sales;
+      } else {
+        const irms = users.filter(u => {
+          const code = (u.role?.code || '').toLowerCase();
+          const roleId = String(u.role?.id || '');
+          const roleName = (u.role?.name || '').toLowerCase();
+          return code === 'irm' || roleId === '4' || roleName.includes('irm') || roleName.includes('investor');
+        });
+        if (irms.length > 0) return irms;
+      }
     }
-  }, [selectedRole, tenant?.id]);
+    if (selectedRole === 'sales_executive') {
+      const storageAgents = storageService.getAgents(tenant?.id);
+      if (storageAgents && storageAgents.length > 0) return storageAgents;
+      return [{ id: '3', name: 'Naveen' }];
+    }
+    const storageIrms = storageService.getIrms(tenant?.id);
+    if (storageIrms && storageIrms.length > 0) return storageIrms;
+    return [{ id: '5', name: 'Dhinakaran' }];
+  }, [selectedRole, users]);
+
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = async () => {
     try {
-      const [data, calls, leads] = await Promise.all([
+      setLoadError(null);
+      const [data, calls, leads, fetchedUsers, irmSummary] = await Promise.all([
         getFollowups(tenant?.id),
         getCalls(tenant?.id),
         getLeads(tenant?.id),
+        isAdmin ? adminUserService.getUsers(tenant?.id || '') : Promise.resolve([]),
+        isIrm ? fetchIrmAllLeads(user?.id, undefined, user?.name, tenant?.id).catch(() => null) : Promise.resolve(null),
       ]);
-      setFollowups(data || []);
+
+      const initialFollowups = isMockMode()
+        ? ((data && data.length > 0) ? [...data] : (storageService.getFollowups(tenant?.id) || []))
+        : (Array.isArray(data) ? [...data] : []);
+
+      let followupsList = [...initialFollowups];
+
+      // Also ensure any lead with status 'Follow-up Required' is represented in followups
+      const existingContactIds = new Set(followupsList.map(f => String(f.contactId || f.id)));
+      const existingPhones = new Set(followupsList.map(f => (f.contactPhone || '').replace(/\D/g, '').slice(-10)).filter(Boolean));
+
+      (leads || []).forEach(l => {
+        // Only synthesize a ghost followup if this lead is actually assigned to the current user.
+        // Without this guard, a covering agent would keep seeing a fake followup card even after
+        // the handover ends and the lead's assignedAgentId reverts to the original owner.
+        if (l.status === 'Follow-up Required' && (!isAdmin && !isIrm ? String(l.assignedAgentId) === String(user?.id) : true)) {
+          const lPhone = (l.phone || '').replace(/\D/g, '').slice(-10);
+          if (!existingContactIds.has(String(l.id)) && (!lPhone || !existingPhones.has(lPhone))) {
+            followupsList.push({
+              id: `flw-lead-${l.id}`,
+              companyId: l.companyId || tenant?.id || '1',
+              contactId: String(l.id),
+              contactName: l.name,
+              contactPhone: l.phone,
+              contactType: 'lead',
+              scheduledAt: l.createdAt || new Date().toISOString(),
+              priority: l.priority === 'Urgent' ? 'High' : (l.priority as any || 'Medium'),
+              status: 'Pending',
+              notes: l.notes || 'Lead marked Follow-up Required',
+              assignedAgentId: String(l.assignedAgentId || ''),
+              assignedAgentName: l.assignedAgentName || '',
+              handoverId: l.handoverId,
+              handedOverFromName: l.handedOverFromName,
+              handoverPlannedEnd: l.handoverPlannedEnd,
+              isReturnedFromHandover: l.isReturnedFromHandover,
+              returnedFromCoveringUserName: l.returnedFromCoveringUserName,
+              returnedAt: l.returnedAt,
+              customFields: l.customFields,
+            });
+          }
+        }
+      });
+
+      setFollowups(followupsList);
       setCallsList(calls || []);
-      setAllLeads(leads || []);
-    } catch (err) {
+      setIrmSummaryData(irmSummary);
+
+      let mergedLeads = leads || [];
+      if (irmSummary && Array.isArray(irmSummary.leads)) {
+        const leadMap = new Map<string, Lead>();
+        mergedLeads.forEach(l => {
+          const key = (l.phone ? l.phone.replace(/\D/g, '').slice(-10) : '') || String(l.id);
+          leadMap.set(key, l);
+        });
+        irmSummary.leads.forEach(il => {
+          const key = (il.phone ? il.phone.replace(/\D/g, '').slice(-10) : '') || String(il.id);
+          const existing = leadMap.get(key);
+          if (existing) {
+            leadMap.set(key, {
+              ...existing,
+              assignedById: il.assignedById != null ? String(il.assignedById) : existing.assignedById,
+              assignedByName: (il.assignedByName && il.assignedByName !== 'Created by IRM') ? il.assignedByName : existing.assignedByName,
+            });
+          } else {
+            leadMap.set(key, {
+              id: String(il.id),
+              companyId: String(il.companyId || tenant?.id || '1'),
+              name: il.name,
+              phone: il.phone,
+              email: il.email,
+              location: il.location,
+              source: il.source,
+              status: (il.status as any) || 'Interested',
+              priority: (il.priority as any) || 'Medium',
+              assignedAgentId: String(il.assignedAgentId || user?.id || ''),
+              assignedAgentName: il.assignedAgentName || user?.name || '',
+              assignedById: il.assignedById != null ? String(il.assignedById) : undefined,
+              assignedByName: il.assignedByName || '',
+              createdAt: il.createdAt,
+              notes: il.notes || '',
+              customFields: {
+                investmentCapacity: il.investmentCapacity,
+                preferredAssetClass: il.preferredAssetClass,
+              },
+            });
+          }
+        });
+        mergedLeads = Array.from(leadMap.values());
+      }
+
+      setAllLeads(mergedLeads);
+      if (fetchedUsers && fetchedUsers.length > 0) {
+        setUsers(fetchedUsers);
+      }
+    } catch (err: any) {
       console.error('Failed to load followups data', err);
+      if (isMockMode()) {
+        setFollowups(storageService.getFollowups(tenant?.id) || []);
+      } else {
+        setFollowups([]);
+        setLoadError(err?.message || 'Failed to load follow-up records from server.');
+      }
     }
   };
 
@@ -125,7 +405,11 @@ export const FollowupsPage: React.FC = () => {
     loadData();
     const handleUpdate = () => loadData();
     window.addEventListener('nexus_storage_updated', handleUpdate);
-    return () => window.removeEventListener('nexus_storage_updated', handleUpdate);
+    window.addEventListener('nexus_handover_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('nexus_storage_updated', handleUpdate);
+      window.removeEventListener('nexus_handover_updated', handleUpdate);
+    };
   }, [tenant?.id]);
 
   // Sync IRM preference state when drawer opens for a contact
@@ -152,39 +436,38 @@ export const FollowupsPage: React.FC = () => {
       try {
         const raw = localStorage.getItem(`nexus_irm_pref_${contactKey}`);
         if (raw) savedLocal = JSON.parse(raw);
-      } catch {}
+      } catch { }
     }
 
-    const rawAssetClass =
-      savedLocal?.preferredAssetClass ||
-      (l?.customFields?.irmPreferencesConfirmed ? l?.customFields?.preferredAssetClass : null) ||
-      (c?.customFields?.irmPreferencesConfirmed ? c?.customFields?.preferredAssetClass : null) ||
-      l?.customFields?.preferredAssetClass ||
-      c?.customFields?.preferredAssetClass;
-
-    const existingAssetClass =
-      rawAssetClass === 'AIF' || rawAssetClass === 'CO-AIF'
-        ? rawAssetClass
-        : 'CO-AIF';
-
-    const existingHorizon =
-      savedLocal?.horizon ||
-      (l?.customFields?.irmPreferencesConfirmed ? (l?.customFields?.horizon || l?.customFields?.investmentHorizon) : null) ||
-      (c?.customFields?.irmPreferencesConfirmed ? (c?.customFields?.horizon || c?.customFields?.investmentHorizon) : null) ||
-      l?.customFields?.horizon ||
-      l?.customFields?.investmentHorizon ||
-      c?.customFields?.horizon ||
-      c?.customFields?.investmentHorizon ||
-      '3-5 Years';
-
-    const isConfirmed =
-      savedLocal?.confirmed === true ||
+    const isLeadOrCustConfirmed =
       l?.customFields?.irmPreferencesConfirmed === true ||
-      c?.customFields?.irmPreferencesConfirmed === true ||
-      false;
+      c?.customFields?.irmPreferencesConfirmed === true;
 
-    setPrefAssetClass(existingAssetClass);
-    setPrefHorizon(existingHorizon);
+    // If lead or customer exists and is NOT confirmed, discard and purge any stale local cache
+    if ((l || c) && !isLeadOrCustConfirmed && savedLocal?.confirmed) {
+      if (contactKey) localStorage.removeItem(`nexus_irm_pref_${contactKey}`);
+      if (fDigits) localStorage.removeItem(`nexus_irm_pref_${fDigits}`);
+      savedLocal = null;
+    }
+
+    const isConfirmed = isLeadOrCustConfirmed || Boolean(!l && !c && savedLocal?.confirmed === true);
+
+    const savedAssetClass = isConfirmed
+      ? (l?.customFields?.irmPreferencesConfirmed && l?.customFields?.preferredAssetClass) ||
+        (c?.customFields?.irmPreferencesConfirmed && c?.customFields?.preferredAssetClass) ||
+        savedLocal?.preferredAssetClass ||
+        ''
+      : '';
+
+    const savedHorizon = isConfirmed
+      ? (l?.customFields?.irmPreferencesConfirmed && (l?.customFields?.horizon || l?.customFields?.investmentHorizon)) ||
+        (c?.customFields?.irmPreferencesConfirmed && (c?.customFields?.horizon || c?.customFields?.investmentHorizon)) ||
+        savedLocal?.horizon ||
+        ''
+      : '';
+
+    setPrefAssetClass(savedAssetClass);
+    setPrefHorizon(savedHorizon);
     setIsPrefConfirmed(isConfirmed);
     setIsEditingPref(false);
 
@@ -199,6 +482,20 @@ export const FollowupsPage: React.FC = () => {
       '';
     setCapacityValue(existingCapacity);
     setIsEditingCapacity(false);
+
+    const allDeals = storageService.getDeals(tenant?.id) || [];
+    const existingDeal = allDeals.find((d: Deal) =>
+      (d.phone && d.phone.replace(/\D/g, '').slice(-10) === fDigits) ||
+      (drawerFollowup?.contactId && (d.customerId === drawerFollowup.contactId || d.id === drawerFollowup.contactId))
+    );
+    const existingAmount =
+      l?.customFields?.investmentAmount ||
+      c?.customFields?.investmentAmount ||
+      (drawerFollowup as any)?.investmentAmount ||
+      (existingDeal?.value ? String(existingDeal.value) : '') ||
+      '';
+    setInvestmentAmountValue(existingAmount ? String(existingAmount) : '');
+    setIsEditingAmount(false);
   }, [drawerFollowup?.id, drawerFollowup?.contactPhone, drawerFollowup?.contactId, tenant?.id]);
 
   const handleTogglePrefCheckbox = (checked: boolean, matchingLead: Lead | null, matchingCustomer: Customer | null) => {
@@ -207,6 +504,8 @@ export const FollowupsPage: React.FC = () => {
     } else {
       setIsEditingPref(false);
       setIsPrefConfirmed(false);
+      setPrefAssetClass('');
+      setPrefHorizon('');
 
       if (!drawerFollowup) return;
       const fDigits = (drawerFollowup.contactPhone || '').replace(/\D/g, '').slice(-10);
@@ -217,6 +516,9 @@ export const FollowupsPage: React.FC = () => {
           ...matchingLead,
           customFields: {
             ...(matchingLead.customFields || {}),
+            preferredAssetClass: '',
+            horizon: '',
+            investmentHorizon: '',
             irmPreferencesConfirmed: false,
           },
         });
@@ -227,20 +529,19 @@ export const FollowupsPage: React.FC = () => {
           ...matchingCustomer,
           customFields: {
             ...(matchingCustomer.customFields || {}),
+            preferredAssetClass: '',
+            horizon: '',
+            investmentHorizon: '',
             irmPreferencesConfirmed: false,
           },
         });
       }
 
       if (contactKey) {
-        localStorage.setItem(
-          `nexus_irm_pref_${contactKey}`,
-          JSON.stringify({
-            preferredAssetClass: prefAssetClass,
-            horizon: prefHorizon,
-            confirmed: false,
-          })
-        );
+        localStorage.removeItem(`nexus_irm_pref_${contactKey}`);
+      }
+      if (fDigits) {
+        localStorage.removeItem(`nexus_irm_pref_${fDigits}`);
       }
 
       window.dispatchEvent(new Event('nexus_storage_updated'));
@@ -273,8 +574,97 @@ export const FollowupsPage: React.FC = () => {
     setIsEditingCapacity(false);
   };
 
+  const handleSaveInvestmentAmount = async (matchingLead: Lead | null, matchingCustomer: Customer | null) => {
+    if (!drawerFollowup) return;
+    const num = parseFloat(investmentAmountValue.replace(/,/g, '').trim()) || 0;
+    const cleanStr = num > 0 ? String(num) : '';
+
+    const fDigits = (drawerFollowup.contactPhone || '').replace(/\D/g, '').slice(-10);
+    const resolvedContactId = drawerFollowup.contactId || matchingLead?.id || matchingCustomer?.id;
+    const allDeals = storageService.getDeals(tenant?.id) || [];
+    const existingDeal = allDeals.find((deal: Deal) =>
+      (resolvedContactId && (deal.customerId === resolvedContactId || deal.id === resolvedContactId)) ||
+      (drawerFollowup.contactPhone && deal.phone === drawerFollowup.contactPhone) ||
+      (fDigits && deal.phone && deal.phone.replace(/\D/g, '').slice(-10) === fDigits)
+    );
+
+    if (!matchingLead && !matchingCustomer && !existingDeal) {
+      showToast('Cannot save Investment Amount: No matching lead, customer, or deal record found.');
+      return;
+    }
+
+    let serverSavesConfirmed = 0;
+
+    if (matchingLead) {
+      const updatedLead: Lead = {
+        ...matchingLead,
+        customFields: {
+          ...(matchingLead.customFields || {}),
+          investmentAmount: cleanStr,
+        },
+      };
+      try {
+        await apiSaveLead(updatedLead);
+        serverSavesConfirmed++;
+      } catch (err: any) {
+        console.error('[FollowupsPage] Server saveLead failed:', err);
+        showToast(`Server save failed for lead: ${err?.message || 'Server error'}`);
+        return;
+      }
+    }
+
+    if (matchingCustomer) {
+      const updatedCust: Customer = {
+        ...matchingCustomer,
+        customFields: {
+          ...(matchingCustomer.customFields || {}),
+          investmentAmount: cleanStr,
+        },
+      };
+      try {
+        await apiSaveCustomer(updatedCust);
+        serverSavesConfirmed++;
+      } catch (err: any) {
+        console.error('[FollowupsPage] Server saveCustomer failed:', err);
+        showToast(`Server save failed for customer: ${err?.message || 'Server error'}`);
+        return;
+      }
+    }
+
+    if (existingDeal) {
+      const updatedDeal: Deal = {
+        ...existingDeal,
+        value: num,
+      };
+      try {
+        await apiSaveDeal(updatedDeal);
+        serverSavesConfirmed++;
+      } catch (err: any) {
+        console.error('[FollowupsPage] Server saveDeal failed:', err);
+        showToast(`Server save failed for deal: ${err?.message || 'Server error'}`);
+        return;
+      }
+    }
+
+    if (serverSavesConfirmed === 0) {
+      showToast('No matching record was saved to the server.');
+      return;
+    }
+
+    (drawerFollowup as any).investmentAmount = cleanStr;
+
+    window.dispatchEvent(new Event('nexus_storage_updated'));
+    showToast('✓ Investment Amount saved successfully to server');
+    setIsEditingAmount(false);
+  };
+
   const handleSavePreferences = (matchingLead: Lead | null, matchingCustomer: Customer | null) => {
     if (!drawerFollowup) return;
+    if (!prefAssetClass && !prefHorizon) {
+      showToast('Please select Preferred Asset Class or Investment Horizon before confirming');
+      return;
+    }
+
     const fDigits = (drawerFollowup.contactPhone || '').replace(/\D/g, '').slice(-10);
     const contactKey = drawerFollowup.contactId || fDigits;
 
@@ -358,160 +748,172 @@ export const FollowupsPage: React.FC = () => {
       matchingCustomer?.customFields?.investmentCapacity ||
       matchingCustomer?.customFields?.totalAUMCommitted ||
       (drawerFollowup as any)?.investmentCapacity ||
-      '₹10 Lakh to ₹1 Cr';
+      '';   // No hardcoded default — only use what the contact actually provided
 
-    // 1. Create or update deal in stage 'qualified_investor' — save to DB first, fallback to localStorage
-    const allDeals = storageService.getDeals(tenant?.id) || [];
-    const existingDeal = allDeals.find(d =>
-      (d.customerId && d.customerId === resolvedContactId) ||
-      (d.phone && fDigits && (d.phone || '').replace(/\D/g, '').slice(-10) === fDigits)
-    );
-
-    const kycDeal: Deal = {
-      id: existingDeal?.id || `deal-kyc-${Date.now()}`,
-      companyId: tenant?.id || 't-ghl-01',
-      title: `${drawerFollowup.contactName} - KYC Verification`,
-      customerId: resolvedContactId,
-      customerName: drawerFollowup.contactName,
-      phone: drawerFollowup.contactPhone,
-      email: contactEmail && contactEmail !== '—' ? contactEmail : undefined,
-      location: contactLocation && contactLocation !== '—' ? contactLocation : undefined,
-      stage: 'qualified_investor',
-      stageEnteredAt: new Date().toISOString(),
-      value: 20000000,
-      expectedCloseDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
-      assignedAgentId: user?.id || drawerFollowup.assignedAgentId || 'usr-ghl-irm',
-      assignedAgentName: user?.name || drawerFollowup.assignedAgentName || 'Rohan Varma',
-      notes: `Ready for KYC. Moved from Follow-ups by IRM (${user?.name || 'Rohan Varma'}).`,
-      createdAt: new Date().toISOString().slice(0, 10),
-      priority: drawerFollowup.priority || 'High',
-      preferredAssetClass: prefAssetClass || 'CO-AIF',
-      investmentRange: investmentCapacity,
-    };
-
-    // Save deal to DB (API) — this persists stage='qualified_investor' in Neon
     try {
-      await apiSaveDeal(kycDeal);
-    } catch (err) {
-      console.warn('[FollowupsPage] API saveDeal failed, saving locally:', err);
-      storageService.saveDeal(kycDeal);
-    }
-
-    // 2. Mark the follow-up task as completed in DB so it does not show in the followup page
-    try {
-      await apiSaveFollowup({
-        ...drawerFollowup,
-        status: 'Completed',
-        notes: `${drawerFollowup.notes ? drawerFollowup.notes + ' | ' : ''}Ready for KYC: Moved to KYC Module by IRM`,
+      await transitionFollowupToKyc({
+        contactName: drawerFollowup.contactName,
+        contactPhone: drawerFollowup.contactPhone,
+        contactEmail: contactEmail && contactEmail !== '—' ? contactEmail : undefined,
+        contactLocation: contactLocation && contactLocation !== '—' ? contactLocation : undefined,
+        contactId: resolvedContactId,
+        followupId: drawerFollowup.id,
+        followupNotes: drawerFollowup.notes,
+        followupPriority: drawerFollowup.priority || 'High',
+        investmentAmount: investmentAmountValue,
+        preferredAssetClass: isPrefConfirmed ? prefAssetClass : '',
+        investmentHorizon: isPrefConfirmed ? prefHorizon : '',
+        isPrefConfirmed: Boolean(isPrefConfirmed),
+        assignedAgentId: user?.id || drawerFollowup.assignedAgentId || '',
+        assignedAgentName: user?.name || drawerFollowup.assignedAgentName || '',
+        tenantId: tenant?.id || 't-ghl-01',
+        tenantName: tenant?.name || 'GHL India Ventures',
+        actorName: user?.name || 'IRM',
+        actorEmail: user?.email || 'irm@ghl.com',
       });
-    } catch (err) {
-      console.warn('[FollowupsPage] API saveFollowup (complete) failed:', err);
-      storageService.saveFollowup({
-        ...drawerFollowup,
-        status: 'Completed',
-        notes: `${drawerFollowup.notes ? drawerFollowup.notes + ' | ' : ''}Ready for KYC: Moved to KYC Module by IRM`,
-      });
+
+      setDrawerFollowup(null);
+      loadData();
+      showToast(`✓ ${drawerFollowup.contactName} moved to KYC module!`);
+    } catch (err: any) {
+      console.error('[FollowupsPage] transitionFollowupToKyc failed:', err);
+      showToast(`Failed to move to KYC: ${err?.message || 'Error updating deal status'}`);
     }
-
-    // 3. If matching lead exists, update lead status to 'Ready for KYC' in DB
-    if (matchingLead) {
-      const updatedLead = {
-        ...matchingLead,
-        status: 'Qualified' as Lead['status'],
-        customFields: {
-          ...(matchingLead.customFields || {}),
-          preferredAssetClass: prefAssetClass,
-          horizon: prefHorizon,
-          investmentHorizon: prefHorizon,
-          irmPreferencesConfirmed: true,
-          movedToKycAt: new Date().toISOString(),
-        },
-      };
-      try {
-        await apiSaveLead(updatedLead);
-      } catch (err) {
-        console.warn('[FollowupsPage] API saveLead (qualified) failed:', err);
-        storageService.saveLead(updatedLead);
-      }
-    }
-
-    // 4. Audit Log
-    storageService.addAuditLog({
-      id: `aud-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      actorName: user?.name || 'IRM',
-      actorEmail: user?.email || 'irm@ghl.com',
-      action: 'DEAL_CREATED_KYC',
-      entityType: 'Deal',
-      entityId: kycDeal.id,
-      companyId: tenant?.id || 't-ghl-01',
-      companyName: tenant?.name || 'GHL India Ventures',
-      details: `Moved ${drawerFollowup.contactName} to KYC verification module`,
-    });
-
-    // 5. Update local state & close drawer
-    setDrawerFollowup(null);
-    loadData();
-    window.dispatchEvent(new Event('nexus_storage_updated'));
-    showToast(`✓ ${drawerFollowup.contactName} moved to KYC module!`);
   };
 
-  const handleSaveReschedule = () => {
+  const handleSaveReschedule = async () => {
     if (rescheduleItem && newDate) {
-      apiSaveFollowup({ ...rescheduleItem, scheduledAt: newDate, status: 'Pending' }).catch(console.error);
-      setRescheduleItem(null);
-      setNewDate('');
+      try {
+        await apiSaveFollowup({ ...rescheduleItem, scheduledAt: newDate, status: 'Pending' });
+        setRescheduleItem(null);
+        setNewDate('');
+        loadData();
+        showToast('✓ Follow-up rescheduled successfully');
+      } catch (err: any) {
+        console.error('[FollowupsPage] API reschedule failed:', err);
+        showToast(`Failed to reschedule follow-up: ${err?.message || 'Server error'}`);
+      }
     }
   };
 
   // Helper to determine the assigned role of any followup
   const getFollowupRole = (f: Followup): 'Sales Executive' | 'IRM' => {
     if (f.assignedRole) {
-      if (f.assignedRole.toLowerCase().includes('irm')) return 'IRM';
+      const lower = f.assignedRole.toLowerCase();
+      if (lower.includes('irm') || lower.includes('investor')) return 'IRM';
+      if (lower.includes('sales')) return 'Sales Executive';
+    }
+
+    const agentName = (f.assignedAgentName || '').toLowerCase().trim();
+    const agentId = String(f.assignedAgentId || '').trim();
+
+    // Match against real DB users list
+    const foundUser = (users || []).find(u =>
+      (agentName && u.name.toLowerCase().trim() === agentName) ||
+      (agentId && String(u.id) === agentId)
+    );
+
+    if (foundUser) {
+      const code = (foundUser.role?.code || '').toLowerCase();
+      const roleId = String(foundUser.role?.id || '');
+      const roleName = (foundUser.role?.name || '').toLowerCase();
+      if (code === 'irm' || roleId === '4' || roleName.includes('irm') || roleName.includes('investor')) {
+        return 'IRM';
+      }
       return 'Sales Executive';
     }
-    const irmsList = storageService.getIrms ? storageService.getIrms(tenant?.id) : IRM_USERS;
+    // Direct check for known IRMs in db or storage
+    if (agentName.includes('dhinakaran') || agentId === '5' || agentName.includes('irm')) {
+      return 'IRM';
+    }
+    const irmsList = storageService.getIrms ? storageService.getIrms(tenant?.id) : [];
     if (
       irmsList.some(
         (u: any) =>
-          u.name.toLowerCase() === (f.assignedAgentName || '').toLowerCase() ||
-          u.id === f.assignedAgentId
+          (u.name && u.name.toLowerCase() === agentName) ||
+          String(u.id) === agentId
       )
     ) {
       return 'IRM';
     }
+
     if (f.contactType === 'investor') {
       return 'IRM';
     }
+
     return 'Sales Executive';
+  };
+
+  // Helper to determine the display agent and role for a followup card or drawer
+  const getFollowupDisplayAgent = (f: Followup): { label: string; name: string; role: string; badgeClass: string } => {
+    const fPhone = (f.contactPhone || '').replace(/\D/g, '').slice(-10);
+    const matchingLead = allLeads.find(l => {
+      const idMatch = f.contactId && String(f.contactId) === String(l.id);
+      const lPhone = (l.phone || '').replace(/\D/g, '').slice(-10);
+      return idMatch || Boolean(fPhone && lPhone && fPhone === lPhone);
+    });
+
+    if (isIrm) {
+      // When IRM user is viewing follow-ups, display the Sales Agent who assigned/qualified the lead
+      const salesInfo = getAssigningSalesAgentInfo(matchingLead, f);
+      return {
+        label: 'Assigned Agent',
+        name: salesInfo.name,
+        role: salesInfo.role,
+        badgeClass: salesInfo.badgeClass,
+      };
+    }
+
+    const salesAgentName =
+      (f.assignedByName && f.assignedByName !== 'Created by IRM' ? f.assignedByName : null) ||
+      (matchingLead?.assignedByName && matchingLead.assignedByName !== 'Created by IRM' ? matchingLead.assignedByName : null) ||
+      matchingLead?.customFields?.qualifiedByAgentName ||
+      matchingLead?.customFields?.assignedByAgentName ||
+      matchingLead?.customFields?.agentName ||
+      f.assignedAgentName ||
+      matchingLead?.assignedAgentName ||
+      (String(matchingLead?.assignedById) === '3' || String(f.assignedById) === '3' ? 'Naveen' : null) ||
+      (String(matchingLead?.assignedById) === '2' || String(f.assignedById) === '2' ? 'Vishnu' : null) ||
+      (user?.role?.code === 'sales_executive' ? user?.name : 'Naveen') ||
+      'Naveen';
+
+    const info = getAgentRoleInfo(salesAgentName, f.assignedById || matchingLead?.assignedById);
+    return {
+      label: 'Assigned Agent',
+      name: info.name,
+      role: info.role,
+      badgeClass: info.badgeClass,
+    };
   };
 
   // Helper to test if a followup date falls within date range filter
   const isFollowupInDateFilter = (f: Followup): boolean => {
+    if (dateRangePreset === 'all') return true;
     const schedStr = (f.scheduledAt || '').trim();
     const dateStr = (f.scheduledDate || '').trim();
     const now = new Date();
 
-    const isToday = schedStr.toLowerCase().includes('today');
-    const isYesterday = schedStr.toLowerCase().includes('yesterday');
+    const isToday = () => {
+      const parsedTime = Date.parse(schedStr) || (dateStr ? Date.parse(dateStr) : NaN);
+      if (isNaN(parsedTime)) return schedStr.toLowerCase().includes('today');
+      const d = new Date(parsedTime);
+      return d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    };
+
+    const isYesterday = () => {
+      const parsedTime = Date.parse(schedStr) || (dateStr ? Date.parse(dateStr) : NaN);
+      if (isNaN(parsedTime)) return schedStr.toLowerCase().includes('yesterday');
+      const d = new Date(parsedTime);
+      const yest = new Date(now.getTime() - 24 * 60 * 60 * 1000);
+      return d.getDate() === yest.getDate() && d.getMonth() === yest.getMonth() && d.getFullYear() === yest.getFullYear();
+    };
 
     if (dateRangePreset === 'today') {
-      if (isToday) return true;
-      if (isYesterday) return false;
-      const parsedTime = Date.parse(schedStr) || (dateStr ? Date.parse(dateStr) : NaN);
-      if (!isNaN(parsedTime)) {
-        const d = new Date(parsedTime);
-        return (
-          d.getDate() === now.getDate() &&
-          d.getMonth() === now.getMonth() &&
-          d.getFullYear() === now.getFullYear()
-        );
-      }
-      return true;
+      return isToday();
     }
 
     if (dateRangePreset === 'this_week') {
-      if (isToday || isYesterday) return true;
+      if (isToday() || isYesterday()) return true;
       const parsedTime = Date.parse(schedStr) || (dateStr ? Date.parse(dateStr) : NaN);
       if (!isNaN(parsedTime)) {
         const sevenDaysAgo = now.getTime() - 7 * 24 * 60 * 60 * 1000;
@@ -521,7 +923,7 @@ export const FollowupsPage: React.FC = () => {
     }
 
     if (dateRangePreset === 'this_month') {
-      if (isToday || isYesterday) return true;
+      if (isToday() || isYesterday()) return true;
       const parsedTime = Date.parse(schedStr) || (dateStr ? Date.parse(dateStr) : NaN);
       if (!isNaN(parsedTime)) {
         const monthStart = new Date(now.getFullYear(), now.getMonth(), 1).getTime();
@@ -535,14 +937,6 @@ export const FollowupsPage: React.FC = () => {
       const start = customStartDate ? new Date(`${customStartDate}T00:00:00`).getTime() : 0;
       const end = customEndDate ? new Date(`${customEndDate}T23:59:59`).getTime() : Infinity;
 
-      if (isToday) {
-        const todayMs = now.getTime();
-        return todayMs >= start && todayMs <= end;
-      }
-      if (isYesterday) {
-        const yestMs = now.getTime() - 24 * 60 * 60 * 1000;
-        return yestMs >= start && yestMs <= end;
-      }
       const parsedTime = Date.parse(schedStr) || (dateStr ? Date.parse(dateStr) : NaN);
       if (!isNaN(parsedTime)) {
         return parsedTime >= start && parsedTime <= end;
@@ -576,74 +970,233 @@ export const FollowupsPage: React.FC = () => {
       return true;
     });
   } else if (isExec) {
-    scopedFollowups = followups.filter(
-      f =>
-        (f.assignedAgentId && f.assignedAgentId === user?.id) ||
-        (f.assignedAgentName && f.assignedAgentName === user?.name)
-    );
+    scopedFollowups = followups.filter(f => {
+      if (f.status !== 'Pending') return false;
+      const isDirectlyAssigned =
+        (f.assignedAgentId && String(f.assignedAgentId) === String(user?.id)) ||
+        (f.assignedAgentName && user?.name && f.assignedAgentName.trim().toLowerCase() === user.name.trim().toLowerCase());
+      if (isDirectlyAssigned) return true;
+
+      const fPhone = (f.contactPhone || '').replace(/\D/g, '').slice(-10);
+      const matchingLead = allLeads.find(l => {
+        const idMatch = f.contactId && String(f.contactId) === String(l.id);
+        const lPhone = (l.phone || '').replace(/\D/g, '').slice(-10);
+        return idMatch || Boolean(fPhone && lPhone && fPhone === lPhone);
+      });
+
+      if (matchingLead) {
+        return (
+          (matchingLead.assignedAgentId && String(matchingLead.assignedAgentId) === String(user?.id)) ||
+          (matchingLead.assignedAgentName && user?.name && matchingLead.assignedAgentName.trim().toLowerCase() === user.name.trim().toLowerCase())
+        );
+      }
+      return false;
+    });
   } else if (isIrm) {
-    // IRM Follow-up Required: show ALL pending followups for this tenant
-    // Matches linked lead 'Follow-up Required' status, direct assignment, or tenant match
-    const leadMap = new Map<string, Lead>();
-    allLeads.forEach(l => leadMap.set(l.id, l));
+    // IRM: Show pending follow-ups assigned to THIS authenticated IRM OR associated with a lead assigned to THIS IRM
+    // Build sets of contacts that have moved beyond follow-up (KYC, Opportunities, Converted, etc.)
+    const advancedContactIds = new Set<string>();
+    const advancedContactPhones = new Set<string>();
+    const advancedContactNames = new Set<string>();
+
+    if (irmSummaryData && Array.isArray(irmSummaryData.leads)) {
+      irmSummaryData.leads.forEach(il => {
+        const stage = (il.currentStage || '').toLowerCase();
+        const st = (il.status || '').toLowerCase();
+        if (
+          stage === 'kyc' ||
+          stage === 'opportunities' ||
+          stage === 'converted' ||
+          stage === 'archived' ||
+          st === 'qualified' ||
+          st === 'converted' ||
+          st === 'not interested' ||
+          st === 'junk'
+        ) {
+          if (il.id) advancedContactIds.add(String(il.id));
+          const p10 = (il.phone || '').replace(/\D/g, '').slice(-10);
+          if (p10) advancedContactPhones.add(p10);
+          if (il.name) advancedContactNames.add(il.name.trim().toLowerCase());
+        }
+      });
+    }
+
     scopedFollowups = followups.filter(f => {
       if (f.status !== 'Pending') return false;
       if (f.companyId && tenant?.id && !isTenantMatch(f.companyId, tenant.id)) return false;
-      // Directly assigned to IRM agent
-      if ((f.assignedAgentId && String(f.assignedAgentId) === String(user?.id)) ||
-          (f.assignedAgentName && f.assignedAgentName === user?.name)) {
-        return true;
-      }
-      // Linked lead has Follow-up Required status
-      if (f.contactId) {
-        const linked = leadMap.get(f.contactId);
-        if (linked && linked.status === 'Follow-up Required') return true;
-      }
-      // Phone match fallback
+
       const fPhone = (f.contactPhone || '').replace(/\D/g, '').slice(-10);
-      if (fPhone) {
-        const matched = allLeads.find(l => {
-          const lPhone = (l.phone || '').replace(/\D/g, '').slice(-10);
-          return lPhone === fPhone && l.status === 'Follow-up Required';
-        });
-        if (matched) return true;
+      const fName = (f.contactName || '').trim().toLowerCase();
+      const fId = f.contactId ? String(f.contactId) : '';
+
+      // Stage isolation: if this contact has moved to KYC, Opportunities, Converted, etc., NEVER show in Follow-up
+      if (fId && advancedContactIds.has(fId)) return false;
+      if (fPhone && advancedContactPhones.has(fPhone)) return false;
+      if (fName && advancedContactNames.has(fName)) return false;
+
+      const matchingLead = allLeads.find(l => {
+        const idMatch = f.contactId && String(f.contactId) === String(l.id);
+        const lPhone = (l.phone || '').replace(/\D/g, '').slice(-10);
+        return idMatch || Boolean(fPhone && lPhone && fPhone === lPhone);
+      });
+
+      if (matchingLead) {
+        const mlStatus = (matchingLead.status || '').toLowerCase();
+        if (mlStatus === 'qualified' || mlStatus === 'converted' || mlStatus === 'not interested' || mlStatus === 'junk') {
+          return false;
+        }
       }
+
+      const isDirectlyAssigned =
+        (f.assignedAgentId && String(f.assignedAgentId) === String(user?.id)) ||
+        (f.assignedAgentName && user?.name && f.assignedAgentName.trim().toLowerCase() === user.name.trim().toLowerCase());
+      if (isDirectlyAssigned) return true;
+
+      if (matchingLead) {
+        return (
+          (matchingLead.assignedAgentId && String(matchingLead.assignedAgentId) === String(user?.id)) ||
+          (matchingLead.assignedAgentName && user?.name && matchingLead.assignedAgentName.trim().toLowerCase() === user.name.trim().toLowerCase())
+        );
+      }
+
+      return false;
+    });
+
+    // Also synthesize follow-up tasks for any leads assigned to this IRM that are in Follow-up stage but lack a standalone followup record
+    const existingFollowupContactIds = new Set(
+      scopedFollowups.map(f => String(f.contactId)).filter(Boolean)
+    );
+    const existingFollowupPhones = new Set(
+      scopedFollowups.map(f => (f.contactPhone || '').replace(/\D/g, '').slice(-10)).filter(Boolean)
+    );
+
+    const missingFollowupLeads = allLeads.filter(l => {
+      const isAssignedToMe =
+        (l.assignedAgentId && String(l.assignedAgentId) === String(user?.id)) ||
+        (l.assignedAgentName && user?.name && l.assignedAgentName.trim().toLowerCase() === user.name.trim().toLowerCase());
+      if (!isAssignedToMe) return false;
+      if (l.companyId && tenant?.id && !isTenantMatch(l.companyId, tenant.id)) return false;
+
+      const lStatus = (l.status || '').toLowerCase();
+      // An 'Interested' lead is in initial review in "My Leads" — it must NOT show in Follow-up
+      if (lStatus === 'interested') return false;
+
+      // Contacts in KYC, Opportunities, Converted, etc. must NEVER be synthesized into Follow-up
+      const cleanPhone = (l.phone || '').replace(/\D/g, '').slice(-10);
+      const lName = (l.name || '').trim().toLowerCase();
+      const lId = String(l.id);
+      if (advancedContactIds.has(lId) || (cleanPhone && advancedContactPhones.has(cleanPhone)) || (lName && advancedContactNames.has(lName))) {
+        return false;
+      }
+      if (lStatus === 'qualified' || lStatus === 'converted' || lStatus === 'not interested' || lStatus === 'junk') {
+        return false;
+      }
+
+      const isInFollowupStage =
+        l.status === 'Follow-up Required' ||
+        l.status === 'Callback';
+      if (!isInFollowupStage) return false;
+
+      if (existingFollowupContactIds.has(String(l.id))) return false;
+      if (cleanPhone && existingFollowupPhones.has(cleanPhone)) return false;
+
       return true;
     });
+
+    for (const ml of missingFollowupLeads) {
+      const salesAgentName =
+        (ml.assignedByName && ml.assignedByName !== 'Created by IRM' ? ml.assignedByName : null) ||
+        ml.customFields?.qualifiedByAgentName ||
+        ml.customFields?.agentName ||
+        '';
+
+      scopedFollowups.push({
+        id: `lead-flw-${ml.id}`,
+        companyId: tenant?.id || 't-ghl-01',
+        contactId: String(ml.id),
+        contactType: 'lead',
+        contactName: ml.name,
+        contactPhone: ml.phone,
+        contactEmail: ml.email || '',
+        scheduledAt: ml.nextFollowupDate || new Date(Date.now() + 86400000).toISOString(),
+        priority: (ml.priority === 'Urgent' ? 'High' : (ml.priority || 'High')) as 'Low' | 'Medium' | 'High',
+        status: 'Pending',
+        notes: ml.notes || 'Scheduled follow-up callback',
+        assignedAgentId: String(user?.id || ''),
+        assignedAgentName: salesAgentName || user?.name || ml.assignedAgentName || '',
+        assignedRole: salesAgentName ? 'Sales Executive' : 'IRM',
+      });
+    }
   } else {
     scopedFollowups = followups;
   }
 
-  // Safely deduplicate display rows
-  let processedFollowups = scopedFollowups;
-  if (isGhlSalesExec || isAdmin) {
-    try {
-      const seen = new Map<string, Followup>();
-      const deduped: Followup[] = [];
+  // Deduplicate follow-up tasks by contact so each contact has at most ONE active follow-up task card.
+  // If multiple records exist for the same contact (e.g. from repeated calls or fallback synthesis),
+  // pick the most actionable/recent one and merge any distinct notes so no contact is duplicated.
+  let processedFollowups: Followup[] = [];
+  try {
+    const contactMap = new Map<string, Followup>();
 
-      for (const f of scopedFollowups) {
-        if (f.status !== 'Pending') {
-          deduped.push(f);
+    for (const f of scopedFollowups) {
+      const cleanContactId = (f.contactId || '').replace(/^lead-flw-/, '').trim();
+      const phoneDigits = (f.contactPhone || '').replace(/\D/g, '').slice(-10);
+
+      const contactKey = (cleanContactId && cleanContactId !== 'contact-new')
+        ? `id:${cleanContactId}`
+        : phoneDigits
+          ? `phone:${phoneDigits}`
+          : (f.contactName ? `name:${f.contactName.trim().toLowerCase()}` : `item:${f.id}`);
+
+      if (contactMap.has(contactKey)) {
+        const existing = contactMap.get(contactKey)!;
+
+        // If one is Pending and the other is not, always keep the Pending one
+        if (existing.status !== 'Pending' && f.status === 'Pending') {
+          contactMap.set(contactKey, { ...f });
           continue;
         }
-        const phoneDigits = (f.contactPhone || '').replace(/\D/g, '').slice(-10);
-        const key =
-          f.contactId && f.contactId !== 'contact-new'
-            ? `id:${f.contactId}`
-            : phoneDigits
-            ? `phone:${phoneDigits}`
-            : `raw:${f.id}`;
-
-        if (!seen.has(key)) {
-          seen.set(key, f);
-          deduped.push(f);
+        if (existing.status === 'Pending' && f.status !== 'Pending') {
+          continue;
         }
+
+        // Both same status: prefer real database record over synthesized lead task ('lead-flw-')
+        const existingIsSynthetic = String(existing.id).startsWith('lead-flw-');
+        const currentIsSynthetic = String(f.id).startsWith('lead-flw-');
+
+        let winner = existing;
+        let secondary = f;
+
+        if (existingIsSynthetic && !currentIsSynthetic) {
+          winner = f;
+          secondary = existing;
+        } else if (!existingIsSynthetic && !currentIsSynthetic) {
+          // Both are real records: keep the one with the latest scheduled date or newest ID
+          const existingTime = Date.parse(existing.scheduledAt) || 0;
+          const currentTime = Date.parse(f.scheduledAt) || 0;
+          if (currentTime >= existingTime) {
+            winner = f;
+            secondary = existing;
+          }
+        }
+
+        // Merge notes if secondary has distinct information not in winner
+        const wNotes = (winner.notes || '').trim();
+        const sNotes = (secondary.notes || '').trim();
+        if (sNotes && !wNotes.includes(sNotes)) {
+          winner.notes = wNotes ? `${wNotes} | ${sNotes}` : sNotes;
+        }
+
+        contactMap.set(contactKey, winner);
+      } else {
+        contactMap.set(contactKey, { ...f });
       }
-      processedFollowups = deduped;
-    } catch (err) {
-      console.error('Error deduping followups list:', err);
-      processedFollowups = scopedFollowups;
     }
+
+    processedFollowups = Array.from(contactMap.values());
+  } catch (err) {
+    console.error('Error deduping followups list by contact:', err);
+    processedFollowups = scopedFollowups;
   }
 
   const getCallCountForFollowup = (f: Followup): number => {
@@ -666,12 +1219,12 @@ export const FollowupsPage: React.FC = () => {
     try {
       const niJunkLeadIds = new Set<string>(
         allLeads
-          .filter((l: Lead) => l.status === 'Not Interested' || l.status === 'Junk')
+          .filter((l: Lead) => l.status === 'Not Interested' || l.status === 'Junk' || l.status === 'Other')
           .map((l: Lead) => l.id)
       );
       const niJunkPhones = new Set<string>(
         allLeads
-          .filter((l: Lead) => l.status === 'Not Interested' || l.status === 'Junk')
+          .filter((l: Lead) => l.status === 'Not Interested' || l.status === 'Junk' || l.status === 'Other')
           .map((l: Lead) => (l.phone || '').replace(/\D/g, '').slice(-10))
           .filter(Boolean)
       );
@@ -689,17 +1242,113 @@ export const FollowupsPage: React.FC = () => {
     }
   }
 
-  // Count badges
-  const activePendingFollowups = processedFollowups.filter(f => f.status === 'Pending');
+  // ── Other status leads leave the Follow-ups page (transferred to Other module) ───
+  try {
+    const otherLeadIds = new Set<string>(
+      allLeads
+        .filter((l: Lead) => l.status === 'Other')
+        .map((l: Lead) => String(l.id))
+    );
+    const otherPhones = new Set<string>(
+      allLeads
+        .filter((l: Lead) => l.status === 'Other')
+        .map((l: Lead) => (l.phone || '').replace(/\D/g, '').slice(-10))
+        .filter(Boolean)
+    );
 
-  const filteredFollowups = processedFollowups.filter(f => {
-    if (activeTab === 'due') {
-      return f.status === 'Pending' && (f.scheduledAt || '').toLowerCase().includes('today');
+    processedFollowups = processedFollowups.filter(f => {
+      if (f.contactId && f.contactId !== 'contact-new' && otherLeadIds.has(String(f.contactId)))
+        return false;
+      const fPhone = (f.contactPhone || '').replace(/\D/g, '').slice(-10);
+      if (fPhone && otherPhones.has(fPhone)) return false;
+      return true;
+    });
+  } catch (err) {
+    console.error('Error in Other-lead followup filter:', err);
+  }
+
+  // ── Interested leads leave the sales Follow-ups page ───────────────────────
+  // Once a lead is 'Interested' it is tracked in Customer 360, so any still-pending SALES follow-up
+  // for it is hidden. IRM follow-ups are kept: IRMs work Interested leads.
+  if (!isIrm) {
+    try {
+      const interestedLeads = allLeads.filter((l: Lead) => l.status === 'Interested');
+      const interestedLeadIds = new Set<string>(interestedLeads.map((l: Lead) => String(l.id)));
+      const interestedPhones = new Set<string>(
+        interestedLeads
+          .map((l: Lead) => (l.phone || '').replace(/\D/g, '').slice(-10))
+          .filter(Boolean)
+      );
+
+      processedFollowups = processedFollowups.filter(f => {
+        if (f.status !== 'Pending') return true;
+        if (f.contactType && f.contactType !== 'lead') return true;
+        if (getFollowupRole(f) === 'IRM') return true;
+        if (f.contactId && f.contactId !== 'contact-new' && interestedLeadIds.has(String(f.contactId)))
+          return false;
+        const fPhone = (f.contactPhone || '').replace(/\D/g, '').slice(-10);
+        if (fPhone && interestedPhones.has(fPhone)) return false;
+        return true;
+      });
+    } catch (err) {
+      console.error('Error in Interested-lead followup filter:', err);
     }
-    if (activeTab === 'overdue') {
-      return f.status === 'Pending' && (f.scheduledAt || '').toLowerCase().includes('yesterday');
+  }
+
+  // Count badges & filters
+  const isFollowupToday = (f: Followup): boolean => {
+    const schedStr = (f.scheduledAt || '').trim();
+    const dateStr = (f.scheduledDate || '').trim();
+    const now = new Date();
+    const parsedTime = Date.parse(schedStr) || (dateStr ? Date.parse(dateStr) : NaN);
+    if (isNaN(parsedTime)) return schedStr.toLowerCase().includes('today');
+    const d = new Date(parsedTime);
+    return d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  };
+
+  const isFollowupOverdue = (f: Followup): boolean => {
+    const schedStr = (f.scheduledAt || '').trim();
+    const dateStr = (f.scheduledDate || '').trim();
+    const now = new Date();
+    const parsedTime = Date.parse(schedStr) || (dateStr ? Date.parse(dateStr) : NaN);
+    if (isNaN(parsedTime)) return schedStr.toLowerCase().includes('yesterday');
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    return parsedTime < todayStart;
+  };
+
+  const activePendingFollowups = processedFollowups.filter(f => {
+    if (f.status !== 'Pending') return false;
+    if (handoverOptions.length > 0) {
+      if (handoverFilter === 'Mine' && (f.handoverId || isFollowupReturned(f))) return false;
+      if (handoverFilter === 'Returned') {
+        if (!isFollowupReturned(f)) return false;
+      } else if (handoverFilter.startsWith('Returned_')) {
+        const name = handoverFilter.replace('Returned_', '');
+        if (!isFollowupReturned(f) || getFollowupReturnedCoveringName(f) !== name) return false;
+      } else if (handoverFilter.startsWith('Handover_')) {
+        const name = handoverFilter.replace('Handover_', '');
+        if (f.handedOverFromName !== name) return false;
+      }
     }
-    return f.status === 'Pending';
+    return true;
+  });
+
+  // Base list for current role/date-filtering
+  const dateScopedFollowups = useMemo(() => {
+    if (!isIrm) return activePendingFollowups;
+    return activePendingFollowups.filter(isFollowupInIrmDateRange);
+  }, [isIrm, activePendingFollowups, irmDatePreset, irmStartDate, irmEndDate]);
+
+  const filteredFollowups = dateScopedFollowups.filter(f => {
+    if (!isIrm) {
+      if (activeTab === 'due') {
+        return isFollowupToday(f);
+      }
+      if (activeTab === 'overdue') {
+        return isFollowupOverdue(f) && !isFollowupToday(f);
+      }
+    }
+    return true;
   });
 
   const drawerFollowupRole = drawerFollowup ? getFollowupRole(drawerFollowup) : '';
@@ -718,17 +1367,38 @@ export const FollowupsPage: React.FC = () => {
         </div>
       </div>
 
+      {loadError && (
+        <div
+          className="alert-banner error"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 16px',
+            marginBottom: '16px',
+            borderRadius: '8px',
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            color: '#ef4444',
+          }}
+        >
+          <span>{loadError}</span>
+        </div>
+      )}
+
       {/* ── Admin Global Filter Bar ─────────────────────────────────────────── */}
       {isAdmin && (
         <div className="admin-followup-filterbar">
           <div className="admin-followup-filter-group">
             {/* 1. Role Filter */}
             <div className="followup-filter-item">
-              <span className="followup-filter-label">
+              <label htmlFor="admin-followup-role" className="followup-filter-label">
                 <Briefcase size={14} color="var(--primary-600)" />
                 Role:
-              </span>
+              </label>
               <select
+                id="admin-followup-role"
+                name="roleFilter"
                 className="followup-filter-select"
                 value={selectedRole}
                 onChange={e => handleRoleChange(e.target.value as FollowupRoleFilter)}
@@ -740,11 +1410,13 @@ export const FollowupsPage: React.FC = () => {
 
             {/* 2. Person Filter (Dynamic based on Role) */}
             <div className="followup-filter-item">
-              <span className="followup-filter-label">
+              <label htmlFor="admin-followup-person" className="followup-filter-label">
                 <User size={14} color="var(--text-muted)" />
                 Person:
-              </span>
+              </label>
               <select
+                id="admin-followup-person"
+                name="personFilter"
                 className="followup-filter-select"
                 value={selectedPerson}
                 onChange={e => setSelectedPerson(e.target.value)}
@@ -762,15 +1434,18 @@ export const FollowupsPage: React.FC = () => {
 
             {/* 3. Date Range Filter */}
             <div className="followup-filter-item">
-              <span className="followup-filter-label">
+              <label htmlFor="admin-followup-date-range" className="followup-filter-label">
                 <Calendar size={14} color="var(--text-muted)" />
                 Date Range:
-              </span>
+              </label>
               <select
+                id="admin-followup-date-range"
+                name="dateRangePreset"
                 className="followup-filter-select"
                 value={dateRangePreset}
                 onChange={e => setDateRangePreset(e.target.value as DateRangePreset)}
               >
+                <option value="all">All Records</option>
                 <option value="today">Today</option>
                 <option value="this_week">This Week</option>
                 <option value="this_month">This Month</option>
@@ -782,6 +1457,9 @@ export const FollowupsPage: React.FC = () => {
             {dateRangePreset === 'custom' && (
               <div className="followup-date-custom-inputs">
                 <input
+                  id="admin-followup-start-date"
+                  name="customStartDate"
+                  aria-label="Start Date"
                   type="date"
                   className="followup-date-input"
                   value={customStartDate}
@@ -790,6 +1468,9 @@ export const FollowupsPage: React.FC = () => {
                 />
                 <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>to</span>
                 <input
+                  id="admin-followup-end-date"
+                  name="customEndDate"
+                  aria-label="End Date"
                   type="date"
                   className="followup-date-input"
                   value={customEndDate}
@@ -803,9 +1484,8 @@ export const FollowupsPage: React.FC = () => {
           {/* Right Section: Role Mode Tag & Total Count */}
           <div className="admin-followup-meta-group">
             <span
-              className={`followup-role-tag ${
-                selectedRole === 'sales_executive' ? 'tag-sales-exec' : 'tag-irm'
-              }`}
+              className={`followup-role-tag ${selectedRole === 'sales_executive' ? 'tag-sales-exec' : 'tag-irm'
+                }`}
             >
               {selectedRole === 'sales_executive' ? (
                 <>
@@ -825,48 +1505,186 @@ export const FollowupsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="followups-tabs-container">
-        {[
-          { id: 'all', label: `All Tasks (${activePendingFollowups.length})` },
-          {
-            id: 'due',
-            label: `Due Today (${
-              activePendingFollowups.filter(f =>
-                (f.scheduledAt || '').toLowerCase().includes('today')
-              ).length
-            })`,
-          },
-          {
-            id: 'overdue',
-            label: `Overdue (${
-              activePendingFollowups.filter(f =>
-                (f.scheduledAt || '').toLowerCase().includes('yesterday')
-              ).length
-            })`,
-            danger: true,
-          },
-        ].map(tab => (
-          <button
-            key={tab.id}
-            className={`btn btn-sm ${
-              activeTab === tab.id ? 'btn-primary' : 'btn-secondary'
-            } ${
-              tab.danger && activeTab === tab.id
-                ? 'followups-tab-danger-active'
-                : tab.danger
-                ? 'followups-tab-danger-inactive'
-                : ''
-            }`}
-            onClick={() => setActiveTab(tab.id as any)}
-          >
-            {tab.danger && (
-              <AlertTriangle size={13} color={activeTab === tab.id ? '#ffffff' : '#dc2626'} />
+      {/* ── IRM Date Range Filter Bar (Only for IRM) - Red and Black Theme ── */}
+      {isIrm && (
+        <div className="irm-followup-filterbar">
+          <div className="irm-followup-filter-left">
+            <div className="irm-followup-filter-title">
+              <CalendarRange size={16} color="#ef4444" />
+              <span>Filter by Date:</span>
+            </div>
+
+            {/* Quick Presets */}
+            <div className="irm-followup-presets">
+              <button
+                type="button"
+                className={`irm-preset-chip ${irmDatePreset === 'all' && !irmStartDate && !irmEndDate ? 'active' : ''}`}
+                onClick={() => handleApplyIrmPreset('all')}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                className={`irm-preset-chip ${irmDatePreset === 'today' ? 'active' : ''}`}
+                onClick={() => handleApplyIrmPreset('today')}
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                className={`irm-preset-chip ${irmDatePreset === 'tomorrow' ? 'active' : ''}`}
+                onClick={() => handleApplyIrmPreset('tomorrow')}
+              >
+                Tomorrow
+              </button>
+              <button
+                type="button"
+                className={`irm-preset-chip ${irmDatePreset === 'this_week' ? 'active' : ''}`}
+                onClick={() => handleApplyIrmPreset('this_week')}
+              >
+                This Week
+              </button>
+              <button
+                type="button"
+                className={`irm-preset-chip ${irmDatePreset === 'this_month' ? 'active' : ''}`}
+                onClick={() => handleApplyIrmPreset('this_month')}
+              >
+                This Month
+              </button>
+              <button
+                type="button"
+                className={`irm-preset-chip ${irmDatePreset === 'overdue' ? 'active' : ''} ${activePendingFollowups.some(f => isFollowupOverdue(f) && !isFollowupToday(f)) ? 'has-overdue' : ''}`}
+                onClick={() => handleApplyIrmPreset('overdue')}
+              >
+                {activePendingFollowups.some(f => isFollowupOverdue(f) && !isFollowupToday(f)) && (
+                  <AlertTriangle size={11} color={irmDatePreset === 'overdue' ? '#ffffff' : '#ef4444'} style={{ marginRight: 3, verticalAlign: 'middle' }} />
+                )}
+                Overdue ({activePendingFollowups.filter(f => isFollowupOverdue(f) && !isFollowupToday(f)).length})
+              </button>
+            </div>
+
+            {/* From & To Date Pickers */}
+            <div className="irm-date-range-box">
+              <div className="irm-date-field">
+                <label htmlFor="irm-followup-from-date" className="irm-date-label">From:</label>
+                <input
+                  id="irm-followup-from-date"
+                  type="date"
+                  className="irm-date-input"
+                  value={irmStartDate}
+                  onChange={e => handleIrmDateChange('start', e.target.value)}
+                  title="Filter from date"
+                />
+              </div>
+
+              <span className="irm-date-sep">to</span>
+
+              <div className="irm-date-field">
+                <label htmlFor="irm-followup-to-date" className="irm-date-label">To:</label>
+                <input
+                  id="irm-followup-to-date"
+                  type="date"
+                  className="irm-date-input"
+                  value={irmEndDate}
+                  onChange={e => handleIrmDateChange('end', e.target.value)}
+                  title="Filter to date"
+                />
+              </div>
+
+              {(irmStartDate || irmEndDate || irmDatePreset !== 'all') && (
+                <button
+                  type="button"
+                  onClick={handleClearIrmDateFilter}
+                  className="irm-filter-clear-btn"
+                  title="Reset date filter"
+                >
+                  <X size={12} /> Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="irm-followup-filter-right">
+            {(irmStartDate || irmEndDate) && (
+              <span className="irm-active-range-pill">
+                <Calendar size={11} /> {irmStartDate || 'Start'} &rarr; {irmEndDate || 'End'}
+              </span>
             )}
-            {tab.label}
-          </button>
-        ))}
-      </div>
+            <span className="irm-filter-count-badge">
+              Tasks: <strong>{filteredFollowups.length}</strong> of {activePendingFollowups.length}
+            </span>
+
+            {handoverOptions.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>View:</span>
+                <select
+                  className="form-select customers-filter-select"
+                  style={{ width: 'auto', padding: '3px 26px 3px 8px', fontSize: 12, height: 32 }}
+                  value={handoverFilter}
+                  onChange={e => setHandoverFilter(e.target.value)}
+                >
+                  {handoverOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tabs (Only for Non-IRM) */}
+      {!isIrm && (
+        <div className="followups-tabs-container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[
+            { id: 'all', label: `All Tasks (${activePendingFollowups.length})` },
+            {
+              id: 'due',
+              label: `Due Today (${activePendingFollowups.filter(isFollowupToday).length})`,
+            },
+            {
+              id: 'overdue',
+              label: `Overdue (${activePendingFollowups.filter(f => isFollowupOverdue(f) && !isFollowupToday(f)).length})`,
+              danger: true,
+            },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              className={`btn btn-sm ${activeTab === tab.id ? 'btn-primary' : 'btn-secondary'
+                } ${tab.danger && activeTab === tab.id
+                  ? 'followups-tab-danger-active'
+                  : tab.danger
+                    ? 'followups-tab-danger-inactive'
+                    : ''
+                }`}
+              onClick={() => setActiveTab(tab.id as any)}
+            >
+              {tab.danger && (
+                <AlertTriangle size={13} color={activeTab === tab.id ? '#ffffff' : '#dc2626'} />
+              )}
+              {tab.label}
+            </button>
+          ))}
+          </div>
+
+          {handoverOptions.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>View:</span>
+              <select
+                className="form-select customers-filter-select"
+                style={{ width: 'auto', padding: '4px 28px 4px 10px', fontSize: 13 }}
+                value={handoverFilter}
+                onChange={e => setHandoverFilter(e.target.value)}
+              >
+                {handoverOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Follow-ups List Cards */}
       <div className="followups-list">
@@ -876,10 +1694,27 @@ export const FollowupsPage: React.FC = () => {
           </div>
         ) : (
           filteredFollowups.map(f => {
-            const isOverdue =
-              f.status === 'Pending' && (f.scheduledAt || '').toLowerCase().includes('yesterday');
+            const schedStr = (f.scheduledAt || '').trim();
+            const dateStr = (f.scheduledDate || '').trim();
+            const now = new Date();
+
+            const isOverdueFunc = () => {
+              const parsedTime = Date.parse(schedStr) || (dateStr ? Date.parse(dateStr) : NaN);
+              if (isNaN(parsedTime)) return schedStr.toLowerCase().includes('yesterday');
+              return parsedTime < new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+            };
+
+            const isTodayFunc = () => {
+              const parsedTime = Date.parse(schedStr) || (dateStr ? Date.parse(dateStr) : NaN);
+              if (isNaN(parsedTime)) return schedStr.toLowerCase().includes('today');
+              const d = new Date(parsedTime);
+              return d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+            };
+
+            const isOverdue = f.status === 'Pending' && isOverdueFunc() && !isTodayFunc();
             const callCount = getCallCountForFollowup(f);
             const fRole = getFollowupRole(f);
+            const agentInfo = getFollowupDisplayAgent(f);
 
             return (
               <div
@@ -888,6 +1723,40 @@ export const FollowupsPage: React.FC = () => {
                 onClick={canOpenDrawer ? () => setDrawerFollowup(f) : undefined}
                 style={canOpenDrawer ? { cursor: 'pointer' } : undefined}
               >
+                {f.handedOverFromName ? (
+                  <div style={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    background: 'rgba(99, 102, 241, 0.15)',
+                    color: '#818cf8',
+                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                    position: 'absolute',
+                    top: 12,
+                    right: 12
+                  }} title={`Handed over from ${f.handedOverFromName}`}>
+                    Covering for {f.handedOverFromName}
+                  </div>
+                ) : isFollowupReturned(f) ? (
+                  <div style={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    padding: '2px 7px',
+                    borderRadius: 4,
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    color: '#34d399',
+                    border: '1px solid rgba(16, 185, 129, 0.35)',
+                    position: 'absolute',
+                    top: 12,
+                    right: 12,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 3,
+                  }} title={`Returned from coverage by ${getFollowupReturnedCoveringName(f)}${getFollowupReturnedDate(f) ? ` on ${new Date(getFollowupReturnedDate(f)!).toLocaleDateString()}` : ''}`}>
+                    ↩ Returned from {getFollowupReturnedCoveringName(f)}
+                  </div>
+                ) : null}
                 <div className="followup-item-left">
                   <div>
                     <div
@@ -900,6 +1769,43 @@ export const FollowupsPage: React.FC = () => {
                       >
                         {f.contactName}
                       </span>
+
+                      {f.handedOverFromName && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 600,
+                            padding: '2px 6px',
+                            borderRadius: 6,
+                            background: 'rgba(99, 102, 241, 0.15)',
+                            color: '#818cf8',
+                            border: '1px solid rgba(99, 102, 241, 0.3)',
+                          }}
+                          title={`Handed over from ${f.handedOverFromName}`}
+                        >
+                          Covering for {f.handedOverFromName}
+                        </span>
+                      )}
+
+                      {!f.handedOverFromName && isFollowupReturned(f) && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 600,
+                            padding: '2px 7px',
+                            borderRadius: 6,
+                            background: 'rgba(16, 185, 129, 0.15)',
+                            color: '#34d399',
+                            border: '1px solid rgba(16, 185, 129, 0.35)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                          }}
+                          title={`Returned from coverage by ${getFollowupReturnedCoveringName(f)}${getFollowupReturnedDate(f) ? ` on ${new Date(getFollowupReturnedDate(f)!).toLocaleDateString()}` : ''}`}
+                        >
+                          ↩ Returned from {getFollowupReturnedCoveringName(f)}
+                        </span>
+                      )}
 
                       <StatusChip status={f.priority} size="sm" />
 
@@ -928,30 +1834,28 @@ export const FollowupsPage: React.FC = () => {
 
                     <div className="followup-meta-row">
                       <span className={`followup-schedule-time ${isOverdue ? 'overdue' : ''}`}>
-                        ⏰ {f.scheduledAt}
+                        ⏰ {formatSmartScheduleDate(f.scheduledAt)}
                       </span>
-                      <span className="followup-assignee">• Assignee: {f.assignedAgentName}</span>
-                      <span
-                        className={`badge-role-inline ${
-                          fRole === 'IRM' ? 'badge-role-irm' : 'badge-role-sales'
-                        }`}
-                      >
-                        {fRole}
+                      <span className="followup-assignee">• {agentInfo.label}: {agentInfo.name}</span>
+                      <span className={`badge-role-inline ${agentInfo.badgeClass}`}>
+                        {agentInfo.role}
                       </span>
                     </div>
                   </div>
                 </div>
 
                 <div className="followup-actions-right">
-                  <button
-                    className="btn btn-secondary btn-sm"
-                    onClick={e => {
-                      e.stopPropagation();
-                      setRescheduleItem(f);
-                    }}
-                  >
-                    Reschedule
-                  </button>
+                  {!(isGhlAdmin && fRole === 'IRM') && (
+                    <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={e => {
+                        e.stopPropagation();
+                        setRescheduleItem(f);
+                      }}
+                    >
+                      Reschedule
+                    </button>
+                  )}
                   <button
                     className="btn btn-call btn-sm"
                     onClick={e => {
@@ -961,7 +1865,8 @@ export const FollowupsPage: React.FC = () => {
                         f.contactPhone,
                         f.contactType as any,
                         f.contactId,
-                        f.id
+                        f.id,
+                        'follow_up'
                       );
                     }}
                   >
@@ -992,8 +1897,10 @@ export const FollowupsPage: React.FC = () => {
         }
       >
         <div className="form-group">
-          <label className="form-label">New Date & Time</label>
+          <label htmlFor="followup-reschedule-datetime" className="form-label">New Date & Time</label>
           <input
+            id="followup-reschedule-datetime"
+            name="newDateTime"
             type="text"
             className="form-input"
             value={newDate}
@@ -1011,19 +1918,18 @@ export const FollowupsPage: React.FC = () => {
           title={drawerFollowup?.contactName || 'Contact Profile'}
           subtitle={
             isAdmin
-              ? `Phone: ${drawerFollowup?.contactPhone || '—'} • Assigned to: ${
-                  drawerFollowup?.assignedAgentName || 'Unassigned'
-                } (${drawerFollowupRole})`
+              ? `Phone: ${drawerFollowup?.contactPhone || '—'} • Assigned : ${drawerFollowup?.assignedAgentName || 'Unassigned'
+              } (${drawerFollowupRole})`
               : drawerFollowup?.contactPhone
-              ? `Phone: ${drawerFollowup.contactPhone} • ${tenant?.name || 'GHL India'}`
-              : (tenant?.name || '')
+                ? `Phone: ${drawerFollowup.contactPhone} • ${tenant?.name || 'GHL India'}`
+                : (tenant?.name || '')
           }
           width={720}
           footer={
             drawerFollowup && (
               <div style={{ display: 'flex', alignItems: 'center', justifyContent: isExec ? 'flex-end' : 'space-between', width: '100%', gap: 10 }}>
-                {/* Ready for KYC button (Hidden for Sales Executive, available for IRM / Admins) */}
-                {!isExec && (
+                {/* Ready for KYC button (Hidden for Sales Executive and GHL Admin, available for IRM) */}
+                {!isExec && !isGhlAdmin && (
                   <button
                     type="button"
                     className="btn btn-primary"
@@ -1046,15 +1952,17 @@ export const FollowupsPage: React.FC = () => {
 
                 {/* Right side buttons */}
                 <div style={{ display: 'flex', gap: 10, marginLeft: isExec ? 'auto' : undefined }}>
-                  <button
-                    className="btn btn-secondary"
-                    onClick={() => {
-                      setRescheduleItem(drawerFollowup);
-                      setDrawerFollowup(null);
-                    }}
-                  >
-                    Reschedule
-                  </button>
+                  {!(isGhlAdmin && drawerFollowupRole === 'IRM') && (
+                    <button
+                      className="btn btn-secondary"
+                      onClick={() => {
+                        setRescheduleItem(drawerFollowup);
+                        setDrawerFollowup(null);
+                      }}
+                    >
+                      Reschedule
+                    </button>
+                  )}
                   <button
                     className="btn btn-call"
                     onClick={() => {
@@ -1063,7 +1971,8 @@ export const FollowupsPage: React.FC = () => {
                         drawerFollowup.contactPhone,
                         (drawerFollowup.contactType as any) || 'lead',
                         drawerFollowup.contactId,
-                        drawerFollowup.id
+                        drawerFollowup.id,
+                        'follow_up'
                       );
                     }}
                   >
@@ -1075,12 +1984,12 @@ export const FollowupsPage: React.FC = () => {
           }
         >
           {drawerFollowup && (() => {
-            const leads = storageService.getLeads(tenant?.id) || [];
+            const leads = (allLeads && allLeads.length > 0) ? allLeads : (storageService.getLeads(tenant?.id) || []);
             const customers = storageService.getCustomers(tenant?.id) || [];
             const fDigits = (drawerFollowup.contactPhone || '').replace(/\D/g, '').slice(-10);
 
             const matchingLead = leads.find(l => {
-              if (drawerFollowup.contactId && drawerFollowup.contactId !== 'contact-new' && l.id === drawerFollowup.contactId) return true;
+              if (drawerFollowup.contactId && drawerFollowup.contactId !== 'contact-new' && String(l.id) === String(drawerFollowup.contactId)) return true;
               const lDigits = (l.phone || '').replace(/\D/g, '').slice(-10);
               if (lDigits && fDigits && lDigits === fDigits) return true;
               if (l.name && drawerFollowup.contactName && l.name.trim().toLowerCase() === drawerFollowup.contactName.trim().toLowerCase()) return true;
@@ -1095,13 +2004,16 @@ export const FollowupsPage: React.FC = () => {
               return false;
             }) || null;
 
+            const drawerAgentInfo = drawerFollowup ? getFollowupDisplayAgent(drawerFollowup) : null;
             const assignedAgent =
+              drawerAgentInfo?.name ||
               drawerFollowup.assignedAgentName ||
               matchingLead?.assignedAgentName ||
               matchingCustomer?.assignedAgentName ||
               'Unassigned';
+            const assignedAgentRole = drawerAgentInfo?.role || drawerFollowupRole;
 
-            const contactEmail = matchingLead?.email || matchingCustomer?.email || (drawerFollowup as any).email || '—';
+            const contactEmail = (drawerFollowup as any).contactEmail || (drawerFollowup as any).email || matchingLead?.email || matchingCustomer?.email || '—';
             const contactLocation = matchingLead?.location || matchingCustomer?.location || (drawerFollowup as any).location || '—';
             const contactSource = matchingLead?.source || (drawerFollowup as any).source || 'Follow-up Task';
 
@@ -1174,9 +2086,8 @@ export const FollowupsPage: React.FC = () => {
                             {assignedAgent}
                           </strong>
                           <span
-                            className={`admin-owner-role-tag ${
-                              drawerFollowupRole === 'IRM' ? 'tag-irm' : 'tag-sales-exec'
-                            }`}
+                            className={`admin-owner-role-tag ${drawerFollowupRole === 'IRM' ? 'tag-irm' : 'tag-sales-exec'
+                              }`}
                           >
                             <Briefcase size={12} />
                             {drawerFollowupRole === 'IRM'
@@ -1190,7 +2101,7 @@ export const FollowupsPage: React.FC = () => {
                     <div className="admin-owner-meta-grid">
                       <div className="admin-owner-meta-cell">
                         <span className="cell-lbl">Scheduled Slot</span>
-                        <span className="cell-val">⏰ {drawerFollowup.scheduledAt}</span>
+                        <span className="cell-val">⏰ {formatSmartScheduleDate(drawerFollowup.scheduledAt)}</span>
                       </div>
                       <div className="admin-owner-meta-cell">
                         <span className="cell-lbl">Priority Level</span>
@@ -1214,8 +2125,8 @@ export const FollowupsPage: React.FC = () => {
                 {!isAdmin && (
                   <div className="lead-quick-banner">
                     <div className="lead-assigned-note" style={{ fontSize: 13, marginTop: 0 }}>
-                      Assigned to <strong>{assignedAgent}</strong>
-                      {drawerFollowupRole && (
+                      Assigned Agent : <strong>{assignedAgent}</strong>
+                      {assignedAgentRole && (
                         <span
                           style={{
                             marginLeft: 8,
@@ -1223,15 +2134,38 @@ export const FollowupsPage: React.FC = () => {
                             fontWeight: 700,
                             padding: '2px 7px',
                             borderRadius: 4,
-                            background: drawerFollowupRole === 'IRM' ? 'rgba(124,58,237,0.1)' : 'rgba(14,165,233,0.1)',
-                            color: drawerFollowupRole === 'IRM' ? '#7c3aed' : '#0284c7',
+                            background: assignedAgentRole === 'IRM' ? 'rgba(124,58,237,0.1)' : 'rgba(14,165,233,0.1)',
+                            color: assignedAgentRole === 'IRM' ? '#7c3aed' : '#0284c7',
                             textTransform: 'uppercase',
                             letterSpacing: '0.04em',
                           }}
                         >
-                          {drawerFollowupRole}
+                          {assignedAgentRole}
                         </span>
                       )}
+                    </div>
+                  </div>
+                )}
+
+                {isFollowupReturned(drawerFollowup, matchingLead) && (
+                  <div style={{
+                    margin: '10px 0',
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    background: 'rgba(16, 185, 129, 0.12)',
+                    border: '1px solid rgba(16, 185, 129, 0.35)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                  }}>
+                    <span style={{ fontSize: 16 }}>↩️</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#34d399' }}>
+                        Returned from Coverage by {getFollowupReturnedCoveringName(drawerFollowup, matchingLead)}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                        This contact was covered while you were away and handed back to you{getFollowupReturnedDate(drawerFollowup, matchingLead) ? ` on ${new Date(getFollowupReturnedDate(drawerFollowup, matchingLead)!).toLocaleDateString()}` : ''}. Review recent call logs and updated notes below.
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1255,7 +2189,7 @@ export const FollowupsPage: React.FC = () => {
                     <div>
                       <span className="lead-detail-label">Follow-up:</span>
                       <div className="lead-detail-value lead-followup-text has-date">
-                        {drawerFollowup.scheduledAt || matchingLead?.nextFollowupDate || 'Not scheduled'}
+                        {formatSmartScheduleDate(drawerFollowup.scheduledAt) || formatSmartScheduleDate(matchingLead?.nextFollowupDate) || 'Not scheduled'}
                       </div>
                     </div>
                   </div>
@@ -1279,10 +2213,12 @@ export const FollowupsPage: React.FC = () => {
                   </div>
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
                     <div>
-                      <span className="lead-detail-label">Investment Capacity:</span>
+                      <label htmlFor="followup-drawer-capacity" className="lead-detail-label">Investment Capacity:</label>
                       {isEditingCapacity ? (
                         <div style={{ marginTop: 6 }}>
                           <select
+                            id="followup-drawer-capacity"
+                            name="capacityValue"
                             className="form-select"
                             value={capacityValue}
                             onChange={e => setCapacityValue(e.target.value)}
@@ -1321,13 +2257,81 @@ export const FollowupsPage: React.FC = () => {
                           className="lead-detail-value"
                           style={{
                             marginTop: 4,
-                            fontSize: 16,
+                            fontSize: (capacityValue || investmentCapacity) && (capacityValue || investmentCapacity) !== '—' ? 16 : 13,
                             fontWeight: 700,
                             color: '#10b981',
                             letterSpacing: '0.01em',
                           }}
                         >
-                          {capacityValue || investmentCapacity || '—'}
+                          {(capacityValue || investmentCapacity) && (capacityValue || investmentCapacity) !== '—' ? (
+                            capacityValue || investmentCapacity
+                          ) : (
+                            <span className="not-specified-badge">Not Specified</span>
+                          )}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* ── Investment Amount (Separate from Capacity & Asset Class) ── */}
+                    <div style={{ marginTop: 12, paddingTop: 12, borderTop: '1px solid var(--border-color)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                        <label htmlFor="followup-drawer-investment-amount" className="lead-detail-label">Investment Amount:</label>
+                        {isIrm && (
+                          <button
+                            type="button"
+                            className="btn btn-ghost btn-sm btn-icon"
+                            title={isEditingAmount ? 'Cancel edit' : 'Edit Investment Amount'}
+                            style={{ width: 28, height: 28 }}
+                            onClick={() => setIsEditingAmount(prev => !prev)}
+                          >
+                            <Pencil size={13} />
+                          </button>
+                        )}
+                      </div>
+                      {isEditingAmount ? (
+                        <div style={{ marginTop: 6 }}>
+                          <input
+                            id="followup-drawer-investment-amount"
+                            name="investmentAmount"
+                            type="number"
+                            className="form-input"
+                            placeholder="e.g. 5000000"
+                            value={investmentAmountValue}
+                            onChange={e => setInvestmentAmountValue(e.target.value)}
+                            style={{ width: '100%', fontSize: 13, height: 36 }}
+                          />
+                          <div style={{ marginTop: 10, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              onClick={() => setIsEditingAmount(false)}
+                            >
+                              Cancel
+                            </button>
+                            <button
+                              type="button"
+                              className="btn btn-primary btn-sm"
+                              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                              onClick={() => handleSaveInvestmentAmount(matchingLead, matchingCustomer)}
+                            >
+                              <CheckCircle size={14} /> Save
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div
+                          className="lead-detail-value"
+                          style={{
+                            marginTop: 4,
+                            fontSize: 16,
+                            fontWeight: 700,
+                            color: investmentAmountValue && parseFloat(investmentAmountValue) > 0 ? '#059669' : 'var(--text-muted)',
+                            letterSpacing: '0.01em',
+                          }}
+                        >
+                          {investmentAmountValue && parseFloat(investmentAmountValue) > 0
+                            ? `₹${parseFloat(investmentAmountValue).toLocaleString('en-IN')}`
+                            : '—'}
                         </div>
                       )}
                     </div>
@@ -1341,44 +2345,53 @@ export const FollowupsPage: React.FC = () => {
                       <h4 className="lead-custom-title" style={{ margin: 0 }}>
                         {tenant?.name || 'GHL India Ventures'} Custom Attributes
                       </h4>
-                      <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', fontWeight: 600, color: 'var(--text-primary)' }}>
+                      <label htmlFor="followup-drawer-set-by-irm" style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: isGhlAdmin ? 'default' : 'pointer', fontWeight: 600, color: 'var(--text-primary)' }}>
                         <input
+                          id="followup-drawer-set-by-irm"
+                          name="setByIrm"
                           type="checkbox"
-                          checked={isPrefConfirmed || isEditingPref}
+                          checked={Boolean(isPrefConfirmed)}
+                          disabled={isGhlAdmin}
                           onChange={e => handleTogglePrefCheckbox(e.target.checked, matchingLead, matchingCustomer)}
-                          style={{ width: 16, height: 16, cursor: 'pointer', accentColor: 'var(--primary-600)' }}
+                          style={{ width: 16, height: 16, cursor: isGhlAdmin ? 'not-allowed' : 'pointer', accentColor: 'var(--primary-600)' }}
                         />
-                        <span>Set by IRM</span>
+                        <span>Set by IRM {isGhlAdmin && '(Read-only)'}</span>
                       </label>
                     </div>
 
-                    {isEditingPref ? (
+                    {!isGhlAdmin && isEditingPref ? (
                       <div>
                         <div className="lead-detail-grid" style={{ gap: 14 }}>
                           <div>
-                            <label className="lead-custom-label" style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>
+                            <label htmlFor="followup-drawer-pref-asset-class" className="lead-custom-label" style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>
                               Preferred Asset Class:
                             </label>
                             <select
+                              id="followup-drawer-pref-asset-class"
+                              name="preferredAssetClass"
                               className="form-select"
                               value={prefAssetClass}
                               onChange={e => setPrefAssetClass(e.target.value)}
                               style={{ width: '100%', fontSize: 13, height: 36 }}
                             >
+                              <option value="">— Select Asset Class —</option>
                               <option value="CO-AIF">CO-AIF</option>
                               <option value="AIF">AIF</option>
                             </select>
                           </div>
                           <div>
-                            <label className="lead-custom-label" style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>
+                            <label htmlFor="followup-drawer-pref-horizon" className="lead-custom-label" style={{ display: 'block', marginBottom: 4, fontWeight: 600 }}>
                               Investment Horizon:
                             </label>
                             <select
+                              id="followup-drawer-pref-horizon"
+                              name="investmentHorizon"
                               className="form-select"
                               value={prefHorizon}
                               onChange={e => setPrefHorizon(e.target.value)}
                               style={{ width: '100%', fontSize: 13, height: 36 }}
                             >
+                              <option value="">— Select Horizon —</option>
                               <option value="1-2 Years">1-2 Years</option>
                               <option value="3-5 Years">3-5 Years</option>
                               <option value="5-7 Years">5-7 Years</option>
@@ -1389,15 +2402,19 @@ export const FollowupsPage: React.FC = () => {
                         </div>
 
                         <div style={{ marginTop: 14, display: 'flex', justifyContent: 'flex-end', gap: 8 }}>
-                          {isPrefConfirmed && (
-                            <button
-                              type="button"
-                              className="btn btn-secondary btn-sm"
-                              onClick={() => setIsEditingPref(false)}
-                            >
-                              Cancel
-                            </button>
-                          )}
+                          <button
+                            type="button"
+                            className="btn btn-secondary btn-sm"
+                            onClick={() => {
+                              setIsEditingPref(false);
+                              if (!isPrefConfirmed) {
+                                setPrefAssetClass('');
+                                setPrefHorizon('');
+                              }
+                            }}
+                          >
+                            Cancel
+                          </button>
                           <button
                             type="button"
                             className="btn btn-primary btn-sm"
@@ -1408,35 +2425,60 @@ export const FollowupsPage: React.FC = () => {
                           </button>
                         </div>
                       </div>
-                    ) : isPrefConfirmed ? (
+                    ) : (
                       <div>
                         <div className="lead-detail-grid">
                           <div>
                             <span className="lead-custom-label">Preferred Asset Class:</span>
-                            <div className="lead-custom-value">{prefAssetClass}</div>
+                            <div
+                              className="lead-custom-value"
+                              style={{
+                                color: isPrefConfirmed && prefAssetClass ? 'var(--text-primary)' : 'var(--text-muted)',
+                              }}
+                            >
+                              {isPrefConfirmed && prefAssetClass && prefAssetClass !== '—' ? (
+                                prefAssetClass
+                              ) : (
+                                <span className="not-specified-badge">Not Specified</span>
+                              )}
+                            </div>
                           </div>
                           <div>
                             <span className="lead-custom-label">Investment Horizon:</span>
-                            <div className="lead-custom-value">{prefHorizon}</div>
+                            <div
+                              className="lead-custom-value"
+                              style={{
+                                color: isPrefConfirmed && prefHorizon ? 'var(--text-primary)' : 'var(--text-muted)',
+                              }}
+                            >
+                              {isPrefConfirmed && prefHorizon && prefHorizon !== '—' ? (
+                                prefHorizon
+                              ) : (
+                                <span className="not-specified-badge">Not Specified</span>
+                              )}
+                            </div>
                           </div>
                         </div>
-                        <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
-                          <div style={{ fontSize: 11, color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
-                            <CheckCircle size={13} /> Confirmed by IRM — Visible in other modules
+
+                        {isPrefConfirmed ? (
+                          <div style={{ marginTop: 10, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                            <div style={{ fontSize: 11, color: '#10b981', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 5 }}>
+                              <CheckCircle size={13} /> Confirmed by IRM — Visible in other modules
+                            </div>
+                            <button
+                              type="button"
+                              className="btn btn-secondary btn-sm"
+                              style={{ fontSize: 11, padding: '3px 8px', height: 'auto' }}
+                              onClick={() => setIsEditingPref(true)}
+                            >
+                              Edit
+                            </button>
                           </div>
-                          <button
-                            type="button"
-                            className="btn btn-secondary btn-sm"
-                            style={{ fontSize: 11, padding: '3px 8px', height: 'auto' }}
-                            onClick={() => setIsEditingPref(true)}
-                          >
-                            Edit
-                          </button>
-                        </div>
-                      </div>
-                    ) : (
-                      <div style={{ padding: '12px 14px', background: 'var(--bg-surface)', borderRadius: 6, fontSize: 12, color: 'var(--text-muted)' }}>
-                        Preferred Asset Class and Investment Horizon have not been set by IRM yet. Check <strong>"Set by IRM"</strong> above to configure and confirm them.
+                        ) : (
+                          <div style={{ marginTop: 10, padding: '10px 12px', background: 'var(--bg-surface)', borderRadius: 6, fontSize: 11.5, color: 'var(--text-muted)' }}>
+                            Preferred Asset Class and Investment Horizon have not been set by IRM yet. Check <strong>"Set by IRM"</strong> above to configure and confirm them.
+                          </div>
+                        )}
                       </div>
                     )}
 
@@ -1474,13 +2516,16 @@ export const FollowupsPage: React.FC = () => {
                   contactType={resolvedContactType}
                   tenantId={tenant?.id}
                   tenantName={tenant?.name}
+                  calls={callsList}
+                  lead={matchingLead}
                   onCall={() =>
                     initiateCall(
                       drawerFollowup.contactName,
                       drawerFollowup.contactPhone,
                       resolvedContactType as any,
                       resolvedContactId,
-                      drawerFollowup.id
+                      drawerFollowup.id,
+                      'follow_up'
                     )
                   }
                   sectionsOnly={['callRecordings']}

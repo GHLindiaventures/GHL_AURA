@@ -3,7 +3,24 @@ using backend.Middleware;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 
+// S1: Load .env file (if present) before any configuration is read.
+// This allows developers to keep secrets out of appsettings.json by placing
+// a backend/.env file with environment-variable-style overrides, e.g.:
+//   ConnectionStrings__DefaultConnection=Host=...
+//   JwtSettings__SecretKey=...
+// The file is optional; if missing, standard env vars / appsettings.json apply.
+DotNetEnv.Env.TraversePath().Load();
+
+// Ensure wwwroot directory exists to avoid PhysicalFileProvider DirectoryNotFoundException
+var wwwrootDirectory = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+if (!Directory.Exists(wwwrootDirectory))
+{
+    Directory.CreateDirectory(wwwrootDirectory);
+}
+
 var builder = WebApplication.CreateBuilder(args);
+builder.Configuration.AddUserSecrets<Program>(optional: true);
+
 
 // 1. Add Controllers
 builder.Services.AddControllers()
@@ -19,6 +36,7 @@ builder.Services.AddApplicationServices(builder.Configuration);
 // 3. Add JWT Authentication & Authorization
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddAuthorization();
+builder.Services.AddSignalR();
 
 // 4. Configure CORS
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() 
@@ -78,14 +96,116 @@ var app = builder.Build();
 using (var scope = app.Services.CreateScope())
 {
     var config = scope.ServiceProvider.GetRequiredService<IConfiguration>();
-    var useInMemory = config.GetValue<bool>("UseInMemoryDatabase", false);
+    var connectionString = config.GetConnectionString("DefaultConnection");
+    if (string.IsNullOrWhiteSpace(connectionString))
+    {
+        connectionString = config["ConnectionStrings:DefaultConnection"]
+            ?? config["ConnectionString:DefaultConnection"];
+    }
+    var hasValidConnectionString = !string.IsNullOrWhiteSpace(connectionString) && !connectionString.Equals("InMemory", StringComparison.OrdinalIgnoreCase);
+    var useInMemory = config.GetValue<bool>("UseInMemoryDatabase", !hasValidConnectionString) || !hasValidConnectionString;
     var db = scope.ServiceProvider.GetRequiredService<backend.Data.ApplicationDbContext>();
     if (useInMemory)
     {
+        Console.WriteLine("[Database] WARNING: Running with in-memory database. Password changes and state will not persist across restarts.");
         db.Database.EnsureCreated();
     }
     else
     {
+        Console.WriteLine($"[Database] Connected to persistent database provider: {db.Database.ProviderName}");
+        try
+        {
+            db.Database.ExecuteSqlRaw(@"
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'roles') THEN
+                        ALTER TABLE roles ADD COLUMN IF NOT EXISTS ""Description"" text;
+                        ALTER TABLE roles ADD COLUMN IF NOT EXISTS ""IsSystemRole"" boolean NOT NULL DEFAULT FALSE;
+                        ALTER TABLE roles ADD COLUMN IF NOT EXISTS ""IsActive"" boolean NOT NULL DEFAULT TRUE;
+                        ALTER TABLE roles ADD COLUMN IF NOT EXISTS ""CreatedBy"" text;
+                        ALTER TABLE roles ADD COLUMN IF NOT EXISTS ""UpdatedAt"" timestamp with time zone;
+                        
+                        UPDATE roles SET ""IsSystemRole"" = TRUE WHERE ""Code"" IN ('super_admin', 'company_admin', 'sales_executive', 'irm') AND (""IsSystemRole"" IS NULL OR ""IsSystemRole"" = FALSE);
+                        UPDATE roles SET ""IsActive"" = TRUE WHERE ""IsActive"" IS NULL;
+                        UPDATE roles SET ""Description"" = 'System Administrator with full platform control' WHERE ""Code"" = 'super_admin' AND (""Description"" IS NULL OR ""Description"" = '');
+                        UPDATE roles SET ""Description"" = 'Company Administrator managing organization and users' WHERE ""Code"" = 'company_admin' AND (""Description"" IS NULL OR ""Description"" = '');
+                        UPDATE roles SET ""Description"" = 'Sales Executive managing leads and client communications' WHERE ""Code"" = 'sales_executive' AND (""Description"" IS NULL OR ""Description"" = '');
+                        UPDATE roles SET ""Description"" = 'Investor Relations Manager managing investors, KYC, and deals' WHERE ""Code"" = 'irm' AND (""Description"" IS NULL OR ""Description"" = '');
+                    END IF;
+                END $$;
+            ");
+        }
+        catch (Exception ex)
+        {
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+            logger.LogWarning(ex, "Database schema sync for roles skipped: {Message}", ex.Message);
+        }
+
+        try
+        {
+            db.Database.ExecuteSqlRaw(@"
+                DO $$
+                BEGIN
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'users') THEN
+                        ALTER TABLE users ADD COLUMN IF NOT EXISTS ""IsProtected"" boolean NOT NULL DEFAULT FALSE;
+                        ALTER TABLE users ADD COLUMN IF NOT EXISTS ""IsTwoFactorEnabled"" boolean NOT NULL DEFAULT FALSE;
+                        ALTER TABLE users ADD COLUMN IF NOT EXISTS ""TwoFactorSecret"" character varying(128);
+                        ALTER TABLE users ADD COLUMN IF NOT EXISTS ""TwoFactorRecoveryCodesJson"" text;
+                        UPDATE users SET ""IsProtected"" = TRUE WHERE ""Email"" = 'yanosh@ghlindiaventures.com' OR ""Id"" = 1;
+                    END IF;
+
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'tenants') THEN
+                        ALTER TABLE tenants ADD COLUMN IF NOT EXISTS ""IsProtected"" boolean NOT NULL DEFAULT FALSE;
+                        UPDATE tenants SET ""IsProtected"" = TRUE WHERE ""Id"" IN (1, 2) OR ""Slug"" IN ('ghl', 'jamin');
+                    END IF;
+
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'roles') THEN
+                        UPDATE roles SET ""IsActive"" = FALSE WHERE ""Code"" IN ('sales_manager', 'presales_rep');
+                    END IF;
+
+                    CREATE TABLE IF NOT EXISTS user_sessions (
+                        ""Id"" integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                        ""UserId"" integer NOT NULL REFERENCES users(""Id"") ON DELETE CASCADE,
+                        ""TokenId"" character varying(128) NOT NULL,
+                        ""IpAddress"" character varying(64) NOT NULL DEFAULT '',
+                        ""UserAgent"" character varying(512) NOT NULL DEFAULT '',
+                        ""Device"" character varying(128) NOT NULL DEFAULT 'Desktop / Web Browser',
+                        ""Location"" character varying(128) NOT NULL DEFAULT 'India (IST)',
+                        ""IsActive"" boolean NOT NULL DEFAULT TRUE,
+                        ""CreatedAt"" timestamp with time zone NOT NULL DEFAULT NOW(),
+                        ""LastActivityAt"" timestamp with time zone NOT NULL DEFAULT NOW(),
+                        ""RevokedAt"" timestamp with time zone NULL,
+                        ""RevokedReason"" text NULL
+                    );
+
+                    CREATE UNIQUE INDEX IF NOT EXISTS ix_user_sessions_token_id ON user_sessions (""TokenId"");
+                    CREATE INDEX IF NOT EXISTS ix_user_sessions_user_id_is_active ON user_sessions (""UserId"", ""IsActive"");
+                    CREATE INDEX IF NOT EXISTS ix_users_company_id ON users (""CompanyId"");
+                    CREATE INDEX IF NOT EXISTS ix_users_role_id ON users (""RoleId"");
+                    CREATE UNIQUE INDEX IF NOT EXISTS ux_broadcast_announcements_single_active_global ON broadcast_announcements (""IsActive"") WHERE ""IsActive"" = TRUE AND ""TargetTenantId"" IS NULL;
+
+                    CREATE TABLE IF NOT EXISTS security_events (
+                        ""Id"" integer GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
+                        ""UserId"" integer NULL REFERENCES users(""Id"") ON DELETE SET NULL,
+                        ""EventType"" character varying(64) NOT NULL,
+                        ""ActorEmail"" character varying(255) NOT NULL DEFAULT '',
+                        ""IpAddress"" character varying(64) NOT NULL DEFAULT '',
+                        ""UserAgent"" character varying(512) NOT NULL DEFAULT '',
+                        ""Details"" text NOT NULL DEFAULT '',
+                        ""Severity"" character varying(32) NOT NULL DEFAULT 'info',
+                        ""CreatedAt"" timestamp with time zone NOT NULL DEFAULT NOW()
+                    );
+
+                    CREATE INDEX IF NOT EXISTS ix_security_events_created_at_severity ON security_events (""CreatedAt"", ""Severity"");
+                    CREATE INDEX IF NOT EXISTS ix_security_events_event_type ON security_events (""EventType"");
+                END $$;
+            ");
+        }
+        catch (Exception ex)
+        {
+            var logger = scope.ServiceProvider.GetRequiredService<ILogger<Program>>();
+            logger.LogWarning(ex, "Database schema sync for security and sessions skipped: {Message}", ex.Message);
+        }
         try
         {
             var sql = @"
@@ -129,6 +249,7 @@ using (var scope = app.Services.CreateScope())
                     END IF;
 
                     ALTER TABLE followups ADD COLUMN IF NOT EXISTS ""ContactType"" character varying(50) NOT NULL DEFAULT 'lead';
+                    ALTER TABLE followups ADD COLUMN IF NOT EXISTS ""ContactEmail"" character varying(255) NULL;
                     ALTER TABLE followups ADD COLUMN IF NOT EXISTS ""Priority"" character varying(50) NOT NULL DEFAULT 'Medium';
                     ALTER TABLE followups ADD COLUMN IF NOT EXISTS ""Notes"" text NOT NULL DEFAULT '';
                     ALTER TABLE followups ADD COLUMN IF NOT EXISTS ""Agenda"" text NULL;
@@ -142,6 +263,8 @@ using (var scope = app.Services.CreateScope())
                     ALTER TABLE followups ADD COLUMN IF NOT EXISTS ""UpdatedAt"" timestamp with time zone NULL;
                     ALTER TABLE followups ADD COLUMN IF NOT EXISTS ""AssignedAgentId"" integer NOT NULL DEFAULT 1;
 
+                    ALTER TABLE users ADD COLUMN IF NOT EXISTS ""MustChangePassword"" boolean NOT NULL DEFAULT FALSE;
+
                     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'followups' AND column_name = 'Status' AND data_type = 'integer') THEN
                         ALTER TABLE followups ALTER COLUMN ""Status"" TYPE character varying(50) USING CASE WHEN ""Status"" = 1 THEN 'Completed' WHEN ""Status"" = 2 THEN 'Cancelled' WHEN ""Status"" = 3 THEN 'Rescheduled' ELSE 'Pending' END;
                     END IF;
@@ -149,6 +272,36 @@ using (var scope = app.Services.CreateScope())
                     ALTER TABLE followups ALTER COLUMN ""Status"" SET DEFAULT 'Pending';
                     ALTER TABLE followups ALTER COLUMN ""Priority"" DROP NOT NULL;
                     ALTER TABLE followups ALTER COLUMN ""Priority"" SET DEFAULT 'Medium';
+
+                    IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Leads' AND column_name = 'AssignedAgentId') THEN
+                        ALTER TABLE ""Leads"" ALTER COLUMN ""AssignedAgentId"" DROP NOT NULL;
+                    ELSIF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'leads' AND column_name = 'AssignedAgentId') THEN
+                        ALTER TABLE leads ALTER COLUMN ""AssignedAgentId"" DROP NOT NULL;
+                    END IF;
+
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'call_records') THEN
+                        ALTER TABLE call_records ADD COLUMN IF NOT EXISTS ""TwilioCallSid"" character varying(64) NULL;
+                        ALTER TABLE call_records ADD COLUMN IF NOT EXISTS ""RecordingUrl"" character varying(256) NULL;
+                        ALTER TABLE call_records ADD COLUMN IF NOT EXISTS ""Transcript"" text NULL;
+                        ALTER TABLE call_records ADD COLUMN IF NOT EXISTS ""CallModule"" character varying(50) NULL;
+                        ALTER TABLE call_records ADD COLUMN IF NOT EXISTS ""Reason"" text NULL;
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'CallRecords') THEN
+                        ALTER TABLE ""CallRecords"" ADD COLUMN IF NOT EXISTS ""TwilioCallSid"" character varying(64) NULL;
+                        ALTER TABLE ""CallRecords"" ADD COLUMN IF NOT EXISTS ""RecordingUrl"" character varying(256) NULL;
+                        ALTER TABLE ""CallRecords"" ADD COLUMN IF NOT EXISTS ""Transcript"" text NULL;
+                        ALTER TABLE ""CallRecords"" ADD COLUMN IF NOT EXISTS ""CallModule"" character varying(50) NULL;
+                        ALTER TABLE ""CallRecords"" ADD COLUMN IF NOT EXISTS ""Reason"" text NULL;
+                    END IF;
+
+                    -- Backfill followups AssignedToName and AssignedToRole if empty
+                    UPDATE followups f
+                    SET ""AssignedToName"" = u.""Name"",
+                        ""AssignedToRole"" = COALESCE(r.""Code"", 'sales_executive')
+                    FROM users u
+                    LEFT JOIN roles r ON r.""Id"" = u.""RoleId""
+                    WHERE f.""AssignedAgentId"" = u.""Id""
+                      AND (f.""AssignedToName"" IS NULL OR f.""AssignedToName"" = '' OR f.""AssignedToRole"" IS NULL OR f.""AssignedToRole"" = '');
                 END $$;
             ";
             db.Database.ExecuteSqlRaw(sql);
@@ -156,6 +309,93 @@ using (var scope = app.Services.CreateScope())
         catch (Exception ex)
         {
             Console.WriteLine($"[Database Init Warning] {ex.Message}");
+        }
+
+        // Patch: reconcile leads whose KYC/Investor records are Approved
+        try
+        {
+            var reconcileSql = @"
+                -- 1. Active Opportunities
+                UPDATE leads
+                SET ""Status"" = 'In Opportunity', ""UpdatedAt"" = NOW()
+                WHERE ""Status"" != 'In Opportunity'
+                  AND EXISTS (
+                    SELECT 1 FROM ghl_deals d
+                    WHERE d.""CompanyId"" = leads.""CompanyId""
+                      AND LOWER(TRIM(d.""Stage"")) IN ('investment_opportunity', 'opportunity', 'term_sheet', 'committed')
+                      AND (
+                        (d.""CustomerId"" IS NOT NULL AND d.""CustomerId"" = leads.""Id"")
+                        OR LOWER(TRIM(d.""CustomerName"")) = LOWER(TRIM(leads.""Name""))
+                      )
+                  );
+
+                -- 2. Active KYC In Progress
+                UPDATE leads
+                SET ""Status"" = 'KYC In Progress', ""UpdatedAt"" = NOW()
+                WHERE ""Status"" NOT IN ('In Opportunity', 'Converted', 'KYC In Progress')
+                  AND (
+                    EXISTS (
+                        SELECT 1 FROM ghl_deals d
+                        WHERE d.""CompanyId"" = leads.""CompanyId""
+                          AND LOWER(TRIM(d.""Stage"")) IN ('qualified_investor', 'qualified')
+                          AND (
+                            (d.""CustomerId"" IS NOT NULL AND d.""CustomerId"" = leads.""Id"")
+                            OR LOWER(TRIM(d.""CustomerName"")) = LOWER(TRIM(leads.""Name""))
+                          )
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM ""InvestorKycs"" k
+                        WHERE k.""CompanyId"" = leads.""CompanyId""
+                          AND k.""Status"" IN (0, 1, 2)
+                          AND (
+                            (k.""Phone"" IS NOT NULL AND RIGHT(REGEXP_REPLACE(k.""Phone"", '\D', '', 'g'), 10) = RIGHT(REGEXP_REPLACE(leads.""Phone"", '\D', '', 'g'), 10))
+                            OR (k.""Email"" IS NOT NULL AND LOWER(TRIM(k.""Email"")) = LOWER(TRIM(leads.""Email"")))
+                            OR LOWER(TRIM(k.""InvestorName"")) = LOWER(TRIM(leads.""Name""))
+                          )
+                    )
+                  );
+
+                -- 3. Won / Converted Investors (without active opportunity)
+                UPDATE leads
+                SET ""Status"" = 'Converted', ""UpdatedAt"" = NOW()
+                WHERE ""Status"" NOT IN ('In Opportunity', 'Converted')
+                  AND (
+                    EXISTS (
+                        SELECT 1 FROM ghl_deals d
+                        WHERE d.""CompanyId"" = leads.""CompanyId""
+                          AND LOWER(TRIM(d.""Stage"")) IN ('converted', 'won')
+                          AND (
+                            (d.""CustomerId"" IS NOT NULL AND d.""CustomerId"" = leads.""Id"")
+                            OR LOWER(TRIM(d.""CustomerName"")) = LOWER(TRIM(leads.""Name""))
+                          )
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM ""Investors"" i
+                        WHERE i.""CompanyId"" = leads.""CompanyId""
+                          AND i.""Status"" = 1
+                          AND (
+                            (i.""Phone"" IS NOT NULL AND RIGHT(REGEXP_REPLACE(i.""Phone"", '\D', '', 'g'), 10) = RIGHT(REGEXP_REPLACE(leads.""Phone"", '\D', '', 'g'), 10))
+                            OR (i.""Email"" IS NOT NULL AND LOWER(TRIM(i.""Email"")) = LOWER(TRIM(leads.""Email"")))
+                            OR LOWER(TRIM(i.""Name"")) = LOWER(TRIM(leads.""Name""))
+                          )
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM ""InvestorKycs"" k
+                        WHERE k.""CompanyId"" = leads.""CompanyId""
+                          AND k.""Status"" = 3
+                          AND (
+                            (k.""Phone"" IS NOT NULL AND RIGHT(REGEXP_REPLACE(k.""Phone"", '\D', '', 'g'), 10) = RIGHT(REGEXP_REPLACE(leads.""Phone"", '\D', '', 'g'), 10))
+                            OR (k.""Email"" IS NOT NULL AND LOWER(TRIM(k.""Email"")) = LOWER(TRIM(leads.""Email"")))
+                            OR LOWER(TRIM(k.""InvestorName"")) = LOWER(TRIM(leads.""Name""))
+                          )
+                    )
+                  );
+            ";
+            db.Database.ExecuteSqlRaw(reconcileSql);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Lead Reconciliation Warning] {ex.Message}");
         }
 
         // Patch: ensure tenants have EnabledFeatures populated
@@ -196,6 +436,38 @@ using (var scope = app.Services.CreateScope())
             Console.WriteLine($"[Tenant Feature Patch Warning] {ex.Message}");
         }
 
+        // Patch: remove sales_manager role and migrate any users with sales_manager to sales_executive
+        try
+        {
+            var salesManagerRole = db.Roles.FirstOrDefault(r => r.Code == "sales_manager" || r.Id == 5);
+            var salesExecutiveRole = db.Roles.FirstOrDefault(r => r.Code == "sales_executive" || r.Id == 3);
+
+            if (salesExecutiveRole != null)
+            {
+                var managerUsers = db.Users.Where(u => u.RoleId == 5 || (salesManagerRole != null && u.RoleId == salesManagerRole.Id)).ToList();
+                if (managerUsers.Any())
+                {
+                    foreach (var u in managerUsers)
+                    {
+                        u.RoleId = salesExecutiveRole.Id;
+                        Console.WriteLine($"[Role Migration] Migrated user '{u.Email}' (ID: {u.Id}) from sales_manager to sales_executive.");
+                    }
+                    db.SaveChanges();
+                }
+
+                if (salesManagerRole != null)
+                {
+                    db.Roles.Remove(salesManagerRole);
+                    db.SaveChanges();
+                    Console.WriteLine("[Role Migration] Removed obsolete 'sales_manager' role from database.");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Role Migration Warning] {ex.Message}");
+        }
+
         // Patch: ensure roles have Permissions populated
         try
         {
@@ -223,9 +495,13 @@ using (var scope = app.Services.CreateScope())
                         role.Permissions = allPerms.ToList();
                     else if (role.Code == "irm")
                         role.Permissions = new List<string> {
-                            "leads.view","leads.create","investors.view","investors.create","investors.update",
+                            "leads.view","leads.create","leads.update",
+                            "followups.view","followups.create","followups.update",
+                            "investors.view","investors.create","investors.update",
                             "consultations.view","consultations.create","consultations.update",
                             "opportunities.view","opportunities.create","opportunities.update",
+                            "deals.view","deals.create","deals.update",
+                            "kyc.view","kyc.approve",
                             "calls.make","calls.receive","calls.view","reports.view","chat.view","chat.send"
                         };
                     else // sales_executive
@@ -245,8 +521,124 @@ using (var scope = app.Services.CreateScope())
         {
             Console.WriteLine($"[Role Permissions Patch Warning] {ex.Message}");
         }
+
+        // Startup deduplication & cleanup for followups table
+        try
+        {
+            // 1. Remove all old superseded placeholder rows created by superseded loops
+            var supersededFollowups = db.Followups.Where(f => f.Notes != null && f.Notes.Contains("Superseded by follow-up scheduled for")).ToList();
+            if (supersededFollowups.Any())
+            {
+                db.Followups.RemoveRange(supersededFollowups);
+                db.SaveChanges();
+                Console.WriteLine($"[Followup Cleanup] Removed {supersededFollowups.Count} superseded placeholder follow-up rows.");
+            }
+
+            // 2. Deduplicate pending followups per company & contact/phone
+            var allPendingFollowups = db.Followups.Where(f => f.Status == backend.Models.Enums.FollowupStatus.Pending).ToList();
+            var groupedPending = allPendingFollowups
+                .GroupBy(f => new
+                {
+                    f.CompanyId,
+                    Key = !string.IsNullOrWhiteSpace(f.ContactId) && f.ContactId != "contact-new" ? f.ContactId.Trim() : (f.ContactPhone != null && f.ContactPhone.Length >= 10 ? f.ContactPhone[^10..] : (f.ContactPhone ?? string.Empty))
+                })
+                .Where(g => !string.IsNullOrEmpty(g.Key.Key) && g.Count() > 1);
+
+            bool dupsCleaned = false;
+            foreach (var group in groupedPending)
+            {
+                var sorted = group.OrderByDescending(f => f.UpdatedAt ?? f.CreatedAt).ThenByDescending(f => f.Id).ToList();
+                var toRemove = sorted.Skip(1).ToList();
+                db.Followups.RemoveRange(toRemove);
+                dupsCleaned = true;
+            }
+            if (dupsCleaned)
+            {
+                db.SaveChanges();
+                Console.WriteLine("[Followup Cleanup] Deduplicated multiple pending follow-up records.");
+            }
+
+            // 3. For any lead that is currently in 'Callback' or 'No Response' or 'New' or 'Contacted',
+            // remove any followup record mistakenly created for it so the lead stays strictly in My Leads.
+            var myLeadsStatuses = new[] { "Callback", "No Response", "New", "Contacted" };
+            var activeMyLeads = db.Leads.Where(l => myLeadsStatuses.Contains(l.Status)).ToList();
+            var activeMyLeadPhones = activeMyLeads.Select(l => l.Phone?.Length >= 10 ? l.Phone[^10..] : l.Phone ?? "").Where(p => !string.IsNullOrEmpty(p)).ToHashSet();
+            var activeMyLeadIds = activeMyLeads.Select(l => l.Id.ToString()).ToHashSet();
+
+            var strayFollowups = db.Followups
+                .Where(f =>
+                    (f.ContactId != null && activeMyLeadIds.Contains(f.ContactId)) ||
+                    (f.ContactPhone != null && activeMyLeadPhones.Contains(f.ContactPhone.Length >= 10 ? f.ContactPhone.Substring(f.ContactPhone.Length - 10) : f.ContactPhone)))
+                .ToList();
+
+            if (strayFollowups.Any())
+            {
+                db.Followups.RemoveRange(strayFollowups);
+                db.SaveChanges();
+                Console.WriteLine($"[Followup Cleanup] Removed {strayFollowups.Count} stray follow-up records for leads that belong in My Leads.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Followup Cleanup Warning] {ex.Message}");
+        }
+
+        try
+        {
+            var pendingMigrations = db.Database.GetPendingMigrations().ToList();
+            if (pendingMigrations.Any())
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("================================================================================");
+                Console.WriteLine($"[WARNING] There are {pendingMigrations.Count} pending EF Core migration(s) not yet applied to the database:");
+                foreach (var m in pendingMigrations)
+                {
+                    Console.WriteLine($"  - {m}");
+                }
+                Console.WriteLine("Run 'dotnet ef database update' in backend/ to apply pending migrations.");
+                Console.WriteLine("================================================================================");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.WriteLine("[Database] All EF Core migrations are up to date.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Database Migration Check Warning] {ex.Message}");
+
+        }
+
+        try
+        {
+            var superAdmin = db.Users.FirstOrDefault(u => u.Id == 1 || u.Email == "yanosh@ghlindiaventures.com");
+            if (superAdmin != null && string.IsNullOrWhiteSpace(superAdmin.PasswordHash))
+            {
+                superAdmin.PasswordHash = backend.Helpers.PasswordHasher.HashPassword("Password@123");
+                superAdmin.IsProtected = true;
+                db.SaveChanges();
+                Console.WriteLine("[Security Init] Initialized empty Super Admin password hash.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Security Init Warning] {ex.Message}");
+        }
     }
+
+    var helpMeDecide = db.Leads.Count(l => l.CustomFieldsJson != null && l.CustomFieldsJson.Contains("help me decide"));
+    var notConfirmed = db.Leads.Count(l => l.CustomFieldsJson != null && (l.CustomFieldsJson.Contains("\"assetClass\":\"") || l.CustomFieldsJson.Contains("\"preferredAssetClass\":\"")) && !l.CustomFieldsJson.Contains("\"irmPreferencesConfirmed\":true"));
+    Console.WriteLine($"[DIAGNOSTIC] Count with help me decide: {helpMeDecide}");
+    Console.WriteLine($"[DIAGNOSTIC] Count with asset class but not confirmed: {notConfirmed}");
 }
+
+app.UseForwardedHeaders(new ForwardedHeadersOptions
+{
+    ForwardedHeaders = Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedFor 
+                     | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedProto 
+                     | Microsoft.AspNetCore.HttpOverrides.ForwardedHeaders.XForwardedHost
+});
 
 // Global Exception Handling Middleware
 app.UseMiddleware<ExceptionHandlingMiddleware>();
@@ -280,9 +672,25 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("DefaultCorsPolicy");
 
+// Serve uploaded documents, but never let the browser render them inline as HTML/scripts.
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        var path = ctx.Context.Request.Path.Value ?? string.Empty;
+        if (path.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase))
+        {
+            ctx.Context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+            ctx.Context.Response.Headers["Content-Security-Policy"] = "default-src 'none'; sandbox";
+            ctx.Context.Response.Headers["Content-Disposition"] = "attachment";
+        }
+    }
+});
+
 app.UseAuthentication();
 app.UseAuthorization();
 
 app.MapControllers();
+app.MapHub<backend.Hubs.PlatformHub>("/hubs/platform");
 
 app.Run();

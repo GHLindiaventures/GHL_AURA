@@ -9,8 +9,9 @@ import {
   Calendar,
   Clock,
 } from 'lucide-react';
-import { CallDisposition, Consultation } from '../../types';
+import { CallDisposition, Consultation, CallRecord, Lead } from '../../types';
 import { storageService } from '../../services/storageService';
+import { getCalls } from '../../services/ghlApiService';
 import { useAuth } from '../../context/AuthContext';
 import { StatusChip } from './StatusChip';
 
@@ -44,6 +45,10 @@ interface LeadDetailDrawerContentProps {
   hideAutoNotes?: boolean;
   /** Optional — when provided, renders only the specified sections */
   sectionsOnly?: ('callRecordings' | 'summary' | 'details' | 'consultations')[];
+  /** Optional — explicitly provided call records */
+  calls?: CallRecord[];
+  /** Optional — explicitly provided lead entity */
+  lead?: Lead | null;
 }
 
 export const LeadDetailDrawerContent: React.FC<LeadDetailDrawerContentProps> = ({
@@ -57,6 +62,8 @@ export const LeadDetailDrawerContent: React.FC<LeadDetailDrawerContentProps> = (
   consultationHistory,
   hideAutoNotes = false,
   sectionsOnly,
+  calls,
+  lead,
 }) => {
   const { user } = useAuth();
   const isSalesExecutive = user?.role?.code === 'sales_executive';
@@ -64,16 +71,28 @@ export const LeadDetailDrawerContent: React.FC<LeadDetailDrawerContentProps> = (
   const [expandedTranscripts, setExpandedTranscripts] = useState<Record<string, boolean>>({});
   const [callTab, setCallTab] = useState<'agent' | 'irm'>('agent');
   const [isPreviousConsultationsOpen, setIsPreviousConsultationsOpen] = useState(true);
+  const [apiCalls, setApiCalls] = useState<CallRecord[]>([]);
 
   useEffect(() => {
     setCallTab('agent');
   }, [contactPhone, contactId]);
 
+  useEffect(() => {
+    if (calls && calls.length > 0) return;
+    getCalls(tenantId)
+      .then(res => {
+        if (Array.isArray(res) && res.length > 0) {
+          setApiCalls(res);
+        }
+      })
+      .catch(console.error);
+  }, [tenantId, calls]);
+
   // ── Lead record lookup ───────────────────────────────────────────────────────
-  const selectedLead = (() => {
+  const selectedLead = lead || (() => {
     const leads = storageService.getLeads(tenantId) || [];
     return leads.find(l => {
-      if (contactId && contactId !== 'contact-new' && l.id === contactId) return true;
+      if (contactId && contactId !== 'contact-new' && String(l.id) === String(contactId)) return true;
       const lPhone = (l.phone || '').replace(/\D/g, '').slice(-10);
       const fPhone = (contactPhone || '').replace(/\D/g, '').slice(-10);
       return lPhone && fPhone && lPhone === fPhone;
@@ -81,15 +100,28 @@ export const LeadDetailDrawerContent: React.FC<LeadDetailDrawerContentProps> = (
   })();
 
   // ── Call history lookup ──────────────────────────────────────────────────────
-  const allCalls = storageService.getCalls(tenantId) || [];
+  const allCalls = (calls && calls.length > 0 ? calls : null) || (apiCalls.length > 0 ? apiCalls : null) || storageService.getCalls(tenantId) || [];
   const fPhoneDigits = (contactPhone || '').replace(/\D/g, '').slice(-10);
 
   const selectedCalls = allCalls.filter(c => {
-    const isMatch =
-      (contactId && contactId !== 'contact-new' &&
-        (c.leadId === contactId || (c as any).contactId === contactId || (c as any).investorId === contactId)) ||
-      ((c.contactPhone || '').replace(/\D/g, '').slice(-10) === fPhoneDigits &&
-        fPhoneDigits.length > 0);
+    const cPhoneDigits = (c.contactPhone || '').replace(/\D/g, '').slice(-10);
+    const isPhoneMatch = fPhoneDigits.length > 0 && cPhoneDigits.length > 0 && cPhoneDigits === fPhoneDigits;
+
+    const isIdMatch = Boolean(
+      contactId && contactId !== 'contact-new' &&
+        (String(c.leadId) === String(contactId) ||
+         String((c as any).contactId) === String(contactId) ||
+         String((c as any).investorId) === String(contactId))
+    );
+
+    const isNameMatch =
+      !isIdMatch && !isPhoneMatch &&
+      Boolean(
+        contactName && c.contactName &&
+        c.contactName.trim().toLowerCase() === contactName.trim().toLowerCase()
+      );
+
+    const isMatch = isIdMatch || isPhoneMatch || isNameMatch;
 
     if (!isMatch) return false;
 
@@ -101,12 +133,13 @@ export const LeadDetailDrawerContent: React.FC<LeadDetailDrawerContentProps> = (
   });
 
   const isIrmCall = (c: any) =>
-    (c.notes || '').startsWith('Connected to IRM:') ||
-    (c.agentId || '').toLowerCase().includes('irm') ||
-    (c.agentName || '').toLowerCase().includes('irm') ||
-    ['Rohan Varma', 'Arun Kumar', 'Ananya Mehta', 'Rohan Mehta', 'Priya Nair', 'Karthik Sundaram'].some(n =>
-      (c.agentName || '').toLowerCase().includes(n.toLowerCase())
-    );
+    c.callerType === 'IRM' ||
+    c.connectVia === 'Connect via IRM' ||
+    c.source === 'irm' ||
+    (c.agentRole || '').toLowerCase() === 'irm' ||
+    (c.notes || '').includes('Connect via IRM') ||
+    (c.notes || '').includes('Connected to IRM') ||
+    (c.agentId || '').toString().toLowerCase().includes('irm');
 
   const agentCalls = selectedCalls.filter(c => !isIrmCall(c));
   const irmCalls = selectedCalls.filter(c => isIrmCall(c));
@@ -559,26 +592,41 @@ export const LeadDetailDrawerContent: React.FC<LeadDetailDrawerContentProps> = (
                     </div>
                   )}
 
-                  {/* Reason (from Call Wrap-up & Disposition) */}
-                  {(c as any).reason && (
-                    <div style={{ fontSize: 12, marginTop: 6, backgroundColor: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)', padding: '5px 10px', borderRadius: 5 }}>
-                      <strong style={{ color: 'var(--text-secondary)' }}>Reason:</strong>{' '}
-                      <span style={{ color: 'var(--text-primary)' }}>{(c as any).reason}</span>
+                  {/* Reason (from Call Wrap-up & Disposition or Skip) */}
+                  {(c.reason || (c as any).reason) && (
+                    <div
+                      style={{
+                        fontSize: 12,
+                        marginTop: 6,
+                        backgroundColor: c.disposition === 'Skipped' ? 'rgba(245,158,11,0.08)' : 'rgba(239,68,68,0.06)',
+                        border: `1px solid ${c.disposition === 'Skipped' ? 'rgba(245,158,11,0.25)' : 'rgba(239,68,68,0.15)'}`,
+                        padding: '6px 10px',
+                        borderRadius: 6,
+                      }}
+                    >
+                      <strong style={{ color: c.disposition === 'Skipped' ? '#d97706' : 'var(--text-secondary)' }}>
+                        {c.disposition === 'Skipped' ? 'Skip Reason:' : 'Reason:'}
+                      </strong>{' '}
+                      <span style={{ color: 'var(--text-primary)' }}>{c.reason || (c as any).reason}</span>
                     </div>
                   )}
 
-                  {/* Audio Player */}
-                  {c.recordingUrl && (
+                  {/* Audio Player / Honest Recording State */}
+                  {c.recordingUrl ? (
                     <div style={{ marginTop: 10 }}>
                       <div style={{ fontSize: 11, color: 'var(--text-secondary)', fontWeight: 600, display: 'flex', alignItems: 'center', gap: 4, marginBottom: 4 }}>
                         <Volume2 size={12} /> Call Recording Audio
                       </div>
                       <audio controls src={c.recordingUrl} style={{ width: '100%', height: 36 }} />
                     </div>
+                  ) : (
+                    <div style={{ marginTop: 8, fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <Volume2 size={12} /> Recording: <span>Unavailable (carrier trunk offline)</span>
+                    </div>
                   )}
 
-                  {/* Collapsible Transcription */}
-                  {c.transcription && (
+                  {/* Collapsible Transcription / Honest Transcript State */}
+                  {c.transcription ? (
                     <div style={{ marginTop: 8 }}>
                       <button
                         type="button"
@@ -607,6 +655,10 @@ export const LeadDetailDrawerContent: React.FC<LeadDetailDrawerContentProps> = (
                           {c.transcription}
                         </div>
                       )}
+                    </div>
+                  ) : (
+                    <div style={{ marginTop: 4, fontSize: 11, color: 'var(--text-muted)', display: 'flex', alignItems: 'center', gap: 5 }}>
+                      <FileText size={12} /> Transcript: <span>Unavailable (speech-to-text offline)</span>
                     </div>
                   )}
                 </div>

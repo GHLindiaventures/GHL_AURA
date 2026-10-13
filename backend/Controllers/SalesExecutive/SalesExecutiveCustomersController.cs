@@ -9,7 +9,7 @@ namespace backend.Controllers.SalesExecutive;
 
 [ApiController]
 [Route("api/sales-executive/customers")]
-[Authorize(Roles = "sales_executive,company_admin,sales_manager,super_admin,irm")]
+[Authorize(Roles = "sales_executive,company_admin,super_admin,irm")]
 public class SalesExecutiveCustomersController : ControllerBase
 {
     private readonly ICustomerService _customerService;
@@ -75,7 +75,11 @@ public class SalesExecutiveCustomersController : ControllerBase
 
         var result = await _customerService.CreateCustomerAsync(dto, ct);
         if (!result.Success)
+        {
+            if (result.Message.StartsWith("Unauthorized"))
+                return Unauthorized(result);
             return BadRequest(result);
+        }
 
         return CreatedAtAction(nameof(GetCustomer360), new { id = result.Data!.Id }, result);
     }

@@ -87,6 +87,7 @@ export const CompanyUsersPage: React.FC = () => {
   const [generatedNewPassword, setGeneratedNewPassword] = useState<string | null>(null);
   const [hasCopiedNewPassword, setHasCopiedNewPassword] = useState(false);
   const [inviteError, setInviteError] = useState<string | null>(null);
+  const [emailDeliveryWarning, setEmailDeliveryWarning] = useState<string | null>(null);
 
   // ── Edit User Modal State ─────────────────────────────────────────────────
   const [editingUser, setEditingUser] = useState<User | null>(null);
@@ -94,6 +95,11 @@ export const CompanyUsersPage: React.FC = () => {
   const [editPhone, setEditPhone] = useState('');
   const [editDesignation, setEditDesignation] = useState('');
   const [editRoleCode, setEditRoleCode] = useState<RoleCode>('sales_executive');
+
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [transferFromUser, setTransferFromUser] = useState<User | null>(null);
+  const [transferTargetRole, setTransferTargetRole] = useState<any | null>(null);
+  const [selectedTransferUserId, setSelectedTransferUserId] = useState<string>('');
 
   // ── Reset Password Modal State ────────────────────────────────────────────
   const [resettingUser, setResettingUser] = useState<User | null>(null);
@@ -111,6 +117,7 @@ export const CompanyUsersPage: React.FC = () => {
     setGeneratedNewPassword(null);
     setHasCopiedNewPassword(false);
     setInviteError(null);
+    setEmailDeliveryWarning(null);
     setIsInviteModalOpen(true);
   };
 
@@ -151,8 +158,9 @@ export const CompanyUsersPage: React.FC = () => {
       lastLogin: isInstant ? 'Pending First Login' : 'Never',
     };
 
+    let createdUser: User | null = null;
     try {
-      await adminUserService.createUser({
+      createdUser = await adminUserService.createUser({
         ...newUser,
         password: tempPass
       });
@@ -170,18 +178,28 @@ export const CompanyUsersPage: React.FC = () => {
       actorEmail: user?.email || 'admin@nexus.com',
       action: isInstant ? 'USER_PROVISIONED' : 'USER_INVITED',
       entityType: 'User',
-      entityId: newUser.id,
+      entityId: createdUser?.id || newUser.id,
       companyId: tenant?.id,
       companyName: tenant?.name,
       details: `${isInstant ? 'Provisioned' : 'Invited'} ${newUser.name} (${newUser.email}) as ${newUser.role.name} with designation [${newUser.designation || 'None'}].`,
     });
 
-    if (isInstant && tempPass) {
-      setGeneratedNewPassword(tempPass);
+    if (isInstant) {
+      setEmailDeliveryWarning(null);
+      setGeneratedNewPassword(tempPass || 'Password@123');
       showToast('success', `Team member ${newUser.name} provisioned successfully.`);
     } else {
-      setIsInviteModalOpen(false);
-      showToast('success', `Invitation sent to ${newUser.email}.`);
+      if (createdUser && createdUser.emailSent === false) {
+        setEmailDeliveryWarning(
+          createdUser.emailError ||
+          'Google SMTP daily sending limit has been reached (550-5.4.5 Daily user sending limit exceeded). The invitation email could not be delivered to the inbox or spam folder.'
+        );
+        setGeneratedNewPassword(createdUser.temporaryPassword || 'Password@123');
+        showToast('error', `Account created, but email could not be sent due to Gmail daily quota. Share credentials manually.`);
+      } else {
+        setIsInviteModalOpen(false);
+        showToast('success', `Invitation sent to ${newUser.email}.`);
+      }
     }
   };
 
@@ -199,6 +217,14 @@ export const CompanyUsersPage: React.FC = () => {
 
     const updatedRole = SYSTEM_ROLES[editRoleCode] || editingUser.role;
     const oldRole = editingUser.role;
+
+    // Mandate transfer if role changes from Sales Exec to IRM or vice versa
+    if (oldRole.code !== updatedRole.code && (oldRole.code === 'sales_executive' || oldRole.code === 'irm')) {
+      setTransferFromUser(editingUser);
+      setTransferTargetRole(updatedRole);
+      setTransferModalOpen(true);
+      return;
+    }
 
     const updated: User = {
       ...editingUser,
@@ -235,12 +261,37 @@ export const CompanyUsersPage: React.FC = () => {
     setEditingUser(null);
   };
 
+  const handleTransferAndSave = async () => {
+    if (!transferFromUser || !selectedTransferUserId || !transferTargetRole) return;
+    try {
+      await adminUserService.transferRole(transferFromUser.id, parseInt(selectedTransferUserId), transferTargetRole.code);
+      showToast('success', `Transferred pipeline and updated role for ${transferFromUser.name}.`);
+      setTransferModalOpen(false);
+      setTransferFromUser(null);
+      setEditingUser(null);
+      loadData();
+    } catch (err) {
+      showToast('error', 'Failed to transfer data and update role.');
+    }
+  };
+
   // ── Password Reset Handlers ───────────────────────────────────────────────
-  const handleOpenResetPassword = (u: User) => {
+  const handleOpenResetPassword = async (u: User) => {
     const generated = `Nexus#${Math.floor(1000 + Math.random() * 9000)}`;
     setResettingUser(u);
     setTempPassword(generated);
     setHasCopiedTempPassword(false);
+
+    try {
+      await adminUserService.updateUser(u.id, {
+        ...u,
+        password: generated
+      });
+      showToast('success', `New password generated and saved for ${u.name}.`);
+    } catch (err) {
+      console.error('Failed to sync new password to backend:', err);
+      showToast('error', 'Failed to save updated password to database.');
+    }
 
     addStoredAuditLog({
       id: `aud-${Date.now()}`,
@@ -453,7 +504,6 @@ export const CompanyUsersPage: React.FC = () => {
     {
       label: 'Reset Password',
       icon: <KeyRound size={14} color="#f59e0b" style={{ marginRight: 6 }} />,
-      hidden: u => u.status === 'Invited',
       onClick: u => handleOpenResetPassword(u),
     },
     {
@@ -612,8 +662,11 @@ export const CompanyUsersPage: React.FC = () => {
       {/* ── Add / Invite Member Modal ────────────────────────────────────── */}
       <Modal
         isOpen={isInviteModalOpen}
-        onClose={() => setIsInviteModalOpen(false)}
-        title={generatedNewPassword ? 'Credentials Generated' : 'Add Team Member'}
+        onClose={() => {
+          setIsInviteModalOpen(false);
+          setEmailDeliveryWarning(null);
+        }}
+        title={generatedNewPassword ? (emailDeliveryWarning ? 'Email Delivery Failed — Temporary Credentials' : 'Credentials Generated') : 'Add Team Member'}
         subtitle={
           generatedNewPassword
             ? `Share these temporary login credentials with ${inviteName}`
@@ -622,6 +675,27 @@ export const CompanyUsersPage: React.FC = () => {
       >
         {generatedNewPassword ? (
           <div>
+            {emailDeliveryWarning && (
+              <div style={{
+                backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                border: '1px solid rgba(239, 68, 68, 0.3)',
+                borderRadius: '8px',
+                padding: '12px 14px',
+                marginBottom: '16px',
+                fontSize: '13px',
+                lineHeight: '1.45'
+              }}>
+                <div style={{ fontWeight: 600, color: '#ef4444', display: 'flex', alignItems: 'center', gap: '6px', marginBottom: '6px' }}>
+                  <AlertCircle size={16} /> SMTP Delivery Limit Exceeded
+                </div>
+                <div style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                  The email invitation could not be sent to <strong>{inviteEmail}</strong> because the configured Gmail SMTP account has exceeded Google's daily sending limit (Error 550-5.4.5).
+                </div>
+                <div style={{ color: 'var(--text-primary)', fontWeight: 500 }}>
+                  The account has been successfully created in the system. Please share the temporary password below directly with the user so they can log in immediately:
+                </div>
+              </div>
+            )}
             <p style={{ fontSize: '13px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
               The account for <strong>{inviteName}</strong> ({inviteEmail}) has been created with role{' '}
               <strong>{SYSTEM_ROLES[inviteRole]?.name}</strong>.
@@ -894,6 +968,60 @@ export const CompanyUsersPage: React.FC = () => {
             </p>
           </div>
         )}
+      </Modal>
+
+
+
+      {/* ── Transfer Desk Modal ────────────────────────────────────────────── */}
+      <Modal
+        isOpen={transferModalOpen}
+        onClose={() => setTransferModalOpen(false)}
+        title="Transfer Desk"
+        footer={
+          <>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setTransferModalOpen(false)}
+            >
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleTransferAndSave}
+              disabled={!selectedTransferUserId}
+            >
+              Transfer & Change Role
+            </button>
+          </>
+        }
+      >
+        <div className="company-user-form">
+          <div style={{ backgroundColor: '#fff3cd', color: '#856404', padding: '12px', borderRadius: '8px', marginBottom: '16px' }}>
+            <strong>Action Required:</strong> {transferFromUser?.name} is changing roles from 
+            <strong> {transferFromUser?.role.name}</strong> to <strong>{transferTargetRole?.name}</strong>.
+            You must reassign their active pipeline (Leads and Follow-ups) to another agent before proceeding.
+          </div>
+          
+          <div className="form-group">
+            <label className="form-label">Transfer pipeline to:</label>
+            <select
+              className="form-select"
+              value={selectedTransferUserId}
+              onChange={e => setSelectedTransferUserId(e.target.value)}
+            >
+              <option value="">Select a new agent...</option>
+              {usersList
+                .filter(u => u.role.code === transferFromUser?.role.code && u.id !== transferFromUser?.id && u.status === 'Active')
+                .map(u => (
+                  <option key={u.id} value={u.id}>
+                    {u.name} ({u.email})
+                  </option>
+                ))}
+            </select>
+          </div>
+        </div>
       </Modal>
     </div>
   );
