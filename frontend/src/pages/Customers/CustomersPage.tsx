@@ -22,9 +22,9 @@ import {
 } from 'lucide-react';
 import { Customer, CallRecord, Followup, Deal, Lead, IrmProfile, CustomFieldDefinition } from '../../types';
 import { useAuth } from '../../context/AuthContext';
-import { useCall } from '../../context/CallContext';
 import { useUnsavedChanges } from '../../context/NavigationGuardContext';
 import { storageService } from '../../services/storageService';
+import { adminUserService } from '../../services/adminUserService';
 import { isMockMode } from '../../config/environment';
 import {
   getCustomers,
@@ -35,12 +35,14 @@ import {
   getDeals,
   getLeads,
   saveLead as apiSaveLead,
+  getCompanyIrms,
 } from '../../services/ghlApiService';
 import { StatusChip } from '../../components/common/StatusChip';
 import { DocumentUploader } from '../../components/common/DocumentUploader';
 import { DocumentList } from '../../components/common/DocumentList';
 import { Modal } from '../../components/common/Modal';
 import { Timeline, TimelineEvent } from '../../components/common/Timeline';
+import { formatSmartScheduleDate } from '../../utils/dateUtils';
 
 import './CustomersPage.css';
 
@@ -53,6 +55,56 @@ const getCustomFieldDefinitions = (tenantId?: string): CustomFieldDefinition[] =
     return [];
   }
 };
+const lastTenDigits = (p?: string): string => (p || '').replace(/\D/g, '').slice(-10);
+
+/** Build a Customer 360 entry from an 'Interested' lead. */
+const leadToCustomer = (l: Lead): Customer => {
+  const cf = (l.customFields || {}) as Record<string, any>;
+  return {
+    id: `lead-${l.id}`,
+    companyId: l.companyId,
+    name: l.name,
+    phone: l.phone,
+    email: l.email,
+    status: 'Interested',
+    assignedAgentId: l.assignedAgentId,
+    assignedAgentName: l.assignedAgentName,
+    location: l.location,
+    lastContacted: l.lastContactedAt || '—',
+    openDealsCount: 0,
+    totalValue: 0,
+    createdAt: l.createdAt,
+    notes: l.notes,
+    customFields: cf,
+    assignedIrmId: l.assignedIrmId || cf.assignedIrmId || undefined,
+    assignedIrmName: l.assignedIrmName || cf.assignedIrmName || undefined,
+    assignedIrmAt: l.assignedIrmAt || cf.assignedIrmAt || undefined,
+    handoverId: l.handoverId,
+    handedOverFromName: l.handedOverFromName,
+    handoverPlannedEnd: l.handoverPlannedEnd,
+    isReturnedFromHandover: l.isReturnedFromHandover,
+    returnedFromCoveringUserName: l.returnedFromCoveringUserName,
+    returnedAt: l.returnedAt,
+    isLeadRecord: true,
+    sourceLeadId: l.id,
+  };
+};
+
+export const isCustomerReturned = (c: Customer): boolean => {
+  if (c.isReturnedFromHandover) return true;
+  if (c.returnedFromCoveringUserName) return true;
+  const cf = c.customFields;
+  return cf?.returnedFromHandover === 'true' || cf?.returnedFromHandover === true || Boolean(cf?.returnedFromCoveringUserName);
+};
+
+export const getReturnedCustomerCoveringName = (c: Customer): string => {
+  return c.returnedFromCoveringUserName || c.customFields?.returnedFromCoveringUserName || 'Covering Agent';
+};
+
+export const getReturnedCustomerDate = (c: Customer): string | undefined => {
+  return c.returnedAt || c.customFields?.returnedAt;
+};
+
 interface AutoRecommendation {
   customerId: string;
   customerName: string;
@@ -66,10 +118,15 @@ interface AutoRecommendation {
 
 export const CustomersPage: React.FC = () => {
   const { tenant, user } = useAuth();
-  const { initiateCall } = useCall();
 
   const [customers, setCustomers] = useState<Customer[]>([]);
-  const irms = useMemo(() => storageService.getIrms(tenant?.id), [tenant?.id]);
+  const [leads, setLeads] = useState<Lead[]>([]);
+  const [dbIrms, setDbIrms] = useState<IrmProfile[]>(() => storageService.getIrms(tenant?.id || tenant?.slug));
+  const irms = useMemo<IrmProfile[]>(() => {
+    if (dbIrms && dbIrms.length > 0) return dbIrms;
+    return storageService.getIrms(tenant?.id || tenant?.slug);
+  }, [dbIrms, tenant?.id, tenant?.slug]);
+  const setIrms = setDbIrms;
 
   // Role-based scoping: Sales Executives see only their own customers.
   // Managers / Admins / Super Admins see the full company customer list (no filter).
@@ -81,12 +138,48 @@ export const CustomersPage: React.FC = () => {
   const isSalesExecutive = isExec || user?.role?.name === 'Sales Executive';
   const canAssignToIRM = Boolean(isGhlTenant && isSalesExecutive);
 
+  // Leads marked "Interested" are shown in Customer 360 even before they are formally converted.
+  // They are virtual entries (id = `lead-<leadId>`) built from the Leads table, de-duplicated against
+  // real customers by phone / email. IRM users already see these in "My Leads", so they are skipped.
+  const interestedLeadCustomers = useMemo<Customer[]>(() => {
+    if (roleCode === 'irm') return [];
+    const customerPhones = new Set(customers.map(c => lastTenDigits(c.phone)).filter(Boolean));
+    const customerEmails = new Set(
+      customers.map(c => (c.email || '').trim().toLowerCase()).filter(Boolean)
+    );
+    return leads
+      .filter(l => l.status === 'Interested')
+      .filter(l => {
+        const ph = lastTenDigits(l.phone);
+        const em = (l.email || '').trim().toLowerCase();
+        if (ph && customerPhones.has(ph)) return false;
+        if (em && customerEmails.has(em)) return false;
+        return true;
+      })
+      .map(leadToCustomer);
+  }, [leads, customers, roleCode]);
+
+  const allCustomers = useMemo<Customer[]>(
+    () => [...interestedLeadCustomers, ...customers],
+    [interestedLeadCustomers, customers]
+  );
+
   const scopedCustomers = isExec
-    ? customers.filter(c =>
-      (c.assignedAgentId && c.assignedAgentId === user?.id) ||
-      (c.assignedAgentName && c.assignedAgentName === user?.name)
-    )
-    : customers;
+    ? allCustomers.filter(c => {
+        const hasIrm = Boolean(
+          c.assignedIrmId ||
+          c.assignedIrmName ||
+          c.customFields?.assignedIrmId ||
+          c.customFields?.assignedIrmName
+        );
+        if (hasIrm) return false;
+        
+        return (
+          (c.assignedAgentId && c.assignedAgentId === user?.id) ||
+          (c.assignedAgentName && c.assignedAgentName === user?.name)
+        );
+      })
+    : allCustomers;
   const [selectedCustomer, setSelectedCustomer] = useState<Customer | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | 'calls' | 'followups' | 'timeline' | 'documents'>('overview');
   const [customerDocsTab, setCustomerDocsTab] = useState<'customer' | 'company'>('customer');
@@ -95,6 +188,22 @@ export const CustomersPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('All');
   const [agentFilter, setAgentFilter] = useState('All');
   const [assignmentFilter, setAssignmentFilter] = useState<'All' | 'Assigned' | 'Unassigned'>('All');
+  const [handoverFilter, setHandoverFilter] = useState('Mine');
+
+  const handoverOptions = useMemo(() => {
+    const coveringNames = Array.from(new Set(scopedCustomers.map(c => c.handedOverFromName).filter(Boolean)));
+    const returnedItems = scopedCustomers.filter(c => isCustomerReturned(c));
+    const returnedNames = Array.from(new Set(returnedItems.map(c => getReturnedCustomerCoveringName(c)).filter(Boolean)));
+
+    if (coveringNames.length === 0 && returnedNames.length === 0) return [];
+    return [
+      { value: 'All', label: 'All Customers' },
+      { value: 'Mine', label: 'Mine (Regular)' },
+      ...coveringNames.map(name => ({ value: `Handover_${name}`, label: `Covering for ${name}` })),
+      ...(returnedNames.length > 0 ? [{ value: 'Returned', label: 'Returned from Handover' }] : []),
+      ...returnedNames.map(name => ({ value: `Returned_${name}`, label: `Returned from ${name}` }))
+    ];
+  }, [scopedCustomers]);
 
   // Assignment mode state (Sales Executive only)
   const [isAssignMode, setIsAssignMode] = useState(false);
@@ -140,24 +249,55 @@ export const CustomersPage: React.FC = () => {
   const [calls, setCalls] = useState<CallRecord[]>([]);
   const [followups, setFollowups] = useState<Followup[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
-  const [leads, setLeads] = useState<Lead[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = async () => {
     try {
       setLoadError(null);
-      const [custs, cCalls, cFollowups, cDeals, cLeads] = await Promise.all([
+      const [custs, cCalls, cFollowups, cDeals, cLeads, cIrms] = await Promise.all([
         getCustomers(tenant?.id),
         getCalls(tenant?.id),
         getFollowups(tenant?.id),
         getDeals(tenant?.id),
         getLeads(tenant?.id),
+        getCompanyIrms(tenant?.id).catch(() => storageService.getIrms(tenant?.id)),
       ]);
       setCustomers(custs);
       setCalls(cCalls);
       setFollowups(cFollowups);
       setDeals(cDeals);
       setLeads(cLeads);
+      if (cIrms && cIrms.length > 0) {
+        setIrms(cIrms);
+        storageService.setIrms(cIrms);
+      }
+
+      // Load real IRM users from database / adminUserService
+      try {
+        const fetchedUsers = await adminUserService.getUsers(tenant?.id || tenant?.slug || '1');
+        const apiIrms: IrmProfile[] = (fetchedUsers || [])
+          .filter(u => !u.isCovered && (u.role?.code === 'irm' || u.role?.name?.toLowerCase().includes('irm') || u.role?.name?.toLowerCase().includes('investor')))
+          .map(u => ({
+            id: String(u.id),
+            name: u.name,
+            email: u.email,
+            phone: u.phone,
+            experience: '5 Years',
+            experienceYears: 5,
+            experienceLevel: 'Experienced' as const,
+            performance: 95,
+            status: 'Available' as const,
+          }));
+        if (apiIrms.length > 0) {
+          setDbIrms(apiIrms);
+        }
+      } catch (userErr) {
+        console.warn('Could not load users via adminUserService, using storage IRMs', userErr);
+        const fallback = storageService.getIrms(tenant?.id || tenant?.slug);
+        if (fallback.length > 0) {
+          setDbIrms(fallback);
+        }
+      }
 
       const firstVisible = isExec
         ? custs.filter(c =>
@@ -181,10 +321,35 @@ export const CustomersPage: React.FC = () => {
 
   useEffect(() => {
     loadData();
-    const handleUpdate = () => loadData();
+    const handleUpdate = () => {
+      loadData();
+      const current = storageService.getIrms(tenant?.id || tenant?.slug);
+      if (current && current.length > 0) {
+        setDbIrms(current);
+      }
+    };
     window.addEventListener('nexus_storage_updated', handleUpdate);
-    return () => window.removeEventListener('nexus_storage_updated', handleUpdate);
-  }, [tenant?.id]);
+    window.addEventListener('nexus_handover_updated', handleUpdate);
+    window.addEventListener('nexus_admin_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('nexus_storage_updated', handleUpdate);
+      window.removeEventListener('nexus_handover_updated', handleUpdate);
+      window.removeEventListener('nexus_admin_updated', handleUpdate);
+    };
+  }, [tenant?.id, tenant?.slug]);
+
+  // If nothing is selected yet (e.g. the user only has Interested leads), select the first visible entry.
+  useEffect(() => {
+    if (!selectedCustomer && scopedCustomers.length > 0) {
+      setSelectedCustomer(scopedCustomers[0]);
+    }
+  }, [scopedCustomers, selectedCustomer]);
+
+  useEffect(() => {
+    if (isManualModalOpen && irms.length > 0 && (!selectedIrmId || !irms.some(i => i.id === selectedIrmId))) {
+      setSelectedIrmId(irms[0].id);
+    }
+  }, [isManualModalOpen, irms, selectedIrmId]);
 
   const agentOptions = Array.from(new Set(scopedCustomers.map(c => c.assignedAgentName)))
     .filter(Boolean)
@@ -196,6 +361,18 @@ export const CustomersPage: React.FC = () => {
     if (canAssignToIRM) {
       if (assignmentFilter === 'Assigned' && !(c.assignedIrmName || c.assignedIrmId)) return false;
       if (assignmentFilter === 'Unassigned' && (c.assignedIrmName || c.assignedIrmId)) return false;
+    }
+    if (handoverOptions.length > 0) {
+      if (handoverFilter === 'Mine' && (c.handoverId || isCustomerReturned(c))) return false;
+      if (handoverFilter === 'Returned') {
+        if (!isCustomerReturned(c)) return false;
+      } else if (handoverFilter.startsWith('Returned_')) {
+        const name = handoverFilter.replace('Returned_', '');
+        if (!isCustomerReturned(c) || getReturnedCustomerCoveringName(c) !== name) return false;
+      } else if (handoverFilter.startsWith('Handover_')) {
+        const name = handoverFilter.replace('Handover_', '');
+        if (c.handedOverFromName !== name) return false;
+      }
     }
     return true;
   });
@@ -298,10 +475,10 @@ export const CustomersPage: React.FC = () => {
     return { tier: 'Normal', label: raw || (totalVal > 0 ? formatCurrency(totalVal) : 'Standard Ticket') };
   };
 
-  const runAutoAssignmentAlgorithm = (custs: Customer[]): AutoRecommendation[] => {
+  const runAutoAssignmentAlgorithm = (custs: Customer[], activeIrms = irms): AutoRecommendation[] => {
     const liveCountMap: Record<string, number> = {};
-    irms.forEach((irm: IrmProfile) => {
-      liveCountMap[irm.id] = customers.filter(c => c.assignedIrmName === irm.name || c.assignedIrmId === irm.id).length;
+    activeIrms.forEach((irm: IrmProfile) => {
+      liveCountMap[irm.id] = allCustomers.filter(c => c.assignedIrmName === irm.name || c.assignedIrmId === irm.id).length;
     });
 
     const tierPriority = { Premium: 5, 'Very High': 4, High: 3, Medium: 2, Normal: 1 };
@@ -315,8 +492,8 @@ export const CustomersPage: React.FC = () => {
 
     sortedCusts.forEach(c => {
       const { tier, label } = getCustomerCapacityTier(c);
-      const availableIrms = irms.filter((i: IrmProfile) => i.status === 'Available');
-      const pool = availableIrms.length > 0 ? availableIrms : irms;
+      const availableIrms = activeIrms.filter((i: IrmProfile) => i.status === 'Available');
+      const pool = availableIrms.length > 0 ? availableIrms : activeIrms;
 
       let chosenIrm: IrmProfile;
       let reason: string;
@@ -367,17 +544,29 @@ export const CustomersPage: React.FC = () => {
     return recommendations;
   };
 
-  const handleSendAssignment = () => {
+  const handleSendAssignment = async () => {
+    let currentIrms = irms;
+    try {
+      const freshIrms = await getCompanyIrms(tenant?.id);
+      if (freshIrms && freshIrms.length > 0) {
+        setIrms(freshIrms);
+        storageService.setIrms(freshIrms);
+        currentIrms = freshIrms;
+      }
+    } catch (e) {
+      console.warn('Failed to refresh IRMs on assign modal open:', e);
+    }
+
     if (assignSubMode === 'manual') {
       if (selectedCustomerIds.size === 0) return;
       const selectedCusts = scopedCustomers.filter(c => selectedCustomerIds.has(c.id) && isCustomerEligibleForIrm(c));
       if (selectedCusts.length === 0) return;
 
-      setSelectedIrmId(irms[0]?.id || '');
+      setSelectedIrmId(prev => (prev && currentIrms.some(i => i.id === prev) ? prev : currentIrms[0]?.id || ''));
       setIsManualModalOpen(true);
     } else {
       if (eligibleUnassignedCustomers.length === 0) return;
-      const recs = runAutoAssignmentAlgorithm(eligibleUnassignedCustomers);
+      const recs = runAutoAssignmentAlgorithm(eligibleUnassignedCustomers, currentIrms);
       setAutoRecommendations(recs);
       setIsAutoPreviewModalOpen(true);
     }
@@ -398,6 +587,7 @@ export const CustomersPage: React.FC = () => {
     }
     for (const { customer, irmId, irmName } of pairs) {
       const lead = allLeads.find(l =>
+        (customer.sourceLeadId && l.id === customer.sourceLeadId) ||
         (digits(l.phone) && digits(l.phone) === digits(customer.phone)) ||
         (!!l.email && !!customer.email && l.email.toLowerCase() === customer.email.toLowerCase())
       );
@@ -432,7 +622,7 @@ export const CustomersPage: React.FC = () => {
     const toHandover: { customer: Customer; irmId: string; irmName: string }[] = [];
 
     selectedCustomerIds.forEach(cid => {
-      const cust = allLatest.find((c: Customer) => c.id === cid) || customers.find((c: Customer) => c.id === cid);
+      const cust = allCustomers.find((c: Customer) => c.id === cid) || allLatest.find((c: Customer) => c.id === cid);
       if (cust && isCustomerEligibleForIrm(cust)) {
         const updated: Customer = {
           ...cust,
@@ -441,9 +631,11 @@ export const CustomersPage: React.FC = () => {
           assignedIrmAt: new Date().toISOString(),
           notes: `${cust.notes ? cust.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] Assigned to IRM: ${selectedIrm.name} by ${user?.name || 'Sales Executive'}`,
         };
-        toUpdate.push(updated);
+        if (!updated.isLeadRecord) {
+          toUpdate.push(updated);
+          storageService.saveCustomer?.(updated);
+        }
         toHandover.push({ customer: updated, irmId: selectedIrm.id, irmName: selectedIrm.name });
-        storageService.saveCustomer?.(updated);
         assignedCount++;
       }
     });
@@ -469,7 +661,7 @@ export const CustomersPage: React.FC = () => {
     const toHandover: { customer: Customer; irmId: string; irmName: string }[] = [];
 
     autoRecommendations.forEach(rec => {
-      const cust = allLatest.find((c: Customer) => c.id === rec.customerId) || customers.find((c: Customer) => c.id === rec.customerId);
+      const cust = allCustomers.find((c: Customer) => c.id === rec.customerId) || allLatest.find((c: Customer) => c.id === rec.customerId);
       if (cust && isCustomerEligibleForIrm(cust)) {
         const updated: Customer = {
           ...cust,
@@ -478,9 +670,11 @@ export const CustomersPage: React.FC = () => {
           assignedIrmAt: new Date().toISOString(),
           notes: `${cust.notes ? cust.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] Auto-assigned to IRM: ${rec.recommendedIrmName} (${rec.matchReason})`,
         };
-        toUpdate.push(updated);
+        if (!updated.isLeadRecord) {
+          toUpdate.push(updated);
+          storageService.saveCustomer?.(updated);
+        }
         toHandover.push({ customer: updated, irmId: rec.recommendedIrmId, irmName: rec.recommendedIrmName });
-        storageService.saveCustomer?.(updated);
         assignedCount++;
       }
     });
@@ -727,7 +921,7 @@ export const CustomersPage: React.FC = () => {
     rawEvents.push({
       id: `ev-create-${selectedCustomer.id}`,
       type: 'note',
-      title: 'Customer Account Created',
+      title: selectedCustomer.isLeadRecord ? 'Lead Marked Interested' : 'Customer Account Created',
       timestamp: selectedCustomer.createdAt,
       actorName: selectedCustomer.assignedAgentName,
     });
@@ -858,6 +1052,25 @@ export const CustomersPage: React.FC = () => {
                 Filters:
               </span>
 
+              {/* Handover Filter */}
+              {handoverOptions.length > 0 && (
+                <div className="customers-filter-group">
+                  <label htmlFor="filter-customer-handover" className="customers-filter-tag">
+                    View:
+                  </label>
+                  <select
+                    id="filter-customer-handover"
+                    className={`form-select customers-filter-select ${handoverFilter !== 'Mine' ? 'is-filtered' : ''}`}
+                    value={handoverFilter}
+                    onChange={e => setHandoverFilter(e.target.value)}
+                  >
+                    {handoverOptions.map(opt => (
+                      <option key={opt.value} value={opt.value}>{opt.label}</option>
+                    ))}
+                  </select>
+                </div>
+              )}
+
               {/* Status Filter */}
               <div className="customers-filter-group">
                 <label
@@ -877,6 +1090,7 @@ export const CustomersPage: React.FC = () => {
                   <option value="Active">Active</option>
                   <option value="VIP">VIP</option>
                   <option value="Inactive">Inactive</option>
+                  <option value="Interested">Interested</option>
                 </select>
               </div>
 
@@ -968,6 +1182,41 @@ export const CustomersPage: React.FC = () => {
                         <div className="customer-list-name" style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                           {c.name}
                         </div>
+                        {c.handedOverFromName && (
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              padding: '2px 6px',
+                              borderRadius: 6,
+                              background: 'rgba(99, 102, 241, 0.15)',
+                              color: '#818cf8',
+                              border: '1px solid rgba(99, 102, 241, 0.3)',
+                            }}
+                            title={`Handed over from ${c.handedOverFromName}`}
+                          >
+                            Covering for {c.handedOverFromName}
+                          </span>
+                        )}
+                        {!c.handedOverFromName && isCustomerReturned(c) && (
+                          <span
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 600,
+                              padding: '2px 7px',
+                              borderRadius: 6,
+                              background: 'rgba(16, 185, 129, 0.15)',
+                              color: '#34d399',
+                              border: '1px solid rgba(16, 185, 129, 0.35)',
+                              display: 'inline-flex',
+                              alignItems: 'center',
+                              gap: 3,
+                            }}
+                            title={`Returned from coverage by ${getReturnedCustomerCoveringName(c)}${getReturnedCustomerDate(c) ? ` on ${new Date(getReturnedCustomerDate(c)!).toLocaleDateString()}` : ''}`}
+                          >
+                            ↩ Returned from {getReturnedCustomerCoveringName(c)}
+                          </span>
+                        )}
                       </div>
                       <StatusChip status={c.status} size="sm" />
                     </div>
@@ -994,15 +1243,6 @@ export const CustomersPage: React.FC = () => {
                       <span className="customer-list-val">
                         {getCustomerValueDisplay(c)}
                       </span>
-                      <button
-                        className="btn btn-call btn-sm btn-icon customer-list-call-btn"
-                        onClick={e => {
-                          e.stopPropagation();
-                          initiateCall(c.name, c.phone, 'customer', c.id);
-                        }}
-                      >
-                        <Phone size={12} />
-                      </button>
                     </div>
                   </div>
                 );
@@ -1020,22 +1260,47 @@ export const CustomersPage: React.FC = () => {
                 <div className="customer-cockpit-name-row">
                   <h2 className="customer-cockpit-name">{selectedCustomer.name}</h2>
                   <StatusChip status={selectedCustomer.status} />
+                  {selectedCustomer.handedOverFromName && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        padding: '3px 8px',
+                        borderRadius: 6,
+                        background: 'rgba(99, 102, 241, 0.15)',
+                        color: '#818cf8',
+                        border: '1px solid rgba(99, 102, 241, 0.3)',
+                      }}
+                      title={`Handed over from ${selectedCustomer.handedOverFromName}`}
+                    >
+                      Covering for {selectedCustomer.handedOverFromName}
+                    </span>
+                  )}
+                  {!selectedCustomer.handedOverFromName && isCustomerReturned(selectedCustomer) && (
+                    <span
+                      style={{
+                        fontSize: 11,
+                        fontWeight: 600,
+                        padding: '3px 8px',
+                        borderRadius: 6,
+                        background: 'rgba(16, 185, 129, 0.15)',
+                        color: '#34d399',
+                        border: '1px solid rgba(16, 185, 129, 0.35)',
+                        display: 'inline-flex',
+                        alignItems: 'center',
+                        gap: 3,
+                      }}
+                      title={`Returned from coverage by ${getReturnedCustomerCoveringName(selectedCustomer)}${getReturnedCustomerDate(selectedCustomer) ? ` on ${new Date(getReturnedCustomerDate(selectedCustomer)!).toLocaleDateString()}` : ''}`}
+                    >
+                      ↩ Returned from {getReturnedCustomerCoveringName(selectedCustomer)}
+                    </span>
+                  )}
                 </div>
                 <div className="customer-cockpit-meta-row">
                   <span>📞 {selectedCustomer.phone}</span>
                   {selectedCustomer.email && <span>✉️ {selectedCustomer.email}</span>}
                   <span>📍 {selectedCustomer.location}</span>
                 </div>
-              </div>
-
-              {/* Quick Actions */}
-              <div className="customer-cockpit-actions">
-                <button
-                  className="btn btn-primary customer-call-btn"
-                  onClick={() => initiateCall(selectedCustomer.name, selectedCustomer.phone, 'customer', selectedCustomer.id)}
-                >
-                  <Phone size={15} /> Click to Call
-                </button>
               </div>
             </div>
 
@@ -1062,6 +1327,28 @@ export const CustomersPage: React.FC = () => {
             <div className="customer-tab-content">
               {activeTab === 'overview' && (
                 <div className="customer-overview-stack">
+                  {isCustomerReturned(selectedCustomer) && (
+                    <div style={{
+                      margin: '0 0 16px 0',
+                      padding: '12px 16px',
+                      borderRadius: 8,
+                      background: 'rgba(16, 185, 129, 0.12)',
+                      border: '1px solid rgba(16, 185, 129, 0.35)',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 12,
+                    }}>
+                      <span style={{ fontSize: 18 }}>↩️</span>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 700, color: '#34d399' }}>
+                          Returned from Coverage by {getReturnedCustomerCoveringName(selectedCustomer)}
+                        </div>
+                        <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 2 }}>
+                          This account was covered while you were away and handed back to you{getReturnedCustomerDate(selectedCustomer) ? ` on ${new Date(getReturnedCustomerDate(selectedCustomer)!).toLocaleDateString()}` : ''}. Review recent call interactions, notes, and activity timeline below.
+                        </div>
+                      </div>
+                    </div>
+                  )}
                   <div className="card customer-profile-card">
                     <h4 className="customer-section-heading">
                       Account & Commercial Profile
@@ -1086,7 +1373,9 @@ export const CustomersPage: React.FC = () => {
                         </div>
                       </div>
                       <div>
-                        <span className="customer-profile-label">Customer Since:</span>
+                        <span className="customer-profile-label">
+                          {selectedCustomer.isLeadRecord ? 'Interested Lead Since:' : 'Customer Since:'}
+                        </span>
                         <div className="customer-profile-val">{selectedCustomer.createdAt}</div>
                       </div>
                       <div>
@@ -1350,7 +1639,7 @@ export const CustomersPage: React.FC = () => {
                         ? 'No Connect via Agent call records found for this customer.'
                         : callCategoryFilter === 'irm'
                         ? 'No Connect via IRM call records found for this customer.'
-                        : 'No call records logged yet with this customer. Click "Click to Call" to initiate a call.'}
+                        : 'No call records logged yet with this customer.'}
                     </div>
                   ) : (
                     displayedCustomerCalls.map(c => {
@@ -1520,7 +1809,7 @@ export const CustomersPage: React.FC = () => {
                             <StatusChip status={f.priority} size="sm" />
                           </div>
                           <div className="customer-followup-due">
-                            ⏰ Due: {f.scheduledAt} • Assignee: {f.assignedAgentName}
+                            ⏰ Due: {formatSmartScheduleDate(f.scheduledAt)} • Assignee: {f.assignedAgentName}
                           </div>
                         </div>
 
@@ -1566,13 +1855,13 @@ export const CustomersPage: React.FC = () => {
                   {customerDocsTab === 'customer' && (
                     <>
                       <DocumentUploader
-                        entityType="customer"
-                        entityId={selectedCustomer.id}
+                        entityType={selectedCustomer.isLeadRecord ? 'lead' : 'customer'}
+                        entityId={selectedCustomer.isLeadRecord ? (selectedCustomer.sourceLeadId || selectedCustomer.id) : selectedCustomer.id}
                         allowedCategories={['KYC', 'Agreement', 'Payment Receipt', 'Identity Proof', 'Other']}
                       />
                       <DocumentList
-                        entityType="customer"
-                        entityId={selectedCustomer.id}
+                        entityType={selectedCustomer.isLeadRecord ? 'lead' : 'customer'}
+                        entityId={selectedCustomer.isLeadRecord ? (selectedCustomer.sourceLeadId || selectedCustomer.id) : selectedCustomer.id}
                         canDelete
                       />
                     </>
@@ -1633,7 +1922,7 @@ export const CustomersPage: React.FC = () => {
               name="name"
               autoComplete="name"
               className={`form-input${addErrors.name ? ' is-invalid' : ''}`}
-              placeholder="e.g. Priya Sharma"
+              placeholder="e.g. Agent Two"
               value={newName}
               onChange={e => { setNewName(e.target.value); if (addErrors.name) setAddErrors(p => ({ ...p, name: undefined })); }}
             />
@@ -1662,7 +1951,7 @@ export const CustomersPage: React.FC = () => {
               autoComplete="email"
               className="form-input"
               type="email"
-              placeholder="e.g. priya@example.com"
+              placeholder="e.g. agent2@example.com"
               value={newEmail}
               onChange={e => setNewEmail(e.target.value)}
             />
@@ -1779,8 +2068,26 @@ export const CustomersPage: React.FC = () => {
           }
         >
           <div className="irm-selection-list">
-            {irms.map((irm: IrmProfile) => {
-              const currentCount = customers.filter(c => c.assignedIrmName === irm.name || c.assignedIrmId === irm.id).length;
+            {irms.length === 0 ? (
+              <div style={{ textAlign: 'center', padding: '36px 16px', color: 'var(--text-muted)' }}>
+                <p style={{ fontSize: 14, marginBottom: 12 }}>No IRM representatives currently found for this company.</p>
+                <button
+                  type="button"
+                  className="btn btn-secondary btn-sm"
+                  onClick={() => {
+                    const fallback = storageService.getIrms(tenant?.id || tenant?.slug);
+                    if (fallback.length > 0) {
+                      setDbIrms(fallback);
+                      setSelectedIrmId(fallback[0].id);
+                    }
+                  }}
+                >
+                  Reload IRM List
+                </button>
+              </div>
+            ) : (
+              irms.map((irm: IrmProfile) => {
+              const currentCount = allCustomers.filter(c => c.assignedIrmName === irm.name || c.assignedIrmId === irm.id).length;
               const workload = currentCount <= 2 ? 'Low' : currentCount <= 5 ? 'Medium' : 'High';
               const isSelected = selectedIrmId === irm.id;
 
@@ -1826,7 +2133,7 @@ export const CustomersPage: React.FC = () => {
                   </div>
                 </div>
               );
-            })}
+            }))}
           </div>
         </Modal>
       )}

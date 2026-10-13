@@ -3,8 +3,24 @@ using backend.Middleware;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.OpenApi.Models;
 
+// S1: Load .env file (if present) before any configuration is read.
+// This allows developers to keep secrets out of appsettings.json by placing
+// a backend/.env file with environment-variable-style overrides, e.g.:
+//   ConnectionStrings__DefaultConnection=Host=...
+//   JwtSettings__SecretKey=...
+// The file is optional; if missing, standard env vars / appsettings.json apply.
+DotNetEnv.Env.TraversePath().Load();
+
+// Ensure wwwroot directory exists to avoid PhysicalFileProvider DirectoryNotFoundException
+var wwwrootDirectory = Path.Combine(Directory.GetCurrentDirectory(), "wwwroot");
+if (!Directory.Exists(wwwrootDirectory))
+{
+    Directory.CreateDirectory(wwwrootDirectory);
+}
+
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddUserSecrets<Program>(optional: true);
+
 
 // 1. Add Controllers
 builder.Services.AddControllers()
@@ -306,12 +322,25 @@ using (var scope = app.Services.CreateScope())
                         ALTER TABLE call_records ADD COLUMN IF NOT EXISTS ""TwilioCallSid"" character varying(64) NULL;
                         ALTER TABLE call_records ADD COLUMN IF NOT EXISTS ""RecordingUrl"" character varying(256) NULL;
                         ALTER TABLE call_records ADD COLUMN IF NOT EXISTS ""Transcript"" text NULL;
+                        ALTER TABLE call_records ADD COLUMN IF NOT EXISTS ""CallModule"" character varying(50) NULL;
+                        ALTER TABLE call_records ADD COLUMN IF NOT EXISTS ""Reason"" text NULL;
                     END IF;
                     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'CallRecords') THEN
                         ALTER TABLE ""CallRecords"" ADD COLUMN IF NOT EXISTS ""TwilioCallSid"" character varying(64) NULL;
                         ALTER TABLE ""CallRecords"" ADD COLUMN IF NOT EXISTS ""RecordingUrl"" character varying(256) NULL;
                         ALTER TABLE ""CallRecords"" ADD COLUMN IF NOT EXISTS ""Transcript"" text NULL;
+                        ALTER TABLE ""CallRecords"" ADD COLUMN IF NOT EXISTS ""CallModule"" character varying(50) NULL;
+                        ALTER TABLE ""CallRecords"" ADD COLUMN IF NOT EXISTS ""Reason"" text NULL;
                     END IF;
+
+                    -- Backfill followups AssignedToName and AssignedToRole if empty
+                    UPDATE followups f
+                    SET ""AssignedToName"" = u.""Name"",
+                        ""AssignedToRole"" = COALESCE(r.""Code"", 'sales_executive')
+                    FROM users u
+                    LEFT JOIN roles r ON r.""Id"" = u.""RoleId""
+                    WHERE f.""AssignedAgentId"" = u.""Id""
+                      AND (f.""AssignedToName"" IS NULL OR f.""AssignedToName"" = '' OR f.""AssignedToRole"" IS NULL OR f.""AssignedToRole"" = '');
                 END $$;
             ";
             db.Database.ExecuteSqlRaw(sql);
@@ -319,6 +348,93 @@ using (var scope = app.Services.CreateScope())
         catch (Exception ex)
         {
             Console.WriteLine($"[Database Init Warning] {ex.Message}");
+        }
+
+        // Patch: reconcile leads whose KYC/Investor records are Approved
+        try
+        {
+            var reconcileSql = @"
+                -- 1. Active Opportunities
+                UPDATE leads
+                SET ""Status"" = 'In Opportunity', ""UpdatedAt"" = NOW()
+                WHERE ""Status"" != 'In Opportunity'
+                  AND EXISTS (
+                    SELECT 1 FROM ghl_deals d
+                    WHERE d.""CompanyId"" = leads.""CompanyId""
+                      AND LOWER(TRIM(d.""Stage"")) IN ('investment_opportunity', 'opportunity', 'term_sheet', 'committed')
+                      AND (
+                        (d.""CustomerId"" IS NOT NULL AND d.""CustomerId"" = leads.""Id"")
+                        OR LOWER(TRIM(d.""CustomerName"")) = LOWER(TRIM(leads.""Name""))
+                      )
+                  );
+
+                -- 2. Active KYC In Progress
+                UPDATE leads
+                SET ""Status"" = 'KYC In Progress', ""UpdatedAt"" = NOW()
+                WHERE ""Status"" NOT IN ('In Opportunity', 'Converted', 'KYC In Progress')
+                  AND (
+                    EXISTS (
+                        SELECT 1 FROM ghl_deals d
+                        WHERE d.""CompanyId"" = leads.""CompanyId""
+                          AND LOWER(TRIM(d.""Stage"")) IN ('qualified_investor', 'qualified')
+                          AND (
+                            (d.""CustomerId"" IS NOT NULL AND d.""CustomerId"" = leads.""Id"")
+                            OR LOWER(TRIM(d.""CustomerName"")) = LOWER(TRIM(leads.""Name""))
+                          )
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM ""InvestorKycs"" k
+                        WHERE k.""CompanyId"" = leads.""CompanyId""
+                          AND k.""Status"" IN (0, 1, 2)
+                          AND (
+                            (k.""Phone"" IS NOT NULL AND RIGHT(REGEXP_REPLACE(k.""Phone"", '\D', '', 'g'), 10) = RIGHT(REGEXP_REPLACE(leads.""Phone"", '\D', '', 'g'), 10))
+                            OR (k.""Email"" IS NOT NULL AND LOWER(TRIM(k.""Email"")) = LOWER(TRIM(leads.""Email"")))
+                            OR LOWER(TRIM(k.""InvestorName"")) = LOWER(TRIM(leads.""Name""))
+                          )
+                    )
+                  );
+
+                -- 3. Won / Converted Investors (without active opportunity)
+                UPDATE leads
+                SET ""Status"" = 'Converted', ""UpdatedAt"" = NOW()
+                WHERE ""Status"" NOT IN ('In Opportunity', 'Converted')
+                  AND (
+                    EXISTS (
+                        SELECT 1 FROM ghl_deals d
+                        WHERE d.""CompanyId"" = leads.""CompanyId""
+                          AND LOWER(TRIM(d.""Stage"")) IN ('converted', 'won')
+                          AND (
+                            (d.""CustomerId"" IS NOT NULL AND d.""CustomerId"" = leads.""Id"")
+                            OR LOWER(TRIM(d.""CustomerName"")) = LOWER(TRIM(leads.""Name""))
+                          )
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM ""Investors"" i
+                        WHERE i.""CompanyId"" = leads.""CompanyId""
+                          AND i.""Status"" = 1
+                          AND (
+                            (i.""Phone"" IS NOT NULL AND RIGHT(REGEXP_REPLACE(i.""Phone"", '\D', '', 'g'), 10) = RIGHT(REGEXP_REPLACE(leads.""Phone"", '\D', '', 'g'), 10))
+                            OR (i.""Email"" IS NOT NULL AND LOWER(TRIM(i.""Email"")) = LOWER(TRIM(leads.""Email"")))
+                            OR LOWER(TRIM(i.""Name"")) = LOWER(TRIM(leads.""Name""))
+                          )
+                    )
+                    OR EXISTS (
+                        SELECT 1 FROM ""InvestorKycs"" k
+                        WHERE k.""CompanyId"" = leads.""CompanyId""
+                          AND k.""Status"" = 3
+                          AND (
+                            (k.""Phone"" IS NOT NULL AND RIGHT(REGEXP_REPLACE(k.""Phone"", '\D', '', 'g'), 10) = RIGHT(REGEXP_REPLACE(leads.""Phone"", '\D', '', 'g'), 10))
+                            OR (k.""Email"" IS NOT NULL AND LOWER(TRIM(k.""Email"")) = LOWER(TRIM(leads.""Email"")))
+                            OR LOWER(TRIM(k.""InvestorName"")) = LOWER(TRIM(leads.""Name""))
+                          )
+                    )
+                  );
+            ";
+            db.Database.ExecuteSqlRaw(reconcileSql);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Lead Reconciliation Warning] {ex.Message}");
         }
 
         // Patch: ensure tenants have EnabledFeatures populated
@@ -357,6 +473,38 @@ using (var scope = app.Services.CreateScope())
         catch (Exception ex)
         {
             Console.WriteLine($"[Tenant Feature Patch Warning] {ex.Message}");
+        }
+
+        // Patch: remove sales_manager role and migrate any users with sales_manager to sales_executive
+        try
+        {
+            var salesManagerRole = db.Roles.FirstOrDefault(r => r.Code == "sales_manager" || r.Id == 5);
+            var salesExecutiveRole = db.Roles.FirstOrDefault(r => r.Code == "sales_executive" || r.Id == 3);
+
+            if (salesExecutiveRole != null)
+            {
+                var managerUsers = db.Users.Where(u => u.RoleId == 5 || (salesManagerRole != null && u.RoleId == salesManagerRole.Id)).ToList();
+                if (managerUsers.Any())
+                {
+                    foreach (var u in managerUsers)
+                    {
+                        u.RoleId = salesExecutiveRole.Id;
+                        Console.WriteLine($"[Role Migration] Migrated user '{u.Email}' (ID: {u.Id}) from sales_manager to sales_executive.");
+                    }
+                    db.SaveChanges();
+                }
+
+                if (salesManagerRole != null)
+                {
+                    db.Roles.Remove(salesManagerRole);
+                    db.SaveChanges();
+                    Console.WriteLine("[Role Migration] Removed obsolete 'sales_manager' role from database.");
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Role Migration Warning] {ex.Message}");
         }
 
         // Patch: ensure roles have Permissions populated
@@ -411,6 +559,67 @@ using (var scope = app.Services.CreateScope())
         catch (Exception ex)
         {
             Console.WriteLine($"[Role Permissions Patch Warning] {ex.Message}");
+        }
+
+        // Startup deduplication & cleanup for followups table
+        try
+        {
+            // 1. Remove all old superseded placeholder rows created by superseded loops
+            var supersededFollowups = db.Followups.Where(f => f.Notes != null && f.Notes.Contains("Superseded by follow-up scheduled for")).ToList();
+            if (supersededFollowups.Any())
+            {
+                db.Followups.RemoveRange(supersededFollowups);
+                db.SaveChanges();
+                Console.WriteLine($"[Followup Cleanup] Removed {supersededFollowups.Count} superseded placeholder follow-up rows.");
+            }
+
+            // 2. Deduplicate pending followups per company & contact/phone
+            var allPendingFollowups = db.Followups.Where(f => f.Status == backend.Models.Enums.FollowupStatus.Pending).ToList();
+            var groupedPending = allPendingFollowups
+                .GroupBy(f => new
+                {
+                    f.CompanyId,
+                    Key = !string.IsNullOrWhiteSpace(f.ContactId) && f.ContactId != "contact-new" ? f.ContactId.Trim() : (f.ContactPhone != null && f.ContactPhone.Length >= 10 ? f.ContactPhone[^10..] : (f.ContactPhone ?? string.Empty))
+                })
+                .Where(g => !string.IsNullOrEmpty(g.Key.Key) && g.Count() > 1);
+
+            bool dupsCleaned = false;
+            foreach (var group in groupedPending)
+            {
+                var sorted = group.OrderByDescending(f => f.UpdatedAt ?? f.CreatedAt).ThenByDescending(f => f.Id).ToList();
+                var toRemove = sorted.Skip(1).ToList();
+                db.Followups.RemoveRange(toRemove);
+                dupsCleaned = true;
+            }
+            if (dupsCleaned)
+            {
+                db.SaveChanges();
+                Console.WriteLine("[Followup Cleanup] Deduplicated multiple pending follow-up records.");
+            }
+
+            // 3. For any lead that is currently in 'Callback' or 'No Response' or 'New' or 'Contacted',
+            // remove any followup record mistakenly created for it so the lead stays strictly in My Leads.
+            var myLeadsStatuses = new[] { "Callback", "No Response", "New", "Contacted" };
+            var activeMyLeads = db.Leads.Where(l => myLeadsStatuses.Contains(l.Status)).ToList();
+            var activeMyLeadPhones = activeMyLeads.Select(l => l.Phone?.Length >= 10 ? l.Phone[^10..] : l.Phone ?? "").Where(p => !string.IsNullOrEmpty(p)).ToHashSet();
+            var activeMyLeadIds = activeMyLeads.Select(l => l.Id.ToString()).ToHashSet();
+
+            var strayFollowups = db.Followups
+                .Where(f =>
+                    (f.ContactId != null && activeMyLeadIds.Contains(f.ContactId)) ||
+                    (f.ContactPhone != null && activeMyLeadPhones.Contains(f.ContactPhone.Length >= 10 ? f.ContactPhone.Substring(f.ContactPhone.Length - 10) : f.ContactPhone)))
+                .ToList();
+
+            if (strayFollowups.Any())
+            {
+                db.Followups.RemoveRange(strayFollowups);
+                db.SaveChanges();
+                Console.WriteLine($"[Followup Cleanup] Removed {strayFollowups.Count} stray follow-up records for leads that belong in My Leads.");
+            }
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[Followup Cleanup Warning] {ex.Message}");
         }
 
         try
@@ -597,7 +806,20 @@ if (app.Environment.IsDevelopment())
 
 app.UseCors("DefaultCorsPolicy");
 
-app.UseStaticFiles(); // Added to serve uploaded documents
+// Serve uploaded documents, but never let the browser render them inline as HTML/scripts.
+app.UseStaticFiles(new StaticFileOptions
+{
+    OnPrepareResponse = ctx =>
+    {
+        var path = ctx.Context.Request.Path.Value ?? string.Empty;
+        if (path.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase))
+        {
+            ctx.Context.Response.Headers["X-Content-Type-Options"] = "nosniff";
+            ctx.Context.Response.Headers["Content-Security-Policy"] = "default-src 'none'; sandbox";
+            ctx.Context.Response.Headers["Content-Disposition"] = "attachment";
+        }
+    }
+});
 
 app.UseAuthentication();
 app.UseAuthorization();

@@ -327,7 +327,7 @@ export const PlatformDashboardPage: React.FC<PlatformDashboardPageProps> = ({ on
 
         <div className="card platform-telemetry-card">
           <div className="telemetry-card-top">
-            <span className="platform-telemetry-label">AGGREGATE PIPELINE</span>
+            <span className="platform-telemetry-label">TOTAL COMMITED AMOUNT</span>
             <div className="telemetry-icon-box bg-amber-glow">
               <Layers size={18} color="#fbbf24" />
             </div>

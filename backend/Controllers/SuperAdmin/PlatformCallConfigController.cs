@@ -1,5 +1,7 @@
 using System.Diagnostics;
 using System.Net.Sockets;
+using System.Text.Json;
+using System.Text.RegularExpressions;
 using backend.Authentication.Interfaces;
 using backend.Data;
 using backend.DTOs.Common;
@@ -699,4 +701,331 @@ public class PlatformCallConfigController : ControllerBase
             AllocatedAt = d.AllocatedAt
         };
     }
+
+    // ── SPEECH AI & REGIONAL INDIAN PHONETIC VOCABULARY TUNING ──────────────
+
+    private const string SpeechVocabKey = "speech_ai_vocabularies";
+
+    [HttpGet("speech-vocabularies")]
+    public async Task<ActionResult<ApiResponse<List<SpeechVocabularyDto>>>> GetSpeechVocabularies(CancellationToken ct = default)
+    {
+        var vocabs = await LoadOrSeedVocabulariesAsync(ct);
+        return Ok(ApiResponse<List<SpeechVocabularyDto>>.SuccessResult(vocabs, "Speech AI regional vocabulary dictionaries retrieved."));
+    }
+
+    [HttpPost("speech-vocabularies")]
+    public async Task<ActionResult<ApiResponse<SpeechVocabularyDto>>> SaveSpeechVocabulary(
+        [FromBody] SaveSpeechVocabularyRequestDto req,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(req.Name))
+        {
+            return BadRequest(ApiResponse<SpeechVocabularyDto>.FailureResult("Dictionary name is required."));
+        }
+
+        var vocabs = await LoadOrSeedVocabulariesAsync(ct);
+        SpeechVocabularyDto target;
+
+        if (!string.IsNullOrWhiteSpace(req.Id))
+        {
+            target = vocabs.FirstOrDefault(v => v.Id == req.Id) ?? new SpeechVocabularyDto { Id = req.Id };
+            if (!vocabs.Contains(target)) vocabs.Add(target);
+        }
+        else
+        {
+            target = new SpeechVocabularyDto
+            {
+                Id = $"vocab-{Guid.NewGuid():N}"[..12],
+                CreatedAt = DateTime.UtcNow
+            };
+            vocabs.Add(target);
+        }
+
+        target.Key = string.IsNullOrWhiteSpace(req.Key) ? target.Id : req.Key.Trim().ToLowerInvariant();
+        target.Name = req.Name.Trim();
+        target.Language = req.Language.Trim();
+        target.LanguageCode = req.LanguageCode.Trim();
+        target.Engine = req.Engine.Trim();
+        target.Description = req.Description.Trim();
+        target.IsActive = req.IsActive;
+        target.Keywords = req.Keywords ?? new List<SpeechKeywordBoostDto>();
+        target.PhoneticSubstitutions = req.PhoneticSubstitutions ?? new List<PhoneticSubstitutionDto>();
+        target.UpdatedAt = DateTime.UtcNow;
+
+        await SaveVocabulariesAsync(vocabs, ct);
+
+        _context.AuditLogs.Add(new AuditLog
+        {
+            Action = "speech_vocab_save",
+            EntityType = "SpeechVocabulary",
+            EntityId = target.Id,
+            ActorName = _currentUser.Email ?? "Super Admin",
+            ActorEmail = _currentUser.Email ?? "admin@platform.com",
+            Details = $"Saved Speech AI acoustic vocabulary \"{target.Name}\" ({target.LanguageCode}) with {target.Keywords.Count} boosted terms.",
+            Module = "CallConfig",
+            Status = "success",
+            Timestamp = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync(ct);
+
+        return Ok(ApiResponse<SpeechVocabularyDto>.SuccessResult(target, "Speech AI vocabulary dictionary saved successfully."));
+    }
+
+    [HttpDelete("speech-vocabularies/{id}")]
+    public async Task<ActionResult<ApiResponse<bool>>> DeleteSpeechVocabulary(string id, CancellationToken ct = default)
+    {
+        var vocabs = await LoadOrSeedVocabulariesAsync(ct);
+        var item = vocabs.FirstOrDefault(v => v.Id == id || v.Key == id);
+        if (item == null)
+        {
+            return NotFound(ApiResponse<bool>.FailureResult($"Vocabulary \"{id}\" not found."));
+        }
+
+        vocabs.Remove(item);
+        await SaveVocabulariesAsync(vocabs, ct);
+
+        _context.AuditLogs.Add(new AuditLog
+        {
+            Action = "speech_vocab_delete",
+            EntityType = "SpeechVocabulary",
+            EntityId = item.Id,
+            ActorName = _currentUser.Email ?? "Super Admin",
+            ActorEmail = _currentUser.Email ?? "admin@platform.com",
+            Details = $"Deleted Speech AI acoustic vocabulary \"{item.Name}\" ({item.LanguageCode}).",
+            Module = "CallConfig",
+            Status = "success",
+            Timestamp = DateTime.UtcNow
+        });
+        await _context.SaveChangesAsync(ct);
+
+        return Ok(ApiResponse<bool>.SuccessResult(true, "Speech AI vocabulary dictionary removed."));
+    }
+
+    [HttpPost("speech-vocabularies/simulate")]
+    public async Task<ActionResult<ApiResponse<SimulateSpeechResultDto>>> SimulateSpeechTranscription(
+        [FromBody] SimulateSpeechRequestDto req,
+        CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(req.RawTranscript))
+        {
+            return BadRequest(ApiResponse<SimulateSpeechResultDto>.FailureResult("Raw speech transcript is required for simulation."));
+        }
+
+        var sw = Stopwatch.StartNew();
+        var vocabs = await LoadOrSeedVocabulariesAsync(ct);
+        var activeVocabs = vocabs.Where(v => v.IsActive).ToList();
+
+        if (!string.IsNullOrWhiteSpace(req.VocabularyId))
+        {
+            var selected = vocabs.FirstOrDefault(v => v.Id == req.VocabularyId || v.Key == req.VocabularyId);
+            if (selected != null) activeVocabs = new List<SpeechVocabularyDto> { selected };
+        }
+
+        var raw = req.RawTranscript.Trim();
+        var normalized = raw;
+        var substitutionsApplied = new List<string>();
+        var boostedMatched = new List<string>();
+
+        // 1. Apply phonetic sound-alike normalization
+        foreach (var vocab in activeVocabs)
+        {
+            foreach (var sub in vocab.PhoneticSubstitutions)
+            {
+                if (string.IsNullOrWhiteSpace(sub.SpokenPattern) || string.IsNullOrWhiteSpace(sub.NormalizedTarget))
+                    continue;
+
+                var pattern = $@"\b{Regex.Escape(sub.SpokenPattern)}\b";
+                if (Regex.IsMatch(normalized, pattern, RegexOptions.IgnoreCase))
+                {
+                    normalized = Regex.Replace(normalized, pattern, sub.NormalizedTarget, RegexOptions.IgnoreCase);
+                    substitutionsApplied.Add($"\"{sub.SpokenPattern}\" ➔ \"{sub.NormalizedTarget}\"");
+                }
+            }
+        }
+
+        // 2. Detect boosted real estate & finance terms
+        double totalBoostScore = 0;
+        foreach (var vocab in activeVocabs)
+        {
+            foreach (var kw in vocab.Keywords)
+            {
+                if (string.IsNullOrWhiteSpace(kw.Term)) continue;
+                var pattern = $@"\b{Regex.Escape(kw.Term)}\b";
+                if (Regex.IsMatch(normalized, pattern, RegexOptions.IgnoreCase))
+                {
+                    boostedMatched.Add($"{kw.Term} ({kw.Category}, {kw.BoostWeight:F1}x)");
+                    totalBoostScore += kw.BoostWeight;
+                }
+            }
+        }
+
+        sw.Stop();
+        var confidenceGain = Math.Min(34.5, (boostedMatched.Count * 4.2) + (substitutionsApplied.Count * 6.5));
+        if (confidenceGain == 0 && !string.IsNullOrWhiteSpace(raw)) confidenceGain = 5.0;
+
+        var result = new SimulateSpeechResultDto
+        {
+            RawTranscript = raw,
+            NormalizedTranscript = normalized,
+            BoostedTermsMatched = boostedMatched.Distinct().ToList(),
+            SubstitutionsApplied = substitutionsApplied.Distinct().ToList(),
+            AcousticConfidenceGainPercent = Math.Round(confidenceGain, 1),
+            ProcessingLatencyMs = (int)Math.Max(12, sw.ElapsedMilliseconds),
+            EngineUsed = "Sarvam AI (Saarika) + Whisper Large-v3 Custom Acoustics"
+        };
+
+        return Ok(ApiResponse<SimulateSpeechResultDto>.SuccessResult(result, "Speech transcription acoustic simulation completed."));
+    }
+
+    private async Task<List<SpeechVocabularyDto>> LoadOrSeedVocabulariesAsync(CancellationToken ct)
+    {
+        var setting = await _context.PlatformSettings.FirstOrDefaultAsync(s => s.Key == SpeechVocabKey, ct);
+        if (setting != null && !string.IsNullOrWhiteSpace(setting.Value))
+        {
+            try
+            {
+                var list = JsonSerializer.Deserialize<List<SpeechVocabularyDto>>(setting.Value);
+                if (list != null && list.Count > 0) return list;
+            }
+            catch
+            {
+                // Fall back to seed
+            }
+        }
+
+        var seeded = CreateDefaultVocabularies();
+        await SaveVocabulariesAsync(seeded, ct);
+        return seeded;
+    }
+
+    private async Task SaveVocabulariesAsync(List<SpeechVocabularyDto> vocabs, CancellationToken ct)
+    {
+        var json = JsonSerializer.Serialize(vocabs, new JsonSerializerOptions { WriteIndented = true });
+        var setting = await _context.PlatformSettings.FirstOrDefaultAsync(s => s.Key == SpeechVocabKey, ct);
+        if (setting == null)
+        {
+            setting = new PlatformSetting
+            {
+                Key = SpeechVocabKey,
+                Value = json,
+                Description = "Platform Speech AI Custom Acoustic Vocabularies & Regional Indian Keyword Boosting",
+                UpdatedAt = DateTime.UtcNow,
+                UpdatedBy = _currentUser.Email ?? "Super Admin"
+            };
+            _context.PlatformSettings.Add(setting);
+        }
+        else
+        {
+            setting.Value = json;
+            setting.UpdatedAt = DateTime.UtcNow;
+            setting.UpdatedBy = _currentUser.Email ?? "Super Admin";
+        }
+        await _context.SaveChangesAsync(ct);
+    }
+
+    private static List<SpeechVocabularyDto> CreateDefaultVocabularies()
+    {
+        return new List<SpeechVocabularyDto>
+        {
+            new SpeechVocabularyDto
+            {
+                Id = "ka-realty",
+                Key = "ka-realty",
+                Name = "Karnataka Real Estate & Land Survey Registry",
+                Language = "Kannada / English-IN",
+                LanguageCode = "kn-IN",
+                Engine = "Sarvam AI (Saarika Multilingual) + Whisper Large-v3",
+                Description = "Acoustic keyword boosting for Bengaluru/Karnataka land metrics, survey documents, and BDA/RERA legal terms.",
+                IsActive = true,
+                Keywords = new List<SpeechKeywordBoostDto>
+                {
+                    new() { Term = "Guntas", Category = "Land Metric", BoostWeight = 4.8 },
+                    new() { Term = "Khata", Category = "Documentation", BoostWeight = 4.5 },
+                    new() { Term = "E-Khata", Category = "Documentation", BoostWeight = 4.9 },
+                    new() { Term = "Patta", Category = "Documentation", BoostWeight = 4.2 },
+                    new() { Term = "Akrama-Sakrama", Category = "Legal", BoostWeight = 3.9 },
+                    new() { Term = "Devanahalli", Category = "Location", BoostWeight = 4.0 },
+                    new() { Term = "Sarjapur", Category = "Location", BoostWeight = 3.8 },
+                    new() { Term = "Whitefield", Category = "Location", BoostWeight = 3.8 },
+                    new() { Term = "RERA Karnataka", Category = "Legal", BoostWeight = 4.6 },
+                    new() { Term = "BDA Approved", Category = "Legal", BoostWeight = 4.4 },
+                    new() { Term = "BMRDA", Category = "Legal", BoostWeight = 4.0 },
+                    new() { Term = "Guideline Value", Category = "Financial", BoostWeight = 3.8 }
+                },
+                PhoneticSubstitutions = new List<PhoneticSubstitutionDto>
+                {
+                    new() { SpokenPattern = "guntha", NormalizedTarget = "Guntas" },
+                    new() { SpokenPattern = "gunthas", NormalizedTarget = "Guntas" },
+                    new() { SpokenPattern = "katha", NormalizedTarget = "Khata" },
+                    new() { SpokenPattern = "e katha", NormalizedTarget = "E-Khata" },
+                    new() { SpokenPattern = "white feild", NormalizedTarget = "Whitefield" },
+                    new() { SpokenPattern = "sarjapura", NormalizedTarget = "Sarjapur" },
+                    new() { SpokenPattern = "devnahalli", NormalizedTarget = "Devanahalli" }
+                },
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            },
+            new SpeechVocabularyDto
+            {
+                Id = "in-wealth",
+                Key = "in-wealth",
+                Name = "Indian High-Yield Wealth & Real Estate Funds",
+                Language = "English-IN / Hindi-IN",
+                LanguageCode = "hi-IN",
+                Engine = "Sarvam AI Multilingual Acoustics",
+                Description = "High-precision vocabulary for AIF Cat-II, Secured Debentures, TDS, and SEBI compliance calls.",
+                IsActive = true,
+                Keywords = new List<SpeechKeywordBoostDto>
+                {
+                    new() { Term = "Debenture", Category = "Financial", BoostWeight = 4.9 },
+                    new() { Term = "AIF Cat-II", Category = "Financial", BoostWeight = 4.7 },
+                    new() { Term = "Fractional Ownership", Category = "Financial", BoostWeight = 4.4 },
+                    new() { Term = "Folio Number", Category = "Documentation", BoostWeight = 4.6 },
+                    new() { Term = "Distinctive Number", Category = "Legal", BoostWeight = 4.0 },
+                    new() { Term = "SEBI Regulated", Category = "Legal", BoostWeight = 4.5 },
+                    new() { Term = "CKYC Verified", Category = "Compliance", BoostWeight = 4.2 },
+                    new() { Term = "10% TDS Deduction", Category = "Financial", BoostWeight = 4.0 }
+                },
+                PhoneticSubstitutions = new List<PhoneticSubstitutionDto>
+                {
+                    new() { SpokenPattern = "debentur", NormalizedTarget = "Debenture" },
+                    new() { SpokenPattern = "fractional owner", NormalizedTarget = "Fractional Ownership" },
+                    new() { SpokenPattern = "folio no", NormalizedTarget = "Folio Number" },
+                    new() { SpokenPattern = "seebee", NormalizedTarget = "SEBI" },
+                    new() { SpokenPattern = "c kyc", NormalizedTarget = "CKYC Verified" }
+                },
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            },
+            new SpeechVocabularyDto
+            {
+                Id = "ts-realty",
+                Key = "ts-realty",
+                Name = "Telangana & Hyderabad Land Survey Registry",
+                Language = "Telugu / English-IN",
+                LanguageCode = "te-IN",
+                Engine = "Sarvam AI (Saarika) + Whisper",
+                Description = "Acoustic tuning for Hyderabad/Telangana land metrics (Gajalu, Ankanam), HMDA approvals, and Dharani portal terms.",
+                IsActive = true,
+                Keywords = new List<SpeechKeywordBoostDto>
+                {
+                    new() { Term = "Gajalu", Category = "Land Metric", BoostWeight = 4.7 },
+                    new() { Term = "Ankanam", Category = "Land Metric", BoostWeight = 4.3 },
+                    new() { Term = "HMDA Layout", Category = "Legal", BoostWeight = 4.5 },
+                    new() { Term = "Dharani Portal", Category = "Documentation", BoostWeight = 4.8 },
+                    new() { Term = "Kokapet Neopolis", Category = "Location", BoostWeight = 4.1 },
+                    new() { Term = "Mokila", Category = "Location", BoostWeight = 3.9 }
+                },
+                PhoneticSubstitutions = new List<PhoneticSubstitutionDto>
+                {
+                    new() { SpokenPattern = "gajaalu", NormalizedTarget = "Gajalu" },
+                    new() { SpokenPattern = "h m d a", NormalizedTarget = "HMDA Layout" },
+                    new() { SpokenPattern = "dharani", NormalizedTarget = "Dharani Portal" }
+                },
+                CreatedAt = DateTime.UtcNow,
+                UpdatedAt = DateTime.UtcNow
+            }
+        };
+    }
 }
+

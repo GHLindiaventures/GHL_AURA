@@ -10,6 +10,8 @@ import {
   ShieldCheck,
   CheckCircle,
   Pencil,
+  X,
+  CalendarRange,
 } from 'lucide-react';
 import { Followup, CallRecord, Deal, Lead, Customer } from '../../types';
 import { storageService } from '../../services/storageService';
@@ -26,6 +28,7 @@ import {
   saveLead as apiSaveLead,
   saveCustomer as apiSaveCustomer,
   isTenantMatch,
+  transitionFollowupToKyc,
 } from '../../services/ghlApiService';
 import { StatusChip } from '../../components/common/StatusChip';
 import { Modal } from '../../components/common/Modal';
@@ -34,9 +37,33 @@ import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawe
 type FollowupRoleFilter = 'sales_executive' | 'irm';
 import { DateRangePreset } from '../../types/kanban';
 import { adminUserService } from '../../services/adminUserService';
+import { fetchIrmAllLeads, IrmAllLeadsSummary } from '../../services/irmAllLeadsService';
 import { User as UserModel } from '../../types';
+import { getAgentRoleInfo, getAssigningSalesAgentInfo } from '../../utils/agentRoleUtils';
+import { formatSmartScheduleDate, isDateToday, isDateOverdue } from '../../utils/dateUtils';
 import './FollowupsPage.css';
 import '../Leads/LeadsPage.css';
+
+export const isFollowupReturned = (f: Followup, matchingLead?: Lead | null): boolean => {
+  if (f.isReturnedFromHandover) return true;
+  if (f.returnedFromCoveringUserName) return true;
+  const cf = f.customFields;
+  if (cf?.returnedFromHandover === 'true' || cf?.returnedFromHandover === true || Boolean(cf?.returnedFromCoveringUserName)) return true;
+  if (matchingLead) {
+    if (matchingLead.isReturnedFromHandover) return true;
+    const lcf = matchingLead.customFields;
+    if (lcf?.returnedFromHandover === 'true' || lcf?.returnedFromHandover === true || Boolean(lcf?.returnedFromCoveringUserName)) return true;
+  }
+  return false;
+};
+
+export const getFollowupReturnedCoveringName = (f: Followup, matchingLead?: Lead | null): string => {
+  return f.returnedFromCoveringUserName || f.customFields?.returnedFromCoveringUserName || matchingLead?.returnedFromCoveringUserName || matchingLead?.customFields?.returnedFromCoveringUserName || 'Covering Agent';
+};
+
+export const getFollowupReturnedDate = (f: Followup, matchingLead?: Lead | null): string | undefined => {
+  return f.returnedAt || f.customFields?.returnedAt || matchingLead?.returnedAt || matchingLead?.customFields?.returnedAt;
+};
 
 export const FollowupsPage: React.FC = () => {
   const { tenant, user } = useAuth();
@@ -46,7 +73,129 @@ export const FollowupsPage: React.FC = () => {
   const [callsList, setCallsList] = useState<CallRecord[]>([]);
   const [allLeads, setAllLeads] = useState<Lead[]>([]);
   const [users, setUsers] = useState<UserModel[]>([]);
+  const [irmSummaryData, setIrmSummaryData] = useState<IrmAllLeadsSummary | null>(null);
   const [activeTab, setActiveTab] = useState<'all' | 'due' | 'overdue'>('all');
+  const [handoverFilter, setHandoverFilter] = useState('Mine');
+
+  // ── IRM Date Range Filter State (Only for IRM) ───────────────────────────
+  const [irmStartDate, setIrmStartDate] = useState<string>('');
+  const [irmEndDate, setIrmEndDate] = useState<string>('');
+  const [irmDatePreset, setIrmDatePreset] = useState<'all' | 'today' | 'tomorrow' | 'this_week' | 'this_month' | 'overdue' | 'custom'>('all');
+
+  const getLocalDateString = (d: Date): string => {
+    const year = d.getFullYear();
+    const month = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  };
+
+  const handleApplyIrmPreset = (preset: 'all' | 'today' | 'tomorrow' | 'this_week' | 'this_month' | 'overdue') => {
+    setIrmDatePreset(preset);
+    const now = new Date();
+
+    if (preset === 'all' || preset === 'overdue') {
+      setIrmStartDate('');
+      setIrmEndDate('');
+      return;
+    }
+
+    if (preset === 'today') {
+      const todayStr = getLocalDateString(now);
+      setIrmStartDate(todayStr);
+      setIrmEndDate(todayStr);
+      return;
+    }
+
+    if (preset === 'tomorrow') {
+      const tom = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      const tomStr = getLocalDateString(tom);
+      setIrmStartDate(tomStr);
+      setIrmEndDate(tomStr);
+      return;
+    }
+
+    if (preset === 'this_week') {
+      const startStr = getLocalDateString(now);
+      const endOfWeek = new Date(now.getTime() + 6 * 24 * 60 * 60 * 1000);
+      const endStr = getLocalDateString(endOfWeek);
+      setIrmStartDate(startStr);
+      setIrmEndDate(endStr);
+      return;
+    }
+
+    if (preset === 'this_month') {
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      setIrmStartDate(getLocalDateString(startOfMonth));
+      setIrmEndDate(getLocalDateString(endOfMonth));
+      return;
+    }
+  };
+
+  const handleIrmDateChange = (field: 'start' | 'end', value: string) => {
+    setIrmDatePreset('custom');
+    if (field === 'start') {
+      setIrmStartDate(value);
+    } else {
+      setIrmEndDate(value);
+    }
+  };
+
+  const handleClearIrmDateFilter = () => {
+    setIrmDatePreset('all');
+    setIrmStartDate('');
+    setIrmEndDate('');
+  };
+
+  const isFollowupInIrmDateRange = (f: Followup): boolean => {
+    if (!isIrm) return true;
+    if (irmDatePreset === 'all' && !irmStartDate && !irmEndDate) return true;
+
+    if (irmDatePreset === 'overdue') {
+      return isDateOverdue(f.scheduledAt || f.scheduledDate) && !isDateToday(f.scheduledAt || f.scheduledDate);
+    }
+
+    if (irmDatePreset === 'today') {
+      return isDateToday(f.scheduledAt || f.scheduledDate);
+    }
+
+    const schedStr = (f.scheduledAt || '').trim();
+    const dateStr = (f.scheduledDate || '').trim();
+    const parsedTime = Date.parse(schedStr) || (dateStr ? Date.parse(dateStr) : NaN);
+
+    if (irmStartDate || irmEndDate) {
+      if (isNaN(parsedTime)) {
+        const s = schedStr.toLowerCase();
+        if (s.includes('today')) {
+          const nowStr = getLocalDateString(new Date());
+          if (irmStartDate && nowStr < irmStartDate) return false;
+          if (irmEndDate && nowStr > irmEndDate) return false;
+          return true;
+        }
+        return true;
+      }
+      const start = irmStartDate ? new Date(`${irmStartDate}T00:00:00`).getTime() : 0;
+      const end = irmEndDate ? new Date(`${irmEndDate}T23:59:59.999`).getTime() : Infinity;
+      return parsedTime >= start && parsedTime <= end;
+    }
+
+    return true;
+  };
+
+  const handoverOptions = useMemo(() => {
+    const coveringNames = Array.from(new Set(followups.map(f => f.handedOverFromName).filter(Boolean)));
+    const returnedItems = followups.filter(f => isFollowupReturned(f));
+    const returnedNames = Array.from(new Set(returnedItems.map(f => getFollowupReturnedCoveringName(f)).filter(Boolean)));
+
+    if (coveringNames.length === 0 && returnedNames.length === 0) return [];
+    return [
+      { value: 'All', label: 'All Follow-ups' },
+      { value: 'Mine', label: 'Mine (Regular)' },
+      ...coveringNames.map(name => ({ value: `Handover_${name}`, label: `Covering for ${name}` })),
+      ...(returnedNames.length > 0 ? [{ value: 'Returned', label: 'Returned from Handover' }] : []),
+      ...returnedNames.map(name => ({ value: `Returned_${name}`, label: `Returned from ${name}` }))
+    ];
+  }, [followups]);
   const [rescheduleItem, setRescheduleItem] = useState<Followup | null>(null);
   const [newDate, setNewDate] = useState('');
 
@@ -82,9 +231,11 @@ export const FollowupsPage: React.FC = () => {
     (roleCode as string) === 'company_admin' ||
     (roleCode as string) === 'admin' ||
     roleCode === 'super_admin';
-  const isGhlSalesExec = tenant?.slug === 'ghl' && isExec;
+  const isGhlSalesExec =
+    (tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01' || tenant?.id === '1' || tenant?.slug === '1' || tenant?.name?.toLowerCase().includes('ghl') || user?.companySlug === 'ghl') &&
+    isExec;
   const isIrm = roleCode === 'irm';
-  const canOpenDrawer = isGhlSalesExec || isAdmin || isIrm;
+  const canOpenDrawer = isGhlSalesExec || isExec || isAdmin || isIrm;
 
   // ── Admin Filter States ──────────────────────────────────────────────────
   const [selectedRole, setSelectedRole] = useState<FollowupRoleFilter>('sales_executive');
@@ -138,20 +289,104 @@ export const FollowupsPage: React.FC = () => {
   const loadData = async () => {
     try {
       setLoadError(null);
-      const [data, calls, leads, fetchedUsers] = await Promise.all([
+      const [data, calls, leads, fetchedUsers, irmSummary] = await Promise.all([
         getFollowups(tenant?.id),
         getCalls(tenant?.id),
         getLeads(tenant?.id),
-        isAdmin ? adminUserService.getUsers(tenant?.id || '') : Promise.resolve([])
+        isAdmin ? adminUserService.getUsers(tenant?.id || '') : Promise.resolve([]),
+        isIrm ? fetchIrmAllLeads(user?.id, undefined, user?.name, tenant?.id).catch(() => null) : Promise.resolve(null),
       ]);
 
-      const followupsList = isMockMode()
+      const initialFollowups = isMockMode()
         ? ((data && data.length > 0) ? [...data] : (storageService.getFollowups(tenant?.id) || []))
-        : (data || []);
+        : (Array.isArray(data) ? [...data] : []);
+
+      let followupsList = [...initialFollowups];
+
+      // Also ensure any lead with status 'Follow-up Required' is represented in followups
+      const existingContactIds = new Set(followupsList.map(f => String(f.contactId || f.id)));
+      const existingPhones = new Set(followupsList.map(f => (f.contactPhone || '').replace(/\D/g, '').slice(-10)).filter(Boolean));
+
+      (leads || []).forEach(l => {
+        // Only synthesize a ghost followup if this lead is actually assigned to the current user.
+        // Without this guard, a covering agent would keep seeing a fake followup card even after
+        // the handover ends and the lead's assignedAgentId reverts to the original owner.
+        if (l.status === 'Follow-up Required' && (!isAdmin && !isIrm ? String(l.assignedAgentId) === String(user?.id) : true)) {
+          const lPhone = (l.phone || '').replace(/\D/g, '').slice(-10);
+          if (!existingContactIds.has(String(l.id)) && (!lPhone || !existingPhones.has(lPhone))) {
+            followupsList.push({
+              id: `flw-lead-${l.id}`,
+              companyId: l.companyId || tenant?.id || '1',
+              contactId: String(l.id),
+              contactName: l.name,
+              contactPhone: l.phone,
+              contactType: 'lead',
+              scheduledAt: l.createdAt || new Date().toISOString(),
+              priority: l.priority === 'Urgent' ? 'High' : (l.priority as any || 'Medium'),
+              status: 'Pending',
+              notes: l.notes || 'Lead marked Follow-up Required',
+              assignedAgentId: String(l.assignedAgentId || ''),
+              assignedAgentName: l.assignedAgentName || '',
+              handoverId: l.handoverId,
+              handedOverFromName: l.handedOverFromName,
+              handoverPlannedEnd: l.handoverPlannedEnd,
+              isReturnedFromHandover: l.isReturnedFromHandover,
+              returnedFromCoveringUserName: l.returnedFromCoveringUserName,
+              returnedAt: l.returnedAt,
+              customFields: l.customFields,
+            });
+          }
+        }
+      });
 
       setFollowups(followupsList);
       setCallsList(calls || []);
-      setAllLeads(leads || []);
+      setIrmSummaryData(irmSummary);
+
+      let mergedLeads = leads || [];
+      if (irmSummary && Array.isArray(irmSummary.leads)) {
+        const leadMap = new Map<string, Lead>();
+        mergedLeads.forEach(l => {
+          const key = (l.phone ? l.phone.replace(/\D/g, '').slice(-10) : '') || String(l.id);
+          leadMap.set(key, l);
+        });
+        irmSummary.leads.forEach(il => {
+          const key = (il.phone ? il.phone.replace(/\D/g, '').slice(-10) : '') || String(il.id);
+          const existing = leadMap.get(key);
+          if (existing) {
+            leadMap.set(key, {
+              ...existing,
+              assignedById: il.assignedById != null ? String(il.assignedById) : existing.assignedById,
+              assignedByName: (il.assignedByName && il.assignedByName !== 'Created by IRM') ? il.assignedByName : existing.assignedByName,
+            });
+          } else {
+            leadMap.set(key, {
+              id: String(il.id),
+              companyId: String(il.companyId || tenant?.id || '1'),
+              name: il.name,
+              phone: il.phone,
+              email: il.email,
+              location: il.location,
+              source: il.source,
+              status: (il.status as any) || 'Interested',
+              priority: (il.priority as any) || 'Medium',
+              assignedAgentId: String(il.assignedAgentId || user?.id || ''),
+              assignedAgentName: il.assignedAgentName || user?.name || '',
+              assignedById: il.assignedById != null ? String(il.assignedById) : undefined,
+              assignedByName: il.assignedByName || '',
+              createdAt: il.createdAt,
+              notes: il.notes || '',
+              customFields: {
+                investmentCapacity: il.investmentCapacity,
+                preferredAssetClass: il.preferredAssetClass,
+              },
+            });
+          }
+        });
+        mergedLeads = Array.from(leadMap.values());
+      }
+
+      setAllLeads(mergedLeads);
       if (fetchedUsers && fetchedUsers.length > 0) {
         setUsers(fetchedUsers);
       }
@@ -170,7 +405,11 @@ export const FollowupsPage: React.FC = () => {
     loadData();
     const handleUpdate = () => loadData();
     window.addEventListener('nexus_storage_updated', handleUpdate);
-    return () => window.removeEventListener('nexus_storage_updated', handleUpdate);
+    window.addEventListener('nexus_handover_updated', handleUpdate);
+    return () => {
+      window.removeEventListener('nexus_storage_updated', handleUpdate);
+      window.removeEventListener('nexus_handover_updated', handleUpdate);
+    };
   }, [tenant?.id]);
 
   // Sync IRM preference state when drawer opens for a contact
@@ -197,28 +436,35 @@ export const FollowupsPage: React.FC = () => {
       try {
         const raw = localStorage.getItem(`nexus_irm_pref_${contactKey}`);
         if (raw) savedLocal = JSON.parse(raw);
-      } catch {}
+      } catch { }
     }
 
-    const isConfirmed =
-      savedLocal?.confirmed === true ||
+    const isLeadOrCustConfirmed =
       l?.customFields?.irmPreferencesConfirmed === true ||
-      c?.customFields?.irmPreferencesConfirmed === true ||
-      false;
+      c?.customFields?.irmPreferencesConfirmed === true;
 
-    const savedAssetClass =
-      (isConfirmed && savedLocal?.preferredAssetClass) ||
-      (l?.customFields?.irmPreferencesConfirmed && l?.customFields?.preferredAssetClass) ||
-      (c?.customFields?.irmPreferencesConfirmed && c?.customFields?.preferredAssetClass) ||
-      (isConfirmed ? (l?.customFields?.preferredAssetClass || c?.customFields?.preferredAssetClass) : null) ||
-      '';
+    // If lead or customer exists and is NOT confirmed, discard and purge any stale local cache
+    if ((l || c) && !isLeadOrCustConfirmed && savedLocal?.confirmed) {
+      if (contactKey) localStorage.removeItem(`nexus_irm_pref_${contactKey}`);
+      if (fDigits) localStorage.removeItem(`nexus_irm_pref_${fDigits}`);
+      savedLocal = null;
+    }
 
-    const savedHorizon =
-      (isConfirmed && savedLocal?.horizon) ||
-      (l?.customFields?.irmPreferencesConfirmed && (l?.customFields?.horizon || l?.customFields?.investmentHorizon)) ||
-      (c?.customFields?.irmPreferencesConfirmed && (c?.customFields?.horizon || c?.customFields?.investmentHorizon)) ||
-      (isConfirmed ? (l?.customFields?.horizon || l?.customFields?.investmentHorizon || c?.customFields?.horizon || c?.customFields?.investmentHorizon) : null) ||
-      '';
+    const isConfirmed = isLeadOrCustConfirmed || Boolean(!l && !c && savedLocal?.confirmed === true);
+
+    const savedAssetClass = isConfirmed
+      ? (l?.customFields?.irmPreferencesConfirmed && l?.customFields?.preferredAssetClass) ||
+        (c?.customFields?.irmPreferencesConfirmed && c?.customFields?.preferredAssetClass) ||
+        savedLocal?.preferredAssetClass ||
+        ''
+      : '';
+
+    const savedHorizon = isConfirmed
+      ? (l?.customFields?.irmPreferencesConfirmed && (l?.customFields?.horizon || l?.customFields?.investmentHorizon)) ||
+        (c?.customFields?.irmPreferencesConfirmed && (c?.customFields?.horizon || c?.customFields?.investmentHorizon)) ||
+        savedLocal?.horizon ||
+        ''
+      : '';
 
     setPrefAssetClass(savedAssetClass);
     setPrefHorizon(savedHorizon);
@@ -292,14 +538,10 @@ export const FollowupsPage: React.FC = () => {
       }
 
       if (contactKey) {
-        localStorage.setItem(
-          `nexus_irm_pref_${contactKey}`,
-          JSON.stringify({
-            preferredAssetClass: '',
-            horizon: '',
-            confirmed: false,
-          })
-        );
+        localStorage.removeItem(`nexus_irm_pref_${contactKey}`);
+      }
+      if (fDigits) {
+        localStorage.removeItem(`nexus_irm_pref_${fDigits}`);
       }
 
       window.dispatchEvent(new Event('nexus_storage_updated'));
@@ -508,110 +750,35 @@ export const FollowupsPage: React.FC = () => {
       (drawerFollowup as any)?.investmentCapacity ||
       '';   // No hardcoded default — only use what the contact actually provided
 
-    // 1. Create or update deal in stage 'qualified_investor' — fetch from API first, fallback to localStorage
-    let allDeals: Deal[] = [];
     try {
-      allDeals = await getDeals(tenant?.id);
-    } catch {
-      allDeals = storageService.getDeals(tenant?.id) || [];
-    }
-    const existingDeal = allDeals.find(d =>
-      (d.customerId && d.customerId === resolvedContactId) ||
-      (d.phone && fDigits && (d.phone || '').replace(/\D/g, '').slice(-10) === fDigits)
-    );
-
-    const kycDeal: Deal = {
-      id: existingDeal?.id || `deal-kyc-${Date.now()}`,
-      companyId: tenant?.id || 't-ghl-01',
-      title: `${drawerFollowup.contactName} - KYC Verification`,
-      customerId: resolvedContactId,
-      customerName: drawerFollowup.contactName,
-      phone: drawerFollowup.contactPhone,
-      email: contactEmail && contactEmail !== '—' ? contactEmail : undefined,
-      location: contactLocation && contactLocation !== '—' ? contactLocation : undefined,
-      stage: 'qualified_investor',
-      stageEnteredAt: new Date().toISOString(),
-      value: (investmentAmountValue && parseFloat(investmentAmountValue.replace(/,/g, '')) > 0)
-        ? parseFloat(investmentAmountValue.replace(/,/g, ''))
-        : (existingDeal?.value ?? 0),
-      expectedCloseDate: new Date(Date.now() + 30 * 86400000).toISOString().slice(0, 10),
-      assignedAgentId: user?.id || drawerFollowup.assignedAgentId || '',
-      assignedAgentName: user?.name || drawerFollowup.assignedAgentName || '',
-      notes: `Ready for KYC. Moved from Follow-ups by IRM (${user?.name || ''}).`,
-      createdAt: existingDeal?.createdAt || new Date().toISOString().slice(0, 10),
-      priority: drawerFollowup.priority || 'High',
-      // Only set preferredAssetClass if IRM has confirmed it; do not default to 'CO-AIF'
-      ...(prefAssetClass && isPrefConfirmed ? { preferredAssetClass: prefAssetClass } : {}),
-      // Only set investmentRange if actually provided; do not default
-      ...(investmentCapacity ? { investmentRange: investmentCapacity } : {}),
-    };
-
-    // Save deal to DB (API) — this persists stage='qualified_investor' in Neon
-    try {
-      await apiSaveDeal(kycDeal);
-    } catch (err: any) {
-      console.error('[FollowupsPage] API saveDeal failed:', err);
-      showToast(`Failed to move to KYC: ${err?.message || 'Error updating deal status'}`);
-      return;
-    }
-
-    // 2. Mark the follow-up task as completed in DB so it does not show in the followup page
-    try {
-      await apiSaveFollowup({
-        ...drawerFollowup,
-        status: 'Completed',
-        notes: `${drawerFollowup.notes ? drawerFollowup.notes + ' | ' : ''}Ready for KYC: Moved to KYC Module by IRM`,
+      await transitionFollowupToKyc({
+        contactName: drawerFollowup.contactName,
+        contactPhone: drawerFollowup.contactPhone,
+        contactEmail: contactEmail && contactEmail !== '—' ? contactEmail : undefined,
+        contactLocation: contactLocation && contactLocation !== '—' ? contactLocation : undefined,
+        contactId: resolvedContactId,
+        followupId: drawerFollowup.id,
+        followupNotes: drawerFollowup.notes,
+        followupPriority: drawerFollowup.priority || 'High',
+        investmentAmount: investmentAmountValue,
+        preferredAssetClass: isPrefConfirmed ? prefAssetClass : '',
+        investmentHorizon: isPrefConfirmed ? prefHorizon : '',
+        isPrefConfirmed: Boolean(isPrefConfirmed),
+        assignedAgentId: user?.id || drawerFollowup.assignedAgentId || '',
+        assignedAgentName: user?.name || drawerFollowup.assignedAgentName || '',
+        tenantId: tenant?.id || 't-ghl-01',
+        tenantName: tenant?.name || 'GHL India Ventures',
+        actorName: user?.name || 'IRM',
+        actorEmail: user?.email || 'irm@ghl.com',
       });
+
+      setDrawerFollowup(null);
+      loadData();
+      showToast(`✓ ${drawerFollowup.contactName} moved to KYC module!`);
     } catch (err: any) {
-      console.error('[FollowupsPage] API saveFollowup (complete) failed:', err);
-      showToast(`Failed to complete follow-up task: ${err?.message || 'Error updating follow-up status'}`);
-      return;
+      console.error('[FollowupsPage] transitionFollowupToKyc failed:', err);
+      showToast(`Failed to move to KYC: ${err?.message || 'Error updating deal status'}`);
     }
-
-    // 3. If matching lead exists, update lead status to 'Ready for KYC' in DB
-    if (matchingLead) {
-      const updatedLead = {
-        ...matchingLead,
-        status: 'Qualified' as Lead['status'],
-        customFields: {
-          ...(matchingLead.customFields || {}),
-          ...(prefAssetClass && isPrefConfirmed ? { preferredAssetClass: prefAssetClass } : {}),
-          ...(prefHorizon && isPrefConfirmed ? { horizon: prefHorizon, investmentHorizon: prefHorizon } : {}),
-          investmentAmount: (investmentAmountValue && parseFloat(investmentAmountValue.replace(/,/g, '')) > 0)
-            ? investmentAmountValue.replace(/,/g, '').trim()
-            : undefined,
-          irmPreferencesConfirmed: Boolean(isPrefConfirmed),
-          movedToKycAt: new Date().toISOString(),
-        },
-      };
-      try {
-        await apiSaveLead(updatedLead);
-      } catch (err: any) {
-        console.error('[FollowupsPage] API saveLead (qualified) failed:', err);
-        showToast(`Failed to update lead status: ${err?.message || 'Error updating lead'}`);
-        return;
-      }
-    }
-
-    // 4. Audit Log
-    storageService.addAuditLog({
-      id: `aud-${Date.now()}`,
-      timestamp: new Date().toISOString(),
-      actorName: user?.name || 'IRM',
-      actorEmail: user?.email || 'irm@ghl.com',
-      action: 'DEAL_CREATED_KYC',
-      entityType: 'Deal',
-      entityId: kycDeal.id,
-      companyId: tenant?.id || 't-ghl-01',
-      companyName: tenant?.name || 'GHL India Ventures',
-      details: `Moved ${drawerFollowup.contactName} to KYC verification module`,
-    });
-
-    // 5. Update local state & close drawer
-    setDrawerFollowup(null);
-    loadData();
-    window.dispatchEvent(new Event('nexus_storage_updated'));
-    showToast(`✓ ${drawerFollowup.contactName} moved to KYC module!`);
   };
 
   const handleSaveReschedule = async () => {
@@ -677,6 +844,48 @@ export const FollowupsPage: React.FC = () => {
     return 'Sales Executive';
   };
 
+  // Helper to determine the display agent and role for a followup card or drawer
+  const getFollowupDisplayAgent = (f: Followup): { label: string; name: string; role: string; badgeClass: string } => {
+    const fPhone = (f.contactPhone || '').replace(/\D/g, '').slice(-10);
+    const matchingLead = allLeads.find(l => {
+      const idMatch = f.contactId && String(f.contactId) === String(l.id);
+      const lPhone = (l.phone || '').replace(/\D/g, '').slice(-10);
+      return idMatch || Boolean(fPhone && lPhone && fPhone === lPhone);
+    });
+
+    if (isIrm) {
+      // When IRM user is viewing follow-ups, display the Sales Agent who assigned/qualified the lead
+      const salesInfo = getAssigningSalesAgentInfo(matchingLead, f);
+      return {
+        label: 'Assigned Agent',
+        name: salesInfo.name,
+        role: salesInfo.role,
+        badgeClass: salesInfo.badgeClass,
+      };
+    }
+
+    const salesAgentName =
+      (f.assignedByName && f.assignedByName !== 'Created by IRM' ? f.assignedByName : null) ||
+      (matchingLead?.assignedByName && matchingLead.assignedByName !== 'Created by IRM' ? matchingLead.assignedByName : null) ||
+      matchingLead?.customFields?.qualifiedByAgentName ||
+      matchingLead?.customFields?.assignedByAgentName ||
+      matchingLead?.customFields?.agentName ||
+      f.assignedAgentName ||
+      matchingLead?.assignedAgentName ||
+      (String(matchingLead?.assignedById) === '3' || String(f.assignedById) === '3' ? 'Naveen' : null) ||
+      (String(matchingLead?.assignedById) === '2' || String(f.assignedById) === '2' ? 'Vishnu' : null) ||
+      (user?.role?.code === 'sales_executive' ? user?.name : 'Naveen') ||
+      'Naveen';
+
+    const info = getAgentRoleInfo(salesAgentName, f.assignedById || matchingLead?.assignedById);
+    return {
+      label: 'Assigned Agent',
+      name: info.name,
+      role: info.role,
+      badgeClass: info.badgeClass,
+    };
+  };
+
   // Helper to test if a followup date falls within date range filter
   const isFollowupInDateFilter = (f: Followup): boolean => {
     if (dateRangePreset === 'all') return true;
@@ -690,7 +899,7 @@ export const FollowupsPage: React.FC = () => {
       const d = new Date(parsedTime);
       return d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
     };
-    
+
     const isYesterday = () => {
       const parsedTime = Date.parse(schedStr) || (dateStr ? Date.parse(dateStr) : NaN);
       if (isNaN(parsedTime)) return schedStr.toLowerCase().includes('yesterday');
@@ -761,42 +970,232 @@ export const FollowupsPage: React.FC = () => {
       return true;
     });
   } else if (isExec) {
-    scopedFollowups = followups.filter(
-      f =>
-        (f.assignedAgentId && f.assignedAgentId === user?.id) ||
-        (f.assignedAgentName && f.assignedAgentName === user?.name)
-    );
+    scopedFollowups = followups.filter(f => {
+      if (f.status !== 'Pending') return false;
+      const isDirectlyAssigned =
+        (f.assignedAgentId && String(f.assignedAgentId) === String(user?.id)) ||
+        (f.assignedAgentName && user?.name && f.assignedAgentName.trim().toLowerCase() === user.name.trim().toLowerCase());
+      if (isDirectlyAssigned) return true;
+
+      const fPhone = (f.contactPhone || '').replace(/\D/g, '').slice(-10);
+      const matchingLead = allLeads.find(l => {
+        const idMatch = f.contactId && String(f.contactId) === String(l.id);
+        const lPhone = (l.phone || '').replace(/\D/g, '').slice(-10);
+        return idMatch || Boolean(fPhone && lPhone && fPhone === lPhone);
+      });
+
+      if (matchingLead) {
+        return (
+          (matchingLead.assignedAgentId && String(matchingLead.assignedAgentId) === String(user?.id)) ||
+          (matchingLead.assignedAgentName && user?.name && matchingLead.assignedAgentName.trim().toLowerCase() === user.name.trim().toLowerCase())
+        );
+      }
+      return false;
+    });
   } else if (isIrm) {
-    // IRM: Only show pending follow-ups assigned to THIS authenticated IRM
+    // IRM: Show pending follow-ups assigned to THIS authenticated IRM OR associated with a lead assigned to THIS IRM
+    // Build sets of contacts that have moved beyond follow-up (KYC, Opportunities, Converted, etc.)
+    const advancedContactIds = new Set<string>();
+    const advancedContactPhones = new Set<string>();
+    const advancedContactNames = new Set<string>();
+
+    if (irmSummaryData && Array.isArray(irmSummaryData.leads)) {
+      irmSummaryData.leads.forEach(il => {
+        const stage = (il.currentStage || '').toLowerCase();
+        const st = (il.status || '').toLowerCase();
+        if (
+          stage === 'kyc' ||
+          stage === 'opportunities' ||
+          stage === 'converted' ||
+          stage === 'archived' ||
+          st === 'qualified' ||
+          st === 'converted' ||
+          st === 'not interested' ||
+          st === 'junk'
+        ) {
+          if (il.id) advancedContactIds.add(String(il.id));
+          const p10 = (il.phone || '').replace(/\D/g, '').slice(-10);
+          if (p10) advancedContactPhones.add(p10);
+          if (il.name) advancedContactNames.add(il.name.trim().toLowerCase());
+        }
+      });
+    }
+
     scopedFollowups = followups.filter(f => {
       if (f.status !== 'Pending') return false;
       if (f.companyId && tenant?.id && !isTenantMatch(f.companyId, tenant.id)) return false;
-      return (
+
+      const fPhone = (f.contactPhone || '').replace(/\D/g, '').slice(-10);
+      const fName = (f.contactName || '').trim().toLowerCase();
+      const fId = f.contactId ? String(f.contactId) : '';
+
+      // Stage isolation: if this contact has moved to KYC, Opportunities, Converted, etc., NEVER show in Follow-up
+      if (fId && advancedContactIds.has(fId)) return false;
+      if (fPhone && advancedContactPhones.has(fPhone)) return false;
+      if (fName && advancedContactNames.has(fName)) return false;
+
+      const matchingLead = allLeads.find(l => {
+        const idMatch = f.contactId && String(f.contactId) === String(l.id);
+        const lPhone = (l.phone || '').replace(/\D/g, '').slice(-10);
+        return idMatch || Boolean(fPhone && lPhone && fPhone === lPhone);
+      });
+
+      if (matchingLead) {
+        const mlStatus = (matchingLead.status || '').toLowerCase();
+        if (mlStatus === 'qualified' || mlStatus === 'converted' || mlStatus === 'not interested' || mlStatus === 'junk') {
+          return false;
+        }
+      }
+
+      const isDirectlyAssigned =
         (f.assignedAgentId && String(f.assignedAgentId) === String(user?.id)) ||
-        (f.assignedAgentName && f.assignedAgentName === user?.name)
-      );
+        (f.assignedAgentName && user?.name && f.assignedAgentName.trim().toLowerCase() === user.name.trim().toLowerCase());
+      if (isDirectlyAssigned) return true;
+
+      if (matchingLead) {
+        return (
+          (matchingLead.assignedAgentId && String(matchingLead.assignedAgentId) === String(user?.id)) ||
+          (matchingLead.assignedAgentName && user?.name && matchingLead.assignedAgentName.trim().toLowerCase() === user.name.trim().toLowerCase())
+        );
+      }
+
+      return false;
     });
+
+    // Also synthesize follow-up tasks for any leads assigned to this IRM that are in Follow-up stage but lack a standalone followup record
+    const existingFollowupContactIds = new Set(
+      scopedFollowups.map(f => String(f.contactId)).filter(Boolean)
+    );
+    const existingFollowupPhones = new Set(
+      scopedFollowups.map(f => (f.contactPhone || '').replace(/\D/g, '').slice(-10)).filter(Boolean)
+    );
+
+    const missingFollowupLeads = allLeads.filter(l => {
+      const isAssignedToMe =
+        (l.assignedAgentId && String(l.assignedAgentId) === String(user?.id)) ||
+        (l.assignedAgentName && user?.name && l.assignedAgentName.trim().toLowerCase() === user.name.trim().toLowerCase());
+      if (!isAssignedToMe) return false;
+      if (l.companyId && tenant?.id && !isTenantMatch(l.companyId, tenant.id)) return false;
+
+      const lStatus = (l.status || '').toLowerCase();
+      // An 'Interested' lead is in initial review in "My Leads" — it must NOT show in Follow-up
+      if (lStatus === 'interested') return false;
+
+      // Contacts in KYC, Opportunities, Converted, etc. must NEVER be synthesized into Follow-up
+      const cleanPhone = (l.phone || '').replace(/\D/g, '').slice(-10);
+      const lName = (l.name || '').trim().toLowerCase();
+      const lId = String(l.id);
+      if (advancedContactIds.has(lId) || (cleanPhone && advancedContactPhones.has(cleanPhone)) || (lName && advancedContactNames.has(lName))) {
+        return false;
+      }
+      if (lStatus === 'qualified' || lStatus === 'converted' || lStatus === 'not interested' || lStatus === 'junk') {
+        return false;
+      }
+
+      const isInFollowupStage =
+        l.status === 'Follow-up Required' ||
+        l.status === 'Callback';
+      if (!isInFollowupStage) return false;
+
+      if (existingFollowupContactIds.has(String(l.id))) return false;
+      if (cleanPhone && existingFollowupPhones.has(cleanPhone)) return false;
+
+      return true;
+    });
+
+    for (const ml of missingFollowupLeads) {
+      const salesAgentName =
+        (ml.assignedByName && ml.assignedByName !== 'Created by IRM' ? ml.assignedByName : null) ||
+        ml.customFields?.qualifiedByAgentName ||
+        ml.customFields?.agentName ||
+        '';
+
+      scopedFollowups.push({
+        id: `lead-flw-${ml.id}`,
+        companyId: tenant?.id || 't-ghl-01',
+        contactId: String(ml.id),
+        contactType: 'lead',
+        contactName: ml.name,
+        contactPhone: ml.phone,
+        contactEmail: ml.email || '',
+        scheduledAt: ml.nextFollowupDate || new Date(Date.now() + 86400000).toISOString(),
+        priority: (ml.priority === 'Urgent' ? 'High' : (ml.priority || 'High')) as 'Low' | 'Medium' | 'High',
+        status: 'Pending',
+        notes: ml.notes || 'Scheduled follow-up callback',
+        assignedAgentId: String(user?.id || ''),
+        assignedAgentName: salesAgentName || user?.name || ml.assignedAgentName || '',
+        assignedRole: salesAgentName ? 'Sales Executive' : 'IRM',
+      });
+    }
   } else {
     scopedFollowups = followups;
   }
 
-  // Do NOT collapse legitimate separate tasks merely because they belong to the same customer or have nearby schedules.
-  // Deduplicate only by unique ID so distinct tasks are never merged
-  let processedFollowups = scopedFollowups;
+  // Deduplicate follow-up tasks by contact so each contact has at most ONE active follow-up task card.
+  // If multiple records exist for the same contact (e.g. from repeated calls or fallback synthesis),
+  // pick the most actionable/recent one and merge any distinct notes so no contact is duplicated.
+  let processedFollowups: Followup[] = [];
   try {
-    const seen = new Set<string>();
-    const deduped: Followup[] = [];
+    const contactMap = new Map<string, Followup>();
 
     for (const f of scopedFollowups) {
-      const key = String(f.id);
-      if (!seen.has(key)) {
-        seen.add(key);
-        deduped.push(f);
+      const cleanContactId = (f.contactId || '').replace(/^lead-flw-/, '').trim();
+      const phoneDigits = (f.contactPhone || '').replace(/\D/g, '').slice(-10);
+
+      const contactKey = (cleanContactId && cleanContactId !== 'contact-new')
+        ? `id:${cleanContactId}`
+        : phoneDigits
+          ? `phone:${phoneDigits}`
+          : (f.contactName ? `name:${f.contactName.trim().toLowerCase()}` : `item:${f.id}`);
+
+      if (contactMap.has(contactKey)) {
+        const existing = contactMap.get(contactKey)!;
+
+        // If one is Pending and the other is not, always keep the Pending one
+        if (existing.status !== 'Pending' && f.status === 'Pending') {
+          contactMap.set(contactKey, { ...f });
+          continue;
+        }
+        if (existing.status === 'Pending' && f.status !== 'Pending') {
+          continue;
+        }
+
+        // Both same status: prefer real database record over synthesized lead task ('lead-flw-')
+        const existingIsSynthetic = String(existing.id).startsWith('lead-flw-');
+        const currentIsSynthetic = String(f.id).startsWith('lead-flw-');
+
+        let winner = existing;
+        let secondary = f;
+
+        if (existingIsSynthetic && !currentIsSynthetic) {
+          winner = f;
+          secondary = existing;
+        } else if (!existingIsSynthetic && !currentIsSynthetic) {
+          // Both are real records: keep the one with the latest scheduled date or newest ID
+          const existingTime = Date.parse(existing.scheduledAt) || 0;
+          const currentTime = Date.parse(f.scheduledAt) || 0;
+          if (currentTime >= existingTime) {
+            winner = f;
+            secondary = existing;
+          }
+        }
+
+        // Merge notes if secondary has distinct information not in winner
+        const wNotes = (winner.notes || '').trim();
+        const sNotes = (secondary.notes || '').trim();
+        if (sNotes && !wNotes.includes(sNotes)) {
+          winner.notes = wNotes ? `${wNotes} | ${sNotes}` : sNotes;
+        }
+
+        contactMap.set(contactKey, winner);
+      } else {
+        contactMap.set(contactKey, { ...f });
       }
     }
-    processedFollowups = deduped;
+
+    processedFollowups = Array.from(contactMap.values());
   } catch (err) {
-    console.error('Error deduping followups list:', err);
+    console.error('Error deduping followups list by contact:', err);
     processedFollowups = scopedFollowups;
   }
 
@@ -820,12 +1219,12 @@ export const FollowupsPage: React.FC = () => {
     try {
       const niJunkLeadIds = new Set<string>(
         allLeads
-          .filter((l: Lead) => l.status === 'Not Interested' || l.status === 'Junk')
+          .filter((l: Lead) => l.status === 'Not Interested' || l.status === 'Junk' || l.status === 'Other')
           .map((l: Lead) => l.id)
       );
       const niJunkPhones = new Set<string>(
         allLeads
-          .filter((l: Lead) => l.status === 'Not Interested' || l.status === 'Junk')
+          .filter((l: Lead) => l.status === 'Not Interested' || l.status === 'Junk' || l.status === 'Other')
           .map((l: Lead) => (l.phone || '').replace(/\D/g, '').slice(-10))
           .filter(Boolean)
       );
@@ -843,34 +1242,113 @@ export const FollowupsPage: React.FC = () => {
     }
   }
 
-  // Count badges
-  const activePendingFollowups = processedFollowups.filter(f => f.status === 'Pending');
+  // ── Other status leads leave the Follow-ups page (transferred to Other module) ───
+  try {
+    const otherLeadIds = new Set<string>(
+      allLeads
+        .filter((l: Lead) => l.status === 'Other')
+        .map((l: Lead) => String(l.id))
+    );
+    const otherPhones = new Set<string>(
+      allLeads
+        .filter((l: Lead) => l.status === 'Other')
+        .map((l: Lead) => (l.phone || '').replace(/\D/g, '').slice(-10))
+        .filter(Boolean)
+    );
 
-  const filteredFollowups = processedFollowups.filter(f => {
+    processedFollowups = processedFollowups.filter(f => {
+      if (f.contactId && f.contactId !== 'contact-new' && otherLeadIds.has(String(f.contactId)))
+        return false;
+      const fPhone = (f.contactPhone || '').replace(/\D/g, '').slice(-10);
+      if (fPhone && otherPhones.has(fPhone)) return false;
+      return true;
+    });
+  } catch (err) {
+    console.error('Error in Other-lead followup filter:', err);
+  }
+
+  // ── Interested leads leave the sales Follow-ups page ───────────────────────
+  // Once a lead is 'Interested' it is tracked in Customer 360, so any still-pending SALES follow-up
+  // for it is hidden. IRM follow-ups are kept: IRMs work Interested leads.
+  if (!isIrm) {
+    try {
+      const interestedLeads = allLeads.filter((l: Lead) => l.status === 'Interested');
+      const interestedLeadIds = new Set<string>(interestedLeads.map((l: Lead) => String(l.id)));
+      const interestedPhones = new Set<string>(
+        interestedLeads
+          .map((l: Lead) => (l.phone || '').replace(/\D/g, '').slice(-10))
+          .filter(Boolean)
+      );
+
+      processedFollowups = processedFollowups.filter(f => {
+        if (f.status !== 'Pending') return true;
+        if (f.contactType && f.contactType !== 'lead') return true;
+        if (getFollowupRole(f) === 'IRM') return true;
+        if (f.contactId && f.contactId !== 'contact-new' && interestedLeadIds.has(String(f.contactId)))
+          return false;
+        const fPhone = (f.contactPhone || '').replace(/\D/g, '').slice(-10);
+        if (fPhone && interestedPhones.has(fPhone)) return false;
+        return true;
+      });
+    } catch (err) {
+      console.error('Error in Interested-lead followup filter:', err);
+    }
+  }
+
+  // Count badges & filters
+  const isFollowupToday = (f: Followup): boolean => {
     const schedStr = (f.scheduledAt || '').trim();
     const dateStr = (f.scheduledDate || '').trim();
     const now = new Date();
-    
-    const isToday = () => {
-      const parsedTime = Date.parse(schedStr) || (dateStr ? Date.parse(dateStr) : NaN);
-      if (isNaN(parsedTime)) return schedStr.toLowerCase().includes('today');
-      const d = new Date(parsedTime);
-      return d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
-    };
+    const parsedTime = Date.parse(schedStr) || (dateStr ? Date.parse(dateStr) : NaN);
+    if (isNaN(parsedTime)) return schedStr.toLowerCase().includes('today');
+    const d = new Date(parsedTime);
+    return d.getDate() === now.getDate() && d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+  };
 
-    const isOverdueFunc = () => {
-      const parsedTime = Date.parse(schedStr) || (dateStr ? Date.parse(dateStr) : NaN);
-      if (isNaN(parsedTime)) return schedStr.toLowerCase().includes('yesterday');
-      return parsedTime < new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
-    };
+  const isFollowupOverdue = (f: Followup): boolean => {
+    const schedStr = (f.scheduledAt || '').trim();
+    const dateStr = (f.scheduledDate || '').trim();
+    const now = new Date();
+    const parsedTime = Date.parse(schedStr) || (dateStr ? Date.parse(dateStr) : NaN);
+    if (isNaN(parsedTime)) return schedStr.toLowerCase().includes('yesterday');
+    const todayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+    return parsedTime < todayStart;
+  };
 
-    if (activeTab === 'due') {
-      return f.status === 'Pending' && isToday();
+  const activePendingFollowups = processedFollowups.filter(f => {
+    if (f.status !== 'Pending') return false;
+    if (handoverOptions.length > 0) {
+      if (handoverFilter === 'Mine' && (f.handoverId || isFollowupReturned(f))) return false;
+      if (handoverFilter === 'Returned') {
+        if (!isFollowupReturned(f)) return false;
+      } else if (handoverFilter.startsWith('Returned_')) {
+        const name = handoverFilter.replace('Returned_', '');
+        if (!isFollowupReturned(f) || getFollowupReturnedCoveringName(f) !== name) return false;
+      } else if (handoverFilter.startsWith('Handover_')) {
+        const name = handoverFilter.replace('Handover_', '');
+        if (f.handedOverFromName !== name) return false;
+      }
     }
-    if (activeTab === 'overdue') {
-      return f.status === 'Pending' && isOverdueFunc() && !isToday();
+    return true;
+  });
+
+  // Base list for current role/date-filtering
+  const dateScopedFollowups = useMemo(() => {
+    if (!isIrm) return activePendingFollowups;
+    return activePendingFollowups.filter(isFollowupInIrmDateRange);
+  }, [isIrm, activePendingFollowups, irmDatePreset, irmStartDate, irmEndDate]);
+
+  const filteredFollowups = dateScopedFollowups.filter(f => {
+    if (!isIrm) {
+      if (activeTab === 'due') {
+        return isFollowupToday(f);
+      }
+      if (activeTab === 'overdue') {
+        return isFollowupOverdue(f) && !isFollowupToday(f);
+      }
     }
-    return f.status === 'Pending';
+    return true;
   });
 
   const drawerFollowupRole = drawerFollowup ? getFollowupRole(drawerFollowup) : '';
@@ -1006,9 +1484,8 @@ export const FollowupsPage: React.FC = () => {
           {/* Right Section: Role Mode Tag & Total Count */}
           <div className="admin-followup-meta-group">
             <span
-              className={`followup-role-tag ${
-                selectedRole === 'sales_executive' ? 'tag-sales-exec' : 'tag-irm'
-              }`}
+              className={`followup-role-tag ${selectedRole === 'sales_executive' ? 'tag-sales-exec' : 'tag-irm'
+                }`}
             >
               {selectedRole === 'sales_executive' ? (
                 <>
@@ -1028,48 +1505,186 @@ export const FollowupsPage: React.FC = () => {
         </div>
       )}
 
-      {/* Tabs */}
-      <div className="followups-tabs-container">
-        {[
-          { id: 'all', label: `All Tasks (${activePendingFollowups.length})` },
-          {
-            id: 'due',
-            label: `Due Today (${
-              activePendingFollowups.filter(f =>
-                (f.scheduledAt || '').toLowerCase().includes('today')
-              ).length
-            })`,
-          },
-          {
-            id: 'overdue',
-            label: `Overdue (${
-              activePendingFollowups.filter(f =>
-                (f.scheduledAt || '').toLowerCase().includes('yesterday')
-              ).length
-            })`,
-            danger: true,
-          },
-        ].map(tab => (
-          <button
-            key={tab.id}
-            className={`btn btn-sm ${
-              activeTab === tab.id ? 'btn-primary' : 'btn-secondary'
-            } ${
-              tab.danger && activeTab === tab.id
-                ? 'followups-tab-danger-active'
-                : tab.danger
-                ? 'followups-tab-danger-inactive'
-                : ''
-            }`}
-            onClick={() => setActiveTab(tab.id as any)}
-          >
-            {tab.danger && (
-              <AlertTriangle size={13} color={activeTab === tab.id ? '#ffffff' : '#dc2626'} />
+      {/* ── IRM Date Range Filter Bar (Only for IRM) - Red and Black Theme ── */}
+      {isIrm && (
+        <div className="irm-followup-filterbar">
+          <div className="irm-followup-filter-left">
+            <div className="irm-followup-filter-title">
+              <CalendarRange size={16} color="#ef4444" />
+              <span>Filter by Date:</span>
+            </div>
+
+            {/* Quick Presets */}
+            <div className="irm-followup-presets">
+              <button
+                type="button"
+                className={`irm-preset-chip ${irmDatePreset === 'all' && !irmStartDate && !irmEndDate ? 'active' : ''}`}
+                onClick={() => handleApplyIrmPreset('all')}
+              >
+                All
+              </button>
+              <button
+                type="button"
+                className={`irm-preset-chip ${irmDatePreset === 'today' ? 'active' : ''}`}
+                onClick={() => handleApplyIrmPreset('today')}
+              >
+                Today
+              </button>
+              <button
+                type="button"
+                className={`irm-preset-chip ${irmDatePreset === 'tomorrow' ? 'active' : ''}`}
+                onClick={() => handleApplyIrmPreset('tomorrow')}
+              >
+                Tomorrow
+              </button>
+              <button
+                type="button"
+                className={`irm-preset-chip ${irmDatePreset === 'this_week' ? 'active' : ''}`}
+                onClick={() => handleApplyIrmPreset('this_week')}
+              >
+                This Week
+              </button>
+              <button
+                type="button"
+                className={`irm-preset-chip ${irmDatePreset === 'this_month' ? 'active' : ''}`}
+                onClick={() => handleApplyIrmPreset('this_month')}
+              >
+                This Month
+              </button>
+              <button
+                type="button"
+                className={`irm-preset-chip ${irmDatePreset === 'overdue' ? 'active' : ''} ${activePendingFollowups.some(f => isFollowupOverdue(f) && !isFollowupToday(f)) ? 'has-overdue' : ''}`}
+                onClick={() => handleApplyIrmPreset('overdue')}
+              >
+                {activePendingFollowups.some(f => isFollowupOverdue(f) && !isFollowupToday(f)) && (
+                  <AlertTriangle size={11} color={irmDatePreset === 'overdue' ? '#ffffff' : '#ef4444'} style={{ marginRight: 3, verticalAlign: 'middle' }} />
+                )}
+                Overdue ({activePendingFollowups.filter(f => isFollowupOverdue(f) && !isFollowupToday(f)).length})
+              </button>
+            </div>
+
+            {/* From & To Date Pickers */}
+            <div className="irm-date-range-box">
+              <div className="irm-date-field">
+                <label htmlFor="irm-followup-from-date" className="irm-date-label">From:</label>
+                <input
+                  id="irm-followup-from-date"
+                  type="date"
+                  className="irm-date-input"
+                  value={irmStartDate}
+                  onChange={e => handleIrmDateChange('start', e.target.value)}
+                  title="Filter from date"
+                />
+              </div>
+
+              <span className="irm-date-sep">to</span>
+
+              <div className="irm-date-field">
+                <label htmlFor="irm-followup-to-date" className="irm-date-label">To:</label>
+                <input
+                  id="irm-followup-to-date"
+                  type="date"
+                  className="irm-date-input"
+                  value={irmEndDate}
+                  onChange={e => handleIrmDateChange('end', e.target.value)}
+                  title="Filter to date"
+                />
+              </div>
+
+              {(irmStartDate || irmEndDate || irmDatePreset !== 'all') && (
+                <button
+                  type="button"
+                  onClick={handleClearIrmDateFilter}
+                  className="irm-filter-clear-btn"
+                  title="Reset date filter"
+                >
+                  <X size={12} /> Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="irm-followup-filter-right">
+            {(irmStartDate || irmEndDate) && (
+              <span className="irm-active-range-pill">
+                <Calendar size={11} /> {irmStartDate || 'Start'} &rarr; {irmEndDate || 'End'}
+              </span>
             )}
-            {tab.label}
-          </button>
-        ))}
-      </div>
+            <span className="irm-filter-count-badge">
+              Tasks: <strong>{filteredFollowups.length}</strong> of {activePendingFollowups.length}
+            </span>
+
+            {handoverOptions.length > 0 && (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginLeft: 8 }}>
+                <span style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-muted)' }}>View:</span>
+                <select
+                  className="form-select customers-filter-select"
+                  style={{ width: 'auto', padding: '3px 26px 3px 8px', fontSize: 12, height: 32 }}
+                  value={handoverFilter}
+                  onChange={e => setHandoverFilter(e.target.value)}
+                >
+                  {handoverOptions.map(opt => (
+                    <option key={opt.value} value={opt.value}>{opt.label}</option>
+                  ))}
+                </select>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Tabs (Only for Non-IRM) */}
+      {!isIrm && (
+        <div className="followups-tabs-container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+          <div style={{ display: 'flex', gap: 8 }}>
+            {[
+            { id: 'all', label: `All Tasks (${activePendingFollowups.length})` },
+            {
+              id: 'due',
+              label: `Due Today (${activePendingFollowups.filter(isFollowupToday).length})`,
+            },
+            {
+              id: 'overdue',
+              label: `Overdue (${activePendingFollowups.filter(f => isFollowupOverdue(f) && !isFollowupToday(f)).length})`,
+              danger: true,
+            },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              className={`btn btn-sm ${activeTab === tab.id ? 'btn-primary' : 'btn-secondary'
+                } ${tab.danger && activeTab === tab.id
+                  ? 'followups-tab-danger-active'
+                  : tab.danger
+                    ? 'followups-tab-danger-inactive'
+                    : ''
+                }`}
+              onClick={() => setActiveTab(tab.id as any)}
+            >
+              {tab.danger && (
+                <AlertTriangle size={13} color={activeTab === tab.id ? '#ffffff' : '#dc2626'} />
+              )}
+              {tab.label}
+            </button>
+          ))}
+          </div>
+
+          {handoverOptions.length > 0 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+              <span style={{ fontSize: 13, fontWeight: 500, color: 'var(--text-secondary)' }}>View:</span>
+              <select
+                className="form-select customers-filter-select"
+                style={{ width: 'auto', padding: '4px 28px 4px 10px', fontSize: 13 }}
+                value={handoverFilter}
+                onChange={e => setHandoverFilter(e.target.value)}
+              >
+                {handoverOptions.map(opt => (
+                  <option key={opt.value} value={opt.value}>{opt.label}</option>
+                ))}
+              </select>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Follow-ups List Cards */}
       <div className="followups-list">
@@ -1082,7 +1697,7 @@ export const FollowupsPage: React.FC = () => {
             const schedStr = (f.scheduledAt || '').trim();
             const dateStr = (f.scheduledDate || '').trim();
             const now = new Date();
-            
+
             const isOverdueFunc = () => {
               const parsedTime = Date.parse(schedStr) || (dateStr ? Date.parse(dateStr) : NaN);
               if (isNaN(parsedTime)) return schedStr.toLowerCase().includes('yesterday');
@@ -1099,6 +1714,7 @@ export const FollowupsPage: React.FC = () => {
             const isOverdue = f.status === 'Pending' && isOverdueFunc() && !isTodayFunc();
             const callCount = getCallCountForFollowup(f);
             const fRole = getFollowupRole(f);
+            const agentInfo = getFollowupDisplayAgent(f);
 
             return (
               <div
@@ -1107,6 +1723,40 @@ export const FollowupsPage: React.FC = () => {
                 onClick={canOpenDrawer ? () => setDrawerFollowup(f) : undefined}
                 style={canOpenDrawer ? { cursor: 'pointer' } : undefined}
               >
+                {f.handedOverFromName ? (
+                  <div style={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    padding: '2px 6px',
+                    borderRadius: 4,
+                    background: 'rgba(99, 102, 241, 0.15)',
+                    color: '#818cf8',
+                    border: '1px solid rgba(99, 102, 241, 0.3)',
+                    position: 'absolute',
+                    top: 12,
+                    right: 12
+                  }} title={`Handed over from ${f.handedOverFromName}`}>
+                    Covering for {f.handedOverFromName}
+                  </div>
+                ) : isFollowupReturned(f) ? (
+                  <div style={{
+                    fontSize: 10,
+                    fontWeight: 600,
+                    padding: '2px 7px',
+                    borderRadius: 4,
+                    background: 'rgba(16, 185, 129, 0.15)',
+                    color: '#34d399',
+                    border: '1px solid rgba(16, 185, 129, 0.35)',
+                    position: 'absolute',
+                    top: 12,
+                    right: 12,
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 3,
+                  }} title={`Returned from coverage by ${getFollowupReturnedCoveringName(f)}${getFollowupReturnedDate(f) ? ` on ${new Date(getFollowupReturnedDate(f)!).toLocaleDateString()}` : ''}`}>
+                    ↩ Returned from {getFollowupReturnedCoveringName(f)}
+                  </div>
+                ) : null}
                 <div className="followup-item-left">
                   <div>
                     <div
@@ -1119,6 +1769,43 @@ export const FollowupsPage: React.FC = () => {
                       >
                         {f.contactName}
                       </span>
+
+                      {f.handedOverFromName && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 600,
+                            padding: '2px 6px',
+                            borderRadius: 6,
+                            background: 'rgba(99, 102, 241, 0.15)',
+                            color: '#818cf8',
+                            border: '1px solid rgba(99, 102, 241, 0.3)',
+                          }}
+                          title={`Handed over from ${f.handedOverFromName}`}
+                        >
+                          Covering for {f.handedOverFromName}
+                        </span>
+                      )}
+
+                      {!f.handedOverFromName && isFollowupReturned(f) && (
+                        <span
+                          style={{
+                            fontSize: 10,
+                            fontWeight: 600,
+                            padding: '2px 7px',
+                            borderRadius: 6,
+                            background: 'rgba(16, 185, 129, 0.15)',
+                            color: '#34d399',
+                            border: '1px solid rgba(16, 185, 129, 0.35)',
+                            display: 'inline-flex',
+                            alignItems: 'center',
+                            gap: 3,
+                          }}
+                          title={`Returned from coverage by ${getFollowupReturnedCoveringName(f)}${getFollowupReturnedDate(f) ? ` on ${new Date(getFollowupReturnedDate(f)!).toLocaleDateString()}` : ''}`}
+                        >
+                          ↩ Returned from {getFollowupReturnedCoveringName(f)}
+                        </span>
+                      )}
 
                       <StatusChip status={f.priority} size="sm" />
 
@@ -1147,15 +1834,11 @@ export const FollowupsPage: React.FC = () => {
 
                     <div className="followup-meta-row">
                       <span className={`followup-schedule-time ${isOverdue ? 'overdue' : ''}`}>
-                        ⏰ {f.scheduledAt}
+                        ⏰ {formatSmartScheduleDate(f.scheduledAt)}
                       </span>
-                      <span className="followup-assignee">• Assignee: {f.assignedAgentName}</span>
-                      <span
-                        className={`badge-role-inline ${
-                          fRole === 'IRM' ? 'badge-role-irm' : 'badge-role-sales'
-                        }`}
-                      >
-                        {fRole}
+                      <span className="followup-assignee">• {agentInfo.label}: {agentInfo.name}</span>
+                      <span className={`badge-role-inline ${agentInfo.badgeClass}`}>
+                        {agentInfo.role}
                       </span>
                     </div>
                   </div>
@@ -1182,7 +1865,8 @@ export const FollowupsPage: React.FC = () => {
                         f.contactPhone,
                         f.contactType as any,
                         f.contactId,
-                        f.id
+                        f.id,
+                        'follow_up'
                       );
                     }}
                   >
@@ -1234,12 +1918,11 @@ export const FollowupsPage: React.FC = () => {
           title={drawerFollowup?.contactName || 'Contact Profile'}
           subtitle={
             isAdmin
-              ? `Phone: ${drawerFollowup?.contactPhone || '—'} • Assigned : ${
-                  drawerFollowup?.assignedAgentName || 'Unassigned'
-                } (${drawerFollowupRole})`
+              ? `Phone: ${drawerFollowup?.contactPhone || '—'} • Assigned : ${drawerFollowup?.assignedAgentName || 'Unassigned'
+              } (${drawerFollowupRole})`
               : drawerFollowup?.contactPhone
-              ? `Phone: ${drawerFollowup.contactPhone} • ${tenant?.name || 'GHL India'}`
-              : (tenant?.name || '')
+                ? `Phone: ${drawerFollowup.contactPhone} • ${tenant?.name || 'GHL India'}`
+                : (tenant?.name || '')
           }
           width={720}
           footer={
@@ -1288,7 +1971,8 @@ export const FollowupsPage: React.FC = () => {
                         drawerFollowup.contactPhone,
                         (drawerFollowup.contactType as any) || 'lead',
                         drawerFollowup.contactId,
-                        drawerFollowup.id
+                        drawerFollowup.id,
+                        'follow_up'
                       );
                     }}
                   >
@@ -1300,12 +1984,12 @@ export const FollowupsPage: React.FC = () => {
           }
         >
           {drawerFollowup && (() => {
-            const leads = storageService.getLeads(tenant?.id) || [];
+            const leads = (allLeads && allLeads.length > 0) ? allLeads : (storageService.getLeads(tenant?.id) || []);
             const customers = storageService.getCustomers(tenant?.id) || [];
             const fDigits = (drawerFollowup.contactPhone || '').replace(/\D/g, '').slice(-10);
 
             const matchingLead = leads.find(l => {
-              if (drawerFollowup.contactId && drawerFollowup.contactId !== 'contact-new' && l.id === drawerFollowup.contactId) return true;
+              if (drawerFollowup.contactId && drawerFollowup.contactId !== 'contact-new' && String(l.id) === String(drawerFollowup.contactId)) return true;
               const lDigits = (l.phone || '').replace(/\D/g, '').slice(-10);
               if (lDigits && fDigits && lDigits === fDigits) return true;
               if (l.name && drawerFollowup.contactName && l.name.trim().toLowerCase() === drawerFollowup.contactName.trim().toLowerCase()) return true;
@@ -1320,11 +2004,14 @@ export const FollowupsPage: React.FC = () => {
               return false;
             }) || null;
 
+            const drawerAgentInfo = drawerFollowup ? getFollowupDisplayAgent(drawerFollowup) : null;
             const assignedAgent =
+              drawerAgentInfo?.name ||
               drawerFollowup.assignedAgentName ||
               matchingLead?.assignedAgentName ||
               matchingCustomer?.assignedAgentName ||
               'Unassigned';
+            const assignedAgentRole = drawerAgentInfo?.role || drawerFollowupRole;
 
             const contactEmail = (drawerFollowup as any).contactEmail || (drawerFollowup as any).email || matchingLead?.email || matchingCustomer?.email || '—';
             const contactLocation = matchingLead?.location || matchingCustomer?.location || (drawerFollowup as any).location || '—';
@@ -1399,9 +2086,8 @@ export const FollowupsPage: React.FC = () => {
                             {assignedAgent}
                           </strong>
                           <span
-                            className={`admin-owner-role-tag ${
-                              drawerFollowupRole === 'IRM' ? 'tag-irm' : 'tag-sales-exec'
-                            }`}
+                            className={`admin-owner-role-tag ${drawerFollowupRole === 'IRM' ? 'tag-irm' : 'tag-sales-exec'
+                              }`}
                           >
                             <Briefcase size={12} />
                             {drawerFollowupRole === 'IRM'
@@ -1415,7 +2101,7 @@ export const FollowupsPage: React.FC = () => {
                     <div className="admin-owner-meta-grid">
                       <div className="admin-owner-meta-cell">
                         <span className="cell-lbl">Scheduled Slot</span>
-                        <span className="cell-val">⏰ {drawerFollowup.scheduledAt}</span>
+                        <span className="cell-val">⏰ {formatSmartScheduleDate(drawerFollowup.scheduledAt)}</span>
                       </div>
                       <div className="admin-owner-meta-cell">
                         <span className="cell-lbl">Priority Level</span>
@@ -1439,8 +2125,8 @@ export const FollowupsPage: React.FC = () => {
                 {!isAdmin && (
                   <div className="lead-quick-banner">
                     <div className="lead-assigned-note" style={{ fontSize: 13, marginTop: 0 }}>
-                      Assigned : <strong>{assignedAgent}</strong>
-                      {drawerFollowupRole && (
+                      Assigned Agent : <strong>{assignedAgent}</strong>
+                      {assignedAgentRole && (
                         <span
                           style={{
                             marginLeft: 8,
@@ -1448,15 +2134,38 @@ export const FollowupsPage: React.FC = () => {
                             fontWeight: 700,
                             padding: '2px 7px',
                             borderRadius: 4,
-                            background: drawerFollowupRole === 'IRM' ? 'rgba(124,58,237,0.1)' : 'rgba(14,165,233,0.1)',
-                            color: drawerFollowupRole === 'IRM' ? '#7c3aed' : '#0284c7',
+                            background: assignedAgentRole === 'IRM' ? 'rgba(124,58,237,0.1)' : 'rgba(14,165,233,0.1)',
+                            color: assignedAgentRole === 'IRM' ? '#7c3aed' : '#0284c7',
                             textTransform: 'uppercase',
                             letterSpacing: '0.04em',
                           }}
                         >
-                          {drawerFollowupRole}
+                          {assignedAgentRole}
                         </span>
                       )}
+                    </div>
+                  </div>
+                )}
+
+                {isFollowupReturned(drawerFollowup, matchingLead) && (
+                  <div style={{
+                    margin: '10px 0',
+                    padding: '10px 14px',
+                    borderRadius: 8,
+                    background: 'rgba(16, 185, 129, 0.12)',
+                    border: '1px solid rgba(16, 185, 129, 0.35)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 10,
+                  }}>
+                    <span style={{ fontSize: 16 }}>↩️</span>
+                    <div>
+                      <div style={{ fontSize: 13, fontWeight: 700, color: '#34d399' }}>
+                        Returned from Coverage by {getFollowupReturnedCoveringName(drawerFollowup, matchingLead)}
+                      </div>
+                      <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                        This contact was covered while you were away and handed back to you{getFollowupReturnedDate(drawerFollowup, matchingLead) ? ` on ${new Date(getFollowupReturnedDate(drawerFollowup, matchingLead)!).toLocaleDateString()}` : ''}. Review recent call logs and updated notes below.
+                      </div>
                     </div>
                   </div>
                 )}
@@ -1480,7 +2189,7 @@ export const FollowupsPage: React.FC = () => {
                     <div>
                       <span className="lead-detail-label">Follow-up:</span>
                       <div className="lead-detail-value lead-followup-text has-date">
-                        {drawerFollowup.scheduledAt || matchingLead?.nextFollowupDate || 'Not scheduled'}
+                        {formatSmartScheduleDate(drawerFollowup.scheduledAt) || formatSmartScheduleDate(matchingLead?.nextFollowupDate) || 'Not scheduled'}
                       </div>
                     </div>
                   </div>
@@ -1548,13 +2257,17 @@ export const FollowupsPage: React.FC = () => {
                           className="lead-detail-value"
                           style={{
                             marginTop: 4,
-                            fontSize: 16,
+                            fontSize: (capacityValue || investmentCapacity) && (capacityValue || investmentCapacity) !== '—' ? 16 : 13,
                             fontWeight: 700,
                             color: '#10b981',
                             letterSpacing: '0.01em',
                           }}
                         >
-                          {capacityValue || investmentCapacity || '—'}
+                          {(capacityValue || investmentCapacity) && (capacityValue || investmentCapacity) !== '—' ? (
+                            capacityValue || investmentCapacity
+                          ) : (
+                            <span className="not-specified-badge">Not Specified</span>
+                          )}
                         </div>
                       )}
                     </div>
@@ -1723,7 +2436,11 @@ export const FollowupsPage: React.FC = () => {
                                 color: isPrefConfirmed && prefAssetClass ? 'var(--text-primary)' : 'var(--text-muted)',
                               }}
                             >
-                              {isPrefConfirmed && prefAssetClass ? prefAssetClass : '—'}
+                              {isPrefConfirmed && prefAssetClass && prefAssetClass !== '—' ? (
+                                prefAssetClass
+                              ) : (
+                                <span className="not-specified-badge">Not Specified</span>
+                              )}
                             </div>
                           </div>
                           <div>
@@ -1734,7 +2451,11 @@ export const FollowupsPage: React.FC = () => {
                                 color: isPrefConfirmed && prefHorizon ? 'var(--text-primary)' : 'var(--text-muted)',
                               }}
                             >
-                              {isPrefConfirmed && prefHorizon ? prefHorizon : '—'}
+                              {isPrefConfirmed && prefHorizon && prefHorizon !== '—' ? (
+                                prefHorizon
+                              ) : (
+                                <span className="not-specified-badge">Not Specified</span>
+                              )}
                             </div>
                           </div>
                         </div>
@@ -1795,13 +2516,16 @@ export const FollowupsPage: React.FC = () => {
                   contactType={resolvedContactType}
                   tenantId={tenant?.id}
                   tenantName={tenant?.name}
+                  calls={callsList}
+                  lead={matchingLead}
                   onCall={() =>
                     initiateCall(
                       drawerFollowup.contactName,
                       drawerFollowup.contactPhone,
                       resolvedContactType as any,
                       resolvedContactId,
-                      drawerFollowup.id
+                      drawerFollowup.id,
+                      'follow_up'
                     )
                   }
                   sectionsOnly={['callRecordings']}

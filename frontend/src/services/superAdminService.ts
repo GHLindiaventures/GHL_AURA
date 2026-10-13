@@ -11,8 +11,15 @@ import {
   SystemDiagnostics,
   BroadcastAnnouncement,
   PlatformMetrics,
-  SystemHealthReport,
   GlobalConfig,
+  SystemHealthReport,
+  SpeechVocabulary,
+  SpeechKeywordBoost,
+  PhoneticSubstitution,
+  SimulateSpeechResult,
+  BackupSnapshot,
+  PlatformTicket,
+  TicketTimelineEvent,
 } from '../types';
 import { DEFAULT_TENANTS } from '../constants/defaultTenants';
 import { SYSTEM_ROLES } from '../constants/roles';
@@ -215,6 +222,21 @@ export class SuperAdminService {
 
     await this.fetchTenantsFromApi();
     notifyAdminStorageUpdated();
+    return res.data;
+  }
+
+  async impersonateTenantApi(id: string): Promise<{
+    token: string;
+    user: any;
+    tenant: any;
+    originalAdminEmail?: string;
+    isImpersonated: boolean;
+    targetRoute?: string;
+  }> {
+    const res = await apiClient.post<ApiResponse<any>>(`/super-admin/tenants/${id}/impersonate`);
+    if (!res || !res.data) {
+      throw new Error(res?.message || 'Failed to establish impersonation session');
+    }
     return res.data;
   }
 
@@ -1636,6 +1658,176 @@ export class SuperAdminService {
       return res.data;
     }
     throw new Error(res?.message || 'Failed to execute call simulation on telephony gateway');
+  }
+
+  // ── SPEECH AI VOCABULARIES & REGIONAL INDIAN ACOUSTIC TUNING ──────────────
+
+  async fetchSpeechVocabulariesApi(): Promise<SpeechVocabulary[]> {
+    const res = await apiClient.get<ApiResponse<SpeechVocabulary[]>>('/super-admin/call-config/speech-vocabularies');
+    return res?.data || [];
+  }
+
+  async saveSpeechVocabularyApi(payload: Partial<SpeechVocabulary>): Promise<SpeechVocabulary> {
+    const res = await apiClient.post<ApiResponse<SpeechVocabulary>>('/super-admin/call-config/speech-vocabularies', payload);
+    if (!res || !res.data) {
+      throw new Error(res?.message || 'Failed to save speech vocabulary');
+    }
+    return res.data;
+  }
+
+  async deleteSpeechVocabularyApi(id: string): Promise<boolean> {
+    const res = await apiClient.delete<ApiResponse<boolean>>(`/super-admin/call-config/speech-vocabularies/${id}`);
+    return res?.data ?? true;
+  }
+
+  async simulateSpeechTranscriptionApi(
+    rawTranscript: string,
+    vocabularyId?: string
+  ): Promise<SimulateSpeechResult> {
+    const res = await apiClient.post<ApiResponse<SimulateSpeechResult>>(
+      '/super-admin/call-config/speech-vocabularies/simulate',
+      { rawTranscript, vocabularyId }
+    );
+    if (!res || !res.data) {
+      throw new Error(res?.message || 'Failed to execute acoustic transcription simulation');
+    }
+    return res.data;
+  }
+
+  // ── PLATFORM INSTANT DATABASE BACKUP & SNAPSHOT VAULT ─────────────────────
+
+  async fetchDatabaseBackupsApi(): Promise<BackupSnapshot[]> {
+    const res = await apiClient.get<ApiResponse<BackupSnapshot[]>>('/super-admin/system/backups');
+    return res?.data || [];
+  }
+
+  async generateDatabaseBackupApi(
+    descriptionOrOptions?: string | { description?: string; includeAuditLogs?: boolean },
+    includeAuditLogs = true
+  ): Promise<BackupSnapshot> {
+    const desc = typeof descriptionOrOptions === 'object' ? descriptionOrOptions?.description : descriptionOrOptions;
+    const includeAudit = typeof descriptionOrOptions === 'object' ? (descriptionOrOptions?.includeAuditLogs ?? true) : includeAuditLogs;
+    const res = await apiClient.post<ApiResponse<BackupSnapshot>>('/super-admin/system/backups/generate', {
+      description: desc,
+      includeAuditLogs: includeAudit,
+    });
+    if (!res || !res.data) {
+      throw new Error(res?.message || 'Failed to generate database backup snapshot');
+    }
+    return res.data;
+  }
+
+  async downloadDatabaseBackupApi(id: string, filename: string): Promise<void> {
+    const token = sessionStorage.getItem('nexus_auth_token') || localStorage.getItem('nexus_auth_token');
+    const response = await fetch(`http://localhost:5106/api/super-admin/system/backups/${id}/download`, {
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to download backup (Status: ${response.status})`);
+    }
+
+    const blob = await response.blob();
+    const downloadUrl = window.URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = downloadUrl;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    window.URL.revokeObjectURL(downloadUrl);
+    document.body.removeChild(a);
+  }
+
+  async deleteDatabaseBackupApi(id: string): Promise<boolean> {
+    const res = await apiClient.delete<ApiResponse<boolean>>(`/super-admin/system/backups/${id}`);
+    return res?.data ?? true;
+  }
+
+  // ── PLATFORM INCIDENT & SUPPORT HELPDESK ──────────────────────────────────
+
+  async fetchPlatformTicketsApi(filters?: {
+    status?: string;
+    priority?: string;
+    category?: string;
+    search?: string;
+  }): Promise<PlatformTicket[]> {
+    const params: Record<string, any> = {};
+    if (filters?.status && filters.status !== 'all') params.status = filters.status;
+    if (filters?.priority && filters.priority !== 'all') params.priority = filters.priority;
+    if (filters?.category && filters.category !== 'all') params.category = filters.category;
+    if (filters?.search) params.search = filters.search;
+
+    const res = await apiClient.get<ApiResponse<PlatformTicket[]>>('/super-admin/tickets', { params });
+    return res?.data || [];
+  }
+
+  async fetchPlatformTicketByIdApi(id: string): Promise<PlatformTicket> {
+    const res = await apiClient.get<ApiResponse<PlatformTicket>>(`/super-admin/tickets/${id}`);
+    if (!res || !res.data) {
+      throw new Error(res?.message || 'Failed to fetch ticket');
+    }
+    return res.data;
+  }
+
+  async createPlatformTicketApi(ticket: {
+    title: string;
+    description: string;
+    category: string;
+    priority: string;
+    tenantId?: number;
+    reportedByName?: string;
+    reportedByEmail?: string;
+    assignedToName?: string;
+  }): Promise<PlatformTicket> {
+    const res = await apiClient.post<ApiResponse<PlatformTicket>>('/super-admin/tickets', ticket);
+    if (!res || !res.data) {
+      throw new Error(res?.message || 'Failed to create support ticket');
+    }
+    return res.data;
+  }
+
+  async updateTicketStatusApi(
+    id: string,
+    status: string,
+    note?: string,
+    resolutionNotes?: string
+  ): Promise<PlatformTicket> {
+    const res = await apiClient.put<ApiResponse<PlatformTicket>>(`/super-admin/tickets/${id}/status`, {
+      status,
+      note,
+      resolutionNotes,
+    });
+    if (!res || !res.data) {
+      throw new Error(res?.message || 'Failed to update ticket status');
+    }
+    return res.data;
+  }
+
+  async updateTicketPriorityApi(id: string, priority: string): Promise<PlatformTicket> {
+    const res = await apiClient.put<ApiResponse<PlatformTicket>>(`/super-admin/tickets/${id}/priority`, {
+      status: priority,
+    });
+    if (!res || !res.data) {
+      throw new Error(res?.message || 'Failed to update ticket priority');
+    }
+    return res.data;
+  }
+
+  async addTicketNoteApi(id: string, message: string): Promise<PlatformTicket> {
+    const res = await apiClient.post<ApiResponse<PlatformTicket>>(`/super-admin/tickets/${id}/notes`, {
+      message,
+    });
+    if (!res || !res.data) {
+      throw new Error(res?.message || 'Failed to append note');
+    }
+    return res.data;
+  }
+
+  async deletePlatformTicketApi(id: string): Promise<boolean> {
+    const res = await apiClient.delete<ApiResponse<boolean>>(`/super-admin/tickets/${id}`);
+    return res?.data ?? true;
   }
 
   // ── AUDIT LOGS ────────────────────────────────────────────────────────────

@@ -97,10 +97,21 @@ export interface User {
   routingPriority?: number;
   availabilityStatus?: 'available' | 'busy' | 'offline' | 'break';
   workingHours?: { start: string; end: string; days: string[] };
+  targetAum?: number;
+  targetKyc?: number;
+  extension?: string;
+  certifications?: string[];
+  maxActiveInvestors?: number;
   joinedAt?: string;
   createdAt?: string;
   updatedAt?: string;
+  emailSent?: boolean;
+  emailError?: string;
+  temporaryPassword?: string;
+  isCovered?: boolean;
 }
+
+
 
 export interface Lead {
   id: string;
@@ -110,10 +121,24 @@ export interface Lead {
   email: string;
   location: string;
   source: string;
-  status: 'New' | 'Contacted' | 'Qualified' | 'Proposal' | 'Negotiation' | 'Converted' | 'Lost' | 'Not Interested' | 'Junk' | 'Callback' | 'No Response' | 'Follow-up Required' | 'Interested';
+  status: 'New' | 'Contacted' | 'Qualified' | 'Proposal' | 'Negotiation' | 'Converted' | 'Lost' | 'Not Interested' | 'Junk' | 'Wrong Number' | 'Callback' | 'No Response' | 'Follow-up Required' | 'Interested' | 'Other';
   priority: 'Low' | 'Medium' | 'High' | 'Urgent';
   assignedAgentId: string;
   assignedAgentName: string;
+  assignedAgentRole?: string;
+  assignedById?: string | number;
+  assignedByName?: string;
+  assignedSalesExecutiveId?: string;
+  assignedSalesExecutiveName?: string;
+  assignedSalesExecutiveAt?: string;
+  transferredBySalesExecutiveName?: string;
+  activeOwnerName?: string;
+  activeOwnerRole?: string;
+  isCovered?: boolean;
+  coveredByName?: string;
+  assignedIrmId?: string;
+  assignedIrmName?: string;
+  assignedIrmAt?: string;
   nextFollowupDate?: string;
   createdAt: string;
   notes: string;
@@ -142,6 +167,15 @@ export interface Lead {
   slaStatus?: 'on_track' | 'at_risk' | 'breached';
   createdBy?: string;
   updatedBy?: string;
+  handoverId?: number;
+  handedOverFromName?: string;
+  handoverPlannedEnd?: string;
+  originalOwnerId?: number;
+  isReturnedFromHandover?: boolean;
+  returnedFromCoveringUserName?: string;
+  returnedAt?: string;
+  updatedAt?: string;
+  normalizedEmail?: string;
 }
 
 export interface Customer {
@@ -150,7 +184,7 @@ export interface Customer {
   name: string;
   phone: string;
   email: string;
-  status: 'Active' | 'VIP' | 'Inactive';
+  status: 'Active' | 'VIP' | 'Inactive' | 'Interested';
   assignedAgentId: string;
   assignedAgentName: string;
   location: string;
@@ -172,6 +206,16 @@ export interface Customer {
   assignedIrmId?: string;
   assignedIrmName?: string;
   assignedIrmAt?: string;
+  handoverId?: number;
+  handedOverFromName?: string;
+  handoverPlannedEnd?: string;
+  originalOwnerId?: number;
+  isReturnedFromHandover?: boolean;
+  returnedFromCoveringUserName?: string;
+  returnedAt?: string;
+  /** Set only for virtual Customer 360 entries built from an 'Interested' lead (not a row in the Customers table). */
+  isLeadRecord?: boolean;
+  sourceLeadId?: string;
 }
 
 export interface IrmProfile {
@@ -216,6 +260,14 @@ export interface Deal {
   verifiedAt?: string;
   remarks?: string;
   flaggedSections?: string[];
+  handoverId?: number;
+  handedOverFromName?: string;
+  handoverPlannedEnd?: string;
+  originalOwnerId?: number;
+  nextFollowupDate?: string;
+  isReturnedFromHandover?: boolean;
+  returnedFromCoveringUserName?: string;
+  returnedAt?: string;
 }
 
 export interface DealActivity {
@@ -239,7 +291,11 @@ export type CallDisposition =
   | 'Wrong Number'
   | 'Converted'
   | 'No Response'
-  | 'Skipped';
+  | 'Contacted'
+  | 'Other'
+  | 'Ready for KYC'
+  | 'Skipped'
+  | (string & {});
 
 export interface CallRecord {
   id: string;
@@ -259,6 +315,8 @@ export interface CallRecord {
   transcription?: string;
   notes?: string;
   reason?: string;
+  callModule?: string;
+  module?: string;
   providerCallId?: string;
   twilioCallSid?: string;
   contactId?: string;
@@ -282,6 +340,25 @@ export interface CallRecord {
   source?: string;
 }
 
+export interface IrmOtherRecord {
+  callId: number;
+  customerId?: number;
+  leadId?: number;
+  contactName: string;
+  contactPhone: string;
+  contactEmail?: string;
+  callModule: string;
+  moduleDisplayName: string;
+  disposition: string;
+  reason: string;
+  agentId: number;
+  agentName: string;
+  companyId: number;
+  companyName: string;
+  lastCallAt: string;
+  duration: number;
+}
+
 export interface Followup {
   id: string;
   companyId: string;
@@ -298,6 +375,8 @@ export interface Followup {
   assignedAgentId: string;
   assignedAgentName: string;
   assignedRole?: string;
+  assignedById?: string | number;
+  assignedByName?: string;
   followupType?: 'call' | 'meeting' | 'email' | 'whatsapp';
   scheduledDate?: string;
   scheduledTime?: string;
@@ -305,6 +384,14 @@ export interface Followup {
   completedAt?: string;
   relatedCallId?: string;
   statusReason?: string;
+  handoverId?: number;
+  handedOverFromName?: string;
+  handoverPlannedEnd?: string;
+  originalOwnerId?: number;
+  isReturnedFromHandover?: boolean;
+  returnedFromCoveringUserName?: string;
+  returnedAt?: string;
+  customFields?: Record<string, any>;
 }
 
 export interface PropertyProject {
@@ -388,6 +475,13 @@ export interface Investor {
   committedAUM?: string;
   investmentMandate?: string;
   riskTolerance?: 'Conservative' | 'Moderate' | 'Aggressive';
+  handoverId?: number;
+  handedOverFromName?: string;
+  handoverPlannedEnd?: string;
+  originalOwnerId?: number;
+  assignedIrmId?: string;
+  assignedIrmName?: string;
+  assignedIrmAt?: string;
 }
 
 export interface Consultation {
@@ -403,6 +497,10 @@ export interface Consultation {
   agenda: string;
   outcomeNotes?: string;
   referredByAgentName?: string;
+  handoverId?: number;
+  handedOverFromName?: string;
+  handoverPlannedEnd?: string;
+  originalOwnerId?: number;
 }
 
 export interface InvestmentOpportunity {
@@ -414,10 +512,14 @@ export interface InvestmentOpportunity {
   stage: 'Enquiry' | 'Contacted' | 'Consultation' | 'Qualified' | 'Opportunity' | 'Committed' | 'Closed Won' | 'Closed Lost';
   targetAmount: number;
   committedAmount: number;
-  assignedAgentId: string;
   assignedAgentName: string;
+  assignedAgentId?: string | number;
   expectedCloseDate: string;
   notes: string;
+  handoverId?: number;
+  handedOverFromName?: string;
+  handoverPlannedEnd?: string;
+  originalOwnerId?: number;
 }
 
 export interface AuditLog {
@@ -916,3 +1018,92 @@ export interface PlatformMetrics {
 }
 
 export * from './kanban';
+
+// ── Speech AI Vocabulary Tuning ─────────────────────────────────────────────
+export interface SpeechKeywordBoost {
+  term: string;
+  category: 'Land Metric' | 'Documentation' | 'Financial' | 'Location' | 'Legal' | string;
+  boostWeight: number; // 1.0 - 5.0
+}
+
+export interface PhoneticSubstitution {
+  spokenPattern: string;
+  normalizedTarget: string;
+}
+
+export interface SpeechVocabulary {
+  id: string;
+  key: string;
+  name: string;
+  language: string;
+  languageCode: string;
+  engine: string;
+  description: string;
+  isActive: boolean;
+  keywords: SpeechKeywordBoost[];
+  phoneticSubstitutions: PhoneticSubstitution[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SimulateSpeechResult {
+  rawTranscript: string;
+  normalizedTranscript: string;
+  boostedTermsMatched: string[];
+  substitutionsApplied: string[];
+  acousticConfidenceGainPercent: number;
+  processingLatencyMs: number;
+  engineUsed: string;
+}
+
+// ── Platform Instant Database Backups ───────────────────────────────────────
+export interface BackupSnapshot {
+  id: string;
+  filename: string;
+  fileName?: string;
+  description: string;
+  createdBy: string;
+  createdAt: string;
+  fileSizeBytes: number;
+  formattedSize: string;
+  totalTables: number;
+  totalRecordsCount: number;
+  recordCount?: number;
+  checksumSha256: string;
+  sha256Checksum?: string;
+  status: string;
+  tableCounts: Record<string, number>;
+}
+
+// ── Platform Support & Technical Incident Helpdesk ──────────────────────────
+export interface TicketTimelineEvent {
+  id: string;
+  authorName: string;
+  authorEmail: string;
+  message: string;
+  type: 'note' | 'status_change' | 'priority_change' | 'system_alert' | string;
+  createdAt: string;
+}
+
+export interface PlatformTicket {
+  id: string;
+  ticketNumber: string;
+  title: string;
+  description: string;
+  category: string;
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  status: 'open' | 'in_progress' | 'escalated' | 'resolved' | 'closed';
+  tenantId?: number;
+  tenantName?: string;
+  tenantSlug?: string;
+  reportedByName: string;
+  reportedByEmail: string;
+  assignedToName?: string;
+  assignedToEmail?: string;
+  resolutionNotes?: string;
+  resolvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  timeline: TicketTimelineEvent[];
+}
+

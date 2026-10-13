@@ -101,6 +101,11 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({
   const [isActionInProgress, setIsActionInProgress] = useState(false);
   const [isAddingUser, setIsAddingUser] = useState(false);
 
+  // Tenant Impersonation State
+  const [impersonatingTenant, setImpersonatingTenant] = useState<Tenant | null>(null);
+  const [isImpersonatingLoading, setIsImpersonatingLoading] = useState(false);
+  const [impersonateError, setImpersonateError] = useState<string | null>(null);
+
   // Unsaved changes check
   const isWizardDirty = isWizardOpen && (wizardName.trim() !== '' || wizardSlug.trim() !== '' || wizardAdminEmail.trim() !== '');
   const isDrawerDirty = isDetailDrawerOpen && !!drawerTenantEdit && !!selectedTenant && (
@@ -315,9 +320,65 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({
   }, [selectedTenant, isDetailDrawerOpen]);
 
   const handleViewAsCompany = (t: Tenant) => {
-    sessionStorage.setItem('nexus_support_mode_active', 'true');
-    sessionStorage.setItem('nexus_support_company_name', t.name);
-    switchPersona('company_admin', t.slug);
+    setImpersonateError(null);
+    setImpersonatingTenant(t);
+  };
+
+  const handleConfirmImpersonate = async () => {
+    if (!impersonatingTenant || isImpersonatingLoading) return;
+    setIsImpersonatingLoading(true);
+    setImpersonateError(null);
+
+    try {
+      const res = await superAdminService.impersonateTenantApi(impersonatingTenant.id);
+
+      // 1. Backup current Super Admin credentials
+      const currentAdminToken = sessionStorage.getItem('nexus_auth_token') || localStorage.getItem('nexus_auth_token');
+      const currentAdminUser = sessionStorage.getItem('nexus_current_user') || localStorage.getItem('nexus_current_user');
+
+      const backup = {
+        token: currentAdminToken,
+        user: currentAdminUser,
+        tenantName: impersonatingTenant.name,
+        tenantSlug: impersonatingTenant.slug,
+        impersonatedAt: new Date().toISOString(),
+      };
+
+      localStorage.setItem('nexus_impersonation_backup', JSON.stringify(backup));
+
+      // 2. Set new impersonated session credentials
+      if (res.token) {
+        sessionStorage.setItem('nexus_auth_token', res.token);
+        localStorage.setItem('nexus_auth_token', res.token);
+      }
+
+      if (res.user) {
+        const userStr = typeof res.user === 'string' ? res.user : JSON.stringify(res.user);
+        sessionStorage.setItem('nexus_current_user', userStr);
+        localStorage.setItem('nexus_current_user', userStr);
+      }
+
+      if (res.tenant) {
+        const tenantStr = typeof res.tenant === 'string' ? res.tenant : JSON.stringify(res.tenant);
+        sessionStorage.setItem('nexus_current_tenant', tenantStr);
+        localStorage.setItem('nexus_current_tenant', tenantStr);
+      }
+
+      // 3. Clear support mode artifacts
+      sessionStorage.removeItem('nexus_support_mode_active');
+      sessionStorage.removeItem('nexus_support_company_name');
+
+      // 4. Notify app listeners
+      window.dispatchEvent(new Event('nexus_impersonation_changed'));
+      window.dispatchEvent(new Event('nexus_auth_updated'));
+
+      // 5. Navigate to tenant dashboard
+      window.location.href = res.targetRoute || '/dashboard';
+    } catch (err: any) {
+      setImpersonateError(err.message || 'Failed to establish impersonation session.');
+    } finally {
+      setIsImpersonatingLoading(false);
+    }
   };
 
   const handleSaveDrawerTenant = async () => {
@@ -663,13 +724,13 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({
                 </div>
 
                 <div className="tenant-card-footer">
-                  {/* <button
+                  <button
                     className="btn btn-secondary btn-sm btn-support-mode"
-                    title="Inspect tenant CRM in safe read-only mode"
+                    title={`Log in as ${t.name} Company Admin`}
                     onClick={() => handleViewAsCompany(t)}
                   >
-                    <ExternalLink size={13} /> View as Company
-                  </button> */}
+                    <ExternalLink size={13} /> Login as Admin
+                  </button>
 
                   <button
                     className="btn btn-primary btn-sm btn-manage-drawer"
@@ -740,9 +801,9 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({
                         <button
                           className="btn btn-secondary btn-xs"
                           onClick={() => handleViewAsCompany(t)}
-                          title="View as Company in Read-Only Mode"
+                          title={`Log in as ${t.name} Company Admin`}
                         >
-                          <ExternalLink size={12} /> View As
+                          <ExternalLink size={12} /> Login As
                         </button>
                         <button
                           className="btn btn-primary btn-xs"
@@ -1274,9 +1335,10 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({
               <div className="banner-right">
                 <button
                   className="btn btn-secondary btn-sm"
+                  title={`Log in as ${selectedTenant.name} Company Admin`}
                   onClick={() => handleViewAsCompany(selectedTenant)}
                 >
-                  <ExternalLink size={13} /> View as Company
+                  <ExternalLink size={13} /> Login as Admin
                 </button>
                 <button
                   className="btn btn-primary btn-sm"
@@ -1688,6 +1750,80 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({
           </div>
         </Modal>
       )}
+
+      {/* Impersonation Confirmation Modal */}
+      {impersonatingTenant && (
+        <Modal
+          isOpen={!!impersonatingTenant}
+          onClose={() => {
+            if (!isImpersonatingLoading) {
+              setImpersonatingTenant(null);
+              setImpersonateError(null);
+            }
+          }}
+          title={`🕵️ Tenant Workspace Impersonation`}
+          size="md"
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 12, background: 'rgba(245, 158, 11, 0.1)', border: '1px solid rgba(245, 158, 11, 0.3)', padding: 14, borderRadius: 8 }}>
+              <AlertTriangle size={22} style={{ color: '#f59e0b', flexShrink: 0, marginTop: 2 }} />
+              <div>
+                <strong style={{ color: '#d97706', display: 'block', marginBottom: 4, fontSize: 14 }}>
+                  Audited Platform Administrative Action
+                </strong>
+                <p style={{ margin: 0, fontSize: 13, color: 'var(--text-secondary, #6b7280)', lineHeight: 1.5 }}>
+                  You are about to securely log into <strong>{impersonatingTenant.name}</strong> as an authenticated Company Admin without needing passwords.
+                </p>
+              </div>
+            </div>
+
+            <div style={{ fontSize: 13, lineHeight: 1.6, color: 'var(--text-primary, #374151)' }}>
+              <ul style={{ margin: 0, paddingLeft: 20 }}>
+                <li>No password required — credentials are dynamically generated and verified.</li>
+                <li>This administrative session is logged in the <strong>Platform Audit Trail</strong>.</li>
+                <li>You can return to the Super Admin console anytime using the top exit banner.</li>
+              </ul>
+            </div>
+
+            {impersonateError && (
+              <div style={{ padding: '10px 14px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid #ef4444', borderRadius: 6, color: '#dc2626', fontSize: 13 }}>
+                {impersonateError}
+              </div>
+            )}
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10, marginTop: 8 }}>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                disabled={isImpersonatingLoading}
+                onClick={() => {
+                  setImpersonatingTenant(null);
+                  setImpersonateError(null);
+                }}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-warning btn-sm"
+                style={{ background: '#d97706', borderColor: '#d97706', color: '#fff', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                disabled={isImpersonatingLoading}
+                onClick={handleConfirmImpersonate}
+              >
+                {isImpersonatingLoading ? (
+                  <>
+                    <RefreshCw size={13} className="spin" /> Launching Session...
+                  </>
+                ) : (
+                  <>
+                    <ExternalLink size={13} /> Launch Impersonation Session
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
     </div>
   );
-};
+};
