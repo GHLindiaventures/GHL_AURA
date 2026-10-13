@@ -31,14 +31,23 @@ namespace backend.Data.Migrations
                     (2, 'Jamin Bazaar',       'jamin', '#059669', '09:00 AM - 06:30 PM IST', '2026-01-01 00:00:00+00', '₹ INR', '{}', true)
                 ON CONFLICT (""Id"") DO NOTHING;
 
+                DELETE FROM users WHERE ""Email"" IN (
+                    'yanosh@ghlindiaventures.com',
+                    'vishnu@ghlindiaventures.com',
+                    'naveen@ghlindiaventures.com',
+                    'mani@ghlindiaventures.com',
+                    'dhinakaran@ghlindiaventures.com',
+                    'rajesh@jaminbazaar.com'
+                ) AND ""Id"" NOT IN (1, 2, 3, 4, 5, 6);
+
                 INSERT INTO users (""Id"", ""Name"", ""Email"", ""PasswordHash"", ""Phone"", ""RoleId"", ""CompanyId"", ""Status"", ""CreatedAt"")
                 VALUES
                     (1, 'Yanosh',       'yanosh@ghlindiaventures.com',    '$2a$11$z2c3Nc1pe7Tqmxj6Rm15NOt8vuAyyKfqzGtBKpiFU2NcPZxsjt5p.', '+91 98800 11000', 1, NULL, 'Active', '2026-01-01 00:00:00+00'),
                     (2, 'Vishnu',       'vishnu@ghlindiaventures.com',    '$2a$11$z2c3Nc1pe7Tqmxj6Rm15NOt8vuAyyKfqzGtBKpiFU2NcPZxsjt5p.', '+91 98450 11223', 2, 1,    'Active', '2026-01-01 00:00:00+00'),
-                    (3, 'Naveen',       'naveen@ghlindiaventures.com',    '$2a$11$z2c3Nc1pe7Tqmxj6Rm15NOt8vuAyyKfqzGtBKpiFU2NcPZxsjt5p.', '+91 98450 22334', 4, 1,    'Active', '2026-01-01 00:00:00+00'),
+                    (3, 'Naveen',       'naveen@ghlindiaventures.com',    '$2a$11$z2c3Nc1pe7Tqmxj6Rm15NOt8vuAyyKfqzGtBKpiFU2NcPZxsjt5p.', '+91 98450 22334', 3, 1,    'Active', '2026-01-01 00:00:00+00'),
                     (4, 'Mani',         'mani@ghlindiaventures.com',      '$2a$11$z2c3Nc1pe7Tqmxj6Rm15NOt8vuAyyKfqzGtBKpiFU2NcPZxsjt5p.', '+91 98450 33445', 2, 2,    'Active', '2026-01-01 00:00:00+00'),
-                    (5, 'Dhinakaran',   'dhinakaran@ghlindiaventures.com','$2a$11$z2c3Nc1pe7Tqmxj6Rm15NOt8vuAyyKfqzGtBKpiFU2NcPZxsjt5p.', '+91 98110 77889', 5, 1,    'Active', '2026-01-01 00:00:00+00'),
-                    (6, 'Rajesh Sharma','rajesh@jaminbazaar.com',          '$2a$11$z2c3Nc1pe7Tqmxj6Rm15NOt8vuAyyKfqzGtBKpiFU2NcPZxsjt5p.', '+91 98450 44556', 4, 2,    'Active', '2026-01-01 00:00:00+00')
+                    (5, 'Dhinakaran',   'dhinakaran@ghlindiaventures.com','$2a$11$z2c3Nc1pe7Tqmxj6Rm15NOt8vuAyyKfqzGtBKpiFU2NcPZxsjt5p.', '+91 98110 77889', 4, 1,    'Active', '2026-01-01 00:00:00+00'),
+                    (6, 'Rajesh Sharma','rajesh@jaminbazaar.com',          '$2a$11$z2c3Nc1pe7Tqmxj6Rm15NOt8vuAyyKfqzGtBKpiFU2NcPZxsjt5p.', '+91 98450 44556', 3, 2,    'Active', '2026-01-01 00:00:00+00')
                 ON CONFLICT (""Id"") DO UPDATE SET
                     ""Name""         = EXCLUDED.""Name"",
                     ""Email""        = EXCLUDED.""Email"",

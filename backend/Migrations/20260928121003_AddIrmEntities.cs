@@ -95,6 +95,7 @@ namespace backend.Migrations
                         principalColumn: "Id");
                 });
 
+            migrationBuilder.Sql("DROP TABLE IF EXISTS \"Consultations\" CASCADE;");
             migrationBuilder.CreateTable(
                 name: "Consultations",
                 columns: table => new
@@ -138,8 +139,7 @@ namespace backend.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
-            migrationBuilder.Sql(@"DROP TABLE IF EXISTS ""Followups"" CASCADE;");
-
+            migrationBuilder.Sql("DROP TABLE IF EXISTS \"Followups\" CASCADE;");
             migrationBuilder.CreateTable(
                 name: "Followups",
                 columns: table => new

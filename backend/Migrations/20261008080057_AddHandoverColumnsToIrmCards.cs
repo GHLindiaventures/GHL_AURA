@@ -17,82 +17,20 @@ namespace backend.Migrations
             migrationBuilder.Sql("ALTER TABLE \"GhlInvestors\" DROP COLUMN IF EXISTS \"OriginalOwnerId\" CASCADE;");
 
             // Add missing columns to IrmPipelineCards (were present in model but dropped from DB)
-            migrationBuilder.AddColumn<int>(
-                name: "HandoverId",
-                table: "IrmPipelineCards",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.AddColumn<int>(
-                name: "OriginalOwnerId",
-                table: "IrmPipelineCards",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_IrmPipelineCards_HandoverId",
-                table: "IrmPipelineCards",
-                column: "HandoverId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_IrmPipelineCards_OriginalOwnerId",
-                table: "IrmPipelineCards",
-                column: "OriginalOwnerId");
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_IrmPipelineCards_work_handovers_HandoverId",
-                table: "IrmPipelineCards",
-                column: "HandoverId",
-                principalTable: "work_handovers",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_IrmPipelineCards_users_OriginalOwnerId",
-                table: "IrmPipelineCards",
-                column: "OriginalOwnerId",
-                principalTable: "users",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.Restrict);
+            migrationBuilder.Sql(@"
+                ALTER TABLE ""IrmPipelineCards"" ADD COLUMN IF NOT EXISTS ""HandoverId"" integer;
+                ALTER TABLE ""IrmPipelineCards"" ADD COLUMN IF NOT EXISTS ""OriginalOwnerId"" integer;
+                CREATE INDEX IF NOT EXISTS ""IX_IrmPipelineCards_HandoverId"" ON ""IrmPipelineCards"" (""HandoverId"");
+                CREATE INDEX IF NOT EXISTS ""IX_IrmPipelineCards_OriginalOwnerId"" ON ""IrmPipelineCards"" (""OriginalOwnerId"");
+            ");
 
             // Add missing columns to GhlInvestors
-            migrationBuilder.AddColumn<int>(
-                name: "HandoverId",
-                table: "GhlInvestors",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.AddColumn<int>(
-                name: "OriginalOwnerId",
-                table: "GhlInvestors",
-                type: "integer",
-                nullable: true);
-
-            migrationBuilder.CreateIndex(
-                name: "IX_GhlInvestors_HandoverId",
-                table: "GhlInvestors",
-                column: "HandoverId");
-
-            migrationBuilder.CreateIndex(
-                name: "IX_GhlInvestors_OriginalOwnerId",
-                table: "GhlInvestors",
-                column: "OriginalOwnerId");
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_GhlInvestors_work_handovers_HandoverId",
-                table: "GhlInvestors",
-                column: "HandoverId",
-                principalTable: "work_handovers",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.SetNull);
-
-            migrationBuilder.AddForeignKey(
-                name: "FK_GhlInvestors_users_OriginalOwnerId",
-                table: "GhlInvestors",
-                column: "OriginalOwnerId",
-                principalTable: "users",
-                principalColumn: "Id",
-                onDelete: ReferentialAction.Restrict);
+            migrationBuilder.Sql(@"
+                ALTER TABLE ""GhlInvestors"" ADD COLUMN IF NOT EXISTS ""HandoverId"" integer;
+                ALTER TABLE ""GhlInvestors"" ADD COLUMN IF NOT EXISTS ""OriginalOwnerId"" integer;
+                CREATE INDEX IF NOT EXISTS ""IX_GhlInvestors_HandoverId"" ON ""GhlInvestors"" (""HandoverId"");
+                CREATE INDEX IF NOT EXISTS ""IX_GhlInvestors_OriginalOwnerId"" ON ""GhlInvestors"" (""OriginalOwnerId"");
+            ");
 
             migrationBuilder.UpdateData(
                 table: "roles",
