@@ -14,6 +14,23 @@ namespace backend.Data.Migrations
             // Sync user seed data: update existing users and insert any missing ones
             // using ON CONFLICT so it's safe to run multiple times
             migrationBuilder.Sql(@"
+                INSERT INTO roles (""Id"", ""Code"", ""Name"", ""CreatedAt"", ""Permissions"")
+                VALUES
+                    (1, 'super_admin',     'Super Admin',     '2026-01-01 00:00:00+00', '{}'),
+                    (2, 'company_admin',   'Company Admin',   '2026-01-01 00:00:00+00', '{}'),
+                    (3, 'sales_manager',   'Sales Manager',   '2026-01-01 00:00:00+00', '{}'),
+                    (4, 'sales_executive', 'Sales Executive', '2026-01-01 00:00:00+00', '{}'),
+                    (5, 'irm',             'IRM',             '2026-01-01 00:00:00+00', '{}')
+                ON CONFLICT (""Id"") DO UPDATE SET
+                    ""Code"" = EXCLUDED.""Code"",
+                    ""Name"" = EXCLUDED.""Name"";
+
+                INSERT INTO tenants (""Id"", ""Name"", ""Slug"", ""BrandColor"", ""BusinessHours"", ""CreatedAt"", ""Currency"", ""EnabledFeatures"", ""IsActive"")
+                VALUES
+                    (1, 'GHL India Ventures', 'ghl',   '#0284c7', '09:30 AM - 07:00 PM IST', '2026-01-01 00:00:00+00', '₹ INR', '{}', true),
+                    (2, 'Jamin Bazaar',       'jamin', '#059669', '09:00 AM - 06:30 PM IST', '2026-01-01 00:00:00+00', '₹ INR', '{}', true)
+                ON CONFLICT (""Id"") DO NOTHING;
+
                 INSERT INTO users (""Id"", ""Name"", ""Email"", ""PasswordHash"", ""Phone"", ""RoleId"", ""CompanyId"", ""Status"", ""CreatedAt"")
                 VALUES
                     (1, 'Yanosh',       'yanosh@ghlindiaventures.com',    '$2a$11$z2c3Nc1pe7Tqmxj6Rm15NOt8vuAyyKfqzGtBKpiFU2NcPZxsjt5p.', '+91 98800 11000', 1, NULL, 'Active', '2026-01-01 00:00:00+00'),

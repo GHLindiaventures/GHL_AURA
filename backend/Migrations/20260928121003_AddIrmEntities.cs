@@ -138,6 +138,8 @@ namespace backend.Migrations
                         onDelete: ReferentialAction.Cascade);
                 });
 
+            migrationBuilder.Sql(@"DROP TABLE IF EXISTS ""Followups"" CASCADE;");
+
             migrationBuilder.CreateTable(
                 name: "Followups",
                 columns: table => new
