@@ -20,6 +20,7 @@ import {
   BackupSnapshot,
   PlatformTicket,
   TicketTimelineEvent,
+  DocumentItem,
 } from '../types';
 import { DEFAULT_TENANTS } from '../constants/defaultTenants';
 import { SYSTEM_ROLES } from '../constants/roles';
@@ -40,7 +41,59 @@ const STORAGE_KEYS = {
   ANNOUNCEMENTS: 'nexus_admin_announcements',
   MAINTENANCE_MODE: 'nexus_admin_maintenance_mode',
   METRICS: 'nexus_platform_metrics',
+  DOCUMENTS: 'nexus_platform_documents',
 };
+
+export const DEFAULT_PLATFORM_DOCUMENTS: DocumentItem[] = [
+  {
+    id: 'doc-plat-1',
+    name: 'RBI Compliance & Investor Guidelines 2026.pdf',
+    size: '2.4 MB',
+    type: 'application/pdf',
+    uploadedBy: 'Yanosh (Super Admin)',
+    uploadedAt: '12 Oct 2026',
+    category: 'Legal & Compliance',
+    entityType: 'platform',
+    entityId: 'all',
+    targetAudience: 'all_users',
+    isPlatformShared: true,
+    description: 'Mandatory KYC, AML and accreditation norms for investor onboarding across all platforms.',
+    targetTenantName: 'All Companies (Global)',
+    fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
+  },
+  {
+    id: 'doc-plat-2',
+    name: 'GHL Master Sales Script & Objection Handling.pdf',
+    size: '1.8 MB',
+    type: 'application/pdf',
+    uploadedBy: 'Yanosh (Super Admin)',
+    uploadedAt: '10 Oct 2026',
+    category: 'Sales Collateral',
+    entityType: 'company',
+    entityId: '1',
+    targetAudience: 'all_users',
+    isPlatformShared: true,
+    description: 'Targeted high-ticket sales script, IRM consultation process, and objection playbook.',
+    targetTenantName: 'GHL India Ventures',
+    fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
+  },
+  {
+    id: 'doc-plat-3',
+    name: 'Enterprise Telephony & Carrier SLA Contract.pdf',
+    size: '850 KB',
+    type: 'application/pdf',
+    uploadedBy: 'Platform System',
+    uploadedAt: '05 Oct 2026',
+    category: 'Carrier / Telecom',
+    entityType: 'platform',
+    entityId: 'all',
+    targetAudience: 'admin_only',
+    isPlatformShared: true,
+    description: 'Confidential SIP trunking rates, DID terms, and latency SLAs for company administrators.',
+    targetTenantName: 'All Companies (Global)',
+    fileUrl: 'https://www.w3.org/WAI/ER/tests/xhtml/testfiles/resources/pdf/dummy.pdf'
+  }
+];
 
 export interface SecurityOverviewDto {
   activeSessionsCount: number;
@@ -2460,6 +2513,154 @@ export class SuperAdminService {
     );
     if (res && res.data) return res.data;
     throw new Error(res?.message || 'API diagnostic probe failed');
+  }
+
+  // ── Platform Document Management ──────────────────────────────────────────
+  async getPlatformDocuments(params?: {
+    tenantId?: string;
+    category?: string;
+    audience?: string;
+    search?: string;
+  }): Promise<DocumentItem[]> {
+    if (isMockMode()) {
+      let docs: DocumentItem[] = [];
+      try {
+        const raw = localStorage.getItem(STORAGE_KEYS.DOCUMENTS);
+        docs = raw ? JSON.parse(raw) : DEFAULT_PLATFORM_DOCUMENTS;
+        if (!raw) {
+          localStorage.setItem(STORAGE_KEYS.DOCUMENTS, JSON.stringify(DEFAULT_PLATFORM_DOCUMENTS));
+        }
+      } catch {
+        docs = DEFAULT_PLATFORM_DOCUMENTS;
+      }
+
+      let filtered = [...docs];
+      if (params?.tenantId && params.tenantId !== 'all_tenants') {
+        if (params.tenantId === 'global' || params.tenantId === 'all') {
+          filtered = filtered.filter(d => d.entityId === 'all');
+        } else {
+          filtered = filtered.filter(d => d.entityId === params.tenantId || d.entityId === 'all');
+        }
+      }
+      if (params?.category && params.category !== 'all') {
+        filtered = filtered.filter(d => d.category.toLowerCase() === params.category!.toLowerCase());
+      }
+      if (params?.audience && params.audience !== 'all') {
+        filtered = filtered.filter(d => (d.targetAudience || 'all_users').toLowerCase() === params.audience!.toLowerCase());
+      }
+      if (params?.search) {
+        const s = params.search.toLowerCase();
+        filtered = filtered.filter(d =>
+          d.name.toLowerCase().includes(s) ||
+          d.category.toLowerCase().includes(s) ||
+          (d.description && d.description.toLowerCase().includes(s))
+        );
+      }
+      return filtered;
+    }
+
+    try {
+      const q = new URLSearchParams();
+      if (params?.tenantId) q.append('tenantId', params.tenantId);
+      if (params?.category) q.append('category', params.category);
+      if (params?.audience) q.append('audience', params.audience);
+      if (params?.search) q.append('search', params.search);
+
+      const res = await apiClient.get<ApiResponse<DocumentItem[]>>(`/super-admin/documents?${q.toString()}`);
+      if (res && res.data) return res.data;
+      return [];
+    } catch (err) {
+      console.warn('Falling back to local platform documents:', err);
+      const raw = localStorage.getItem(STORAGE_KEYS.DOCUMENTS);
+      return raw ? JSON.parse(raw) : DEFAULT_PLATFORM_DOCUMENTS;
+    }
+  }
+
+  async getPlatformDocumentTenants(): Promise<Array<{ id: string; name: string; slug: string }>> {
+    if (isMockMode()) {
+      const tenants = await this.getTenants();
+      return tenants.map(t => ({ id: String(t.id), name: t.name, slug: t.slug }));
+    }
+    try {
+      const res = await apiClient.get<ApiResponse<Array<{ id: string; name: string; slug: string }>>>('/super-admin/documents/tenants');
+      if (res && res.data) return res.data;
+      const tenants = await this.getTenants();
+      return tenants.map(t => ({ id: String(t.id), name: t.name, slug: t.slug }));
+    } catch {
+      const tenants = await this.getTenants();
+      return tenants.map(t => ({ id: String(t.id), name: t.name, slug: t.slug }));
+    }
+  }
+
+  async uploadPlatformDocument(formData: FormData): Promise<DocumentItem> {
+    if (isMockMode()) {
+      const file = formData.get('file') as File | null;
+      const name = (formData.get('name') as string) || file?.name || 'Untitled Document';
+      const category = (formData.get('category') as string) || 'General Resources';
+      const entityId = (formData.get('entityId') as string) || 'all';
+      const targetAudience = (formData.get('targetAudience') as string) || 'all_users';
+      const description = (formData.get('description') as string) || '';
+
+      const tenants = await this.getTenants();
+      let tenantName = 'All Companies (Global)';
+      if (entityId !== 'all') {
+        const match = tenants.find(t => String(t.id) === entityId || t.slug === entityId);
+        if (match) tenantName = match.name;
+      }
+
+      const newDoc: DocumentItem = {
+        id: `doc-plat-${Date.now()}`,
+        name,
+        size: file ? `${(file.size / 1024).toFixed(1)} KB` : '1.2 MB',
+        type: file?.type || 'application/pdf',
+        uploadedBy: 'Yanosh (Super Admin)',
+        uploadedAt: new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' }),
+        category,
+        entityType: 'company',
+        entityId,
+        targetAudience,
+        isPlatformShared: true,
+        description,
+        targetTenantName: tenantName,
+        fileUrl: '#'
+      };
+
+      try {
+        const raw = localStorage.getItem(STORAGE_KEYS.DOCUMENTS);
+        const docs = raw ? JSON.parse(raw) : DEFAULT_PLATFORM_DOCUMENTS;
+        docs.unshift(newDoc);
+        localStorage.setItem(STORAGE_KEYS.DOCUMENTS, JSON.stringify(docs));
+        window.dispatchEvent(new Event('nexus_storage_updated'));
+      } catch {}
+
+      return newDoc;
+    }
+
+    const res = await apiClient.postFormData<ApiResponse<DocumentItem>>('/super-admin/documents', formData);
+    if (res && res.data) {
+      window.dispatchEvent(new Event('nexus_storage_updated'));
+      return res.data;
+    }
+    throw new Error(res?.message || 'Failed to upload document');
+  }
+
+  async deletePlatformDocument(id: string): Promise<boolean> {
+    if (isMockMode()) {
+      try {
+        const raw = localStorage.getItem(STORAGE_KEYS.DOCUMENTS);
+        if (raw) {
+          const docs: DocumentItem[] = JSON.parse(raw);
+          const filtered = docs.filter(d => d.id !== id);
+          localStorage.setItem(STORAGE_KEYS.DOCUMENTS, JSON.stringify(filtered));
+          window.dispatchEvent(new Event('nexus_storage_updated'));
+        }
+      } catch {}
+      return true;
+    }
+
+    const res = await apiClient.delete<ApiResponse<any>>(`/super-admin/documents/${id}`);
+    window.dispatchEvent(new Event('nexus_storage_updated'));
+    return res.success;
   }
 }
 

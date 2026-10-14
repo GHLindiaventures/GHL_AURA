@@ -568,9 +568,13 @@ export interface DocumentItem {
   uploadedBy: string;
   uploadedAt: string;
   category: string;
-  entityType?: 'lead' | 'customer' | 'investor' | 'booking' | 'consultation' | 'company';
+  entityType?: 'lead' | 'customer' | 'investor' | 'booking' | 'consultation' | 'company' | 'platform';
   entityId?: string;
   fileUrl?: string;
+  targetAudience?: 'all_users' | 'admin_only' | string;
+  isPlatformShared?: boolean;
+  description?: string;
+  targetTenantName?: string;
 }
 
 export interface Department {

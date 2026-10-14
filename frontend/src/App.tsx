@@ -20,6 +20,8 @@ export const routeToPath = (route: string, isSuperAdmin: boolean): string => {
         return '/audit';
       case 'admin-security':
         return '/security';
+      case 'admin-documents':
+        return '/documents';
       case 'admin-tickets':
         return '/tickets';
       case 'admin-system':
@@ -33,6 +35,8 @@ export const routeToPath = (route: string, isSuperAdmin: boolean): string => {
         return '/dashboard';
       case 'company-users':
         return '/users';
+      case 'company-documents':
+        return '/documents';
       case 'leave-requests':
         return '/leave-requests';
       case 'work-handover':
@@ -68,6 +72,8 @@ export const pathToRoute = (pathname: string, isSuperAdmin: boolean): string => 
       case '/settings':
       case '/call-config':
         return 'admin-call-config';
+      case '/documents':
+        return 'admin-documents';
       case '/audit':
         return 'admin-audit';
       case '/security':
@@ -84,6 +90,8 @@ export const pathToRoute = (pathname: string, isSuperAdmin: boolean): string => 
     switch (cleanPath) {
       case '/users':
         return 'company-users';
+      case '/documents':
+        return 'company-documents';
       case '/leave-requests':
         return 'leave-requests';
       case '/handover':
@@ -150,6 +158,7 @@ import { AllLeadsPage } from './pages/Irm/AllLeadsPage';
 
 // Company Admin
 import { CompanyUsersPage } from './pages/Company/CompanyUsersPage';
+import { CompanyDocumentsPage } from './pages/Company/CompanyDocumentsPage';
 import { LeaveRequestsPage } from './pages/Company/LeaveRequestsPage';
 import { WorkHandoverPage } from './pages/Company/WorkHandoverPage';
 import { CompanySettingsPage } from './pages/Company/CompanySettingsPage';
@@ -163,6 +172,7 @@ import { PlatformUsersPage } from './pages/Admin/Users/PlatformUsersPage';
 import { PlatformRolesPage } from './pages/Admin/Roles/PlatformRolesPage';
 import { PlatformFeaturesPage } from './pages/Admin/Features/PlatformFeaturesPage';
 import { PlatformCallConfigPage } from './pages/Admin/CallConfig/PlatformCallConfigPage';
+import { PlatformDocumentsPage } from './pages/Admin/Documents/PlatformDocumentsPage';
 import { PlatformAuditPage } from './pages/Admin/Audit/PlatformAuditPage';
 import { PlatformSystemPage } from './pages/Admin/System/PlatformSystemPage';
 import { PlatformSecurityPage } from './pages/Admin/Security/PlatformSecurityPage';
@@ -697,6 +707,8 @@ export const App: React.FC = () => {
             <PlatformFeaturesPage />
           ) : currentRoute === 'admin-call-config' ? (
             <PlatformCallConfigPage />
+          ) : currentRoute === 'admin-documents' ? (
+            <PlatformDocumentsPage />
           ) : currentRoute === 'admin-audit' ? (
             <PlatformAuditPage />
           ) : currentRoute === 'admin-tickets' ? (
@@ -872,6 +884,8 @@ export const App: React.FC = () => {
             <DashboardPage onNavigate={navigate} onOpenQuickCreate={handleOpenQuickCreate} />
           )}
         </ProtectedRoute>
+      ) : currentRoute === 'company-documents' ? (
+        <CompanyDocumentsPage />
       ) : currentRoute === 'company-settings' ? (
         <ProtectedRoute permission={PERMISSIONS.SETTINGS_VIEW}>
           <CompanySettingsPage />
