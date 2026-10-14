@@ -251,7 +251,8 @@ export interface Deal {
   location?: string;
   preferredAssetClass?: string;
   investmentRange?: string; // e.g. "₹15 Cr – ₹25 Cr", display string shown in green
-  investorType?: 'AIF' | 'Co-AIF';
+  investorType?: string;
+  investmentRoute?: 'direct_aif' | 'debenture' | string;
   investmentAmountConfirmed?: boolean;
   kycStatus?: string;
   kycId?: number;

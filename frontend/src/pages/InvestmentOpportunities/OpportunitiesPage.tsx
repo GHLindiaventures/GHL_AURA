@@ -150,6 +150,7 @@ export const OpportunitiesPage: React.FC = () => {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [activeDossierTab, setActiveDossierTab] = useState<'all' | 'basic' | 'identity' | 'bank' | 'demat' | 'nominees'>('all');
   const [copiedField, setCopiedField] = useState<string | null>(null);
+  const [dealRoute, setDealRoute] = useState<'direct_aif' | 'debenture'>('direct_aif');
 
   const copyToClipboard = (text: string, label: string) => {
     if (!text || text === '—') return;
@@ -530,6 +531,13 @@ export const OpportunitiesPage: React.FC = () => {
     setAmountInput(deal.value ? String(deal.value) : '');
     setIsEditingAmount(false);
     setShowConfirmDialog(false);
+    const initialRoute: 'direct_aif' | 'debenture' =
+      deal.investorType?.toLowerCase().includes('debenture') ||
+      (deal.investmentRoute === 'debenture') ||
+      (deal.value > 0 && deal.value < 10000000)
+        ? 'debenture'
+        : 'direct_aif';
+    setDealRoute(initialRoute);
   };
 
   const handleCloseDetailModal = () => {
@@ -559,10 +567,13 @@ export const OpportunitiesPage: React.FC = () => {
   const handleConfirmAmount = async () => {
     if (!detailDeal) return;
     const numericAmount = parseFloat(amountInput) || 0;
+    const routeName = dealRoute === 'debenture' ? 'Debenture' : 'Direct AIF';
     const updatedDeal: Deal = {
       ...detailDeal,
       value: numericAmount,
       investmentAmountConfirmed: true,
+      investorType: routeName,
+      investmentRoute: dealRoute,
     };
 
     // Save investment amount confirmed to DB
@@ -578,7 +589,7 @@ export const OpportunitiesPage: React.FC = () => {
     setIsEditingAmount(false);
     setShowConfirmDialog(false);
     loadData();
-    showToast(`✓ Investment amount ₹${numericAmount.toLocaleString('en-IN')} confirmed for "${detailDeal.customerName}"`);
+    showToast(`✓ Investment amount ₹${numericAmount.toLocaleString('en-IN')} confirmed via ${routeName} for "${detailDeal.customerName}"`);
   };
 
   const getDealKycStatus = (deal: Deal, liveKyc?: any): 'Pending' | 'Partially Completed' | 'Submitted' | 'Verified' | 'Wrong' => {
@@ -950,7 +961,9 @@ export const OpportunitiesPage: React.FC = () => {
           }}
           onEditAmount={handleEditAmount}
           onAmountInputChange={val => setAmountInput(val)}
-          onConfirmAmountClick={() => {
+          onRouteChange={route => setDealRoute(route)}
+          onConfirmAmountClick={(route) => {
+            if (route) setDealRoute(route);
             const val = parseFloat(amountInput);
             if (val && val > 0) {
               setShowConfirmDialog(true);
@@ -1334,7 +1347,7 @@ export const OpportunitiesPage: React.FC = () => {
           <strong style={{ color: '#10b981' }}>
             {formatCurrency(parseFloat(amountInput) || 0)}
           </strong>{' '}
-          for <strong>{detailDeal?.customerName}</strong>? This will be used for conversion.
+          via <strong style={{ color: '#9b1c24' }}>{dealRoute === 'debenture' ? 'Debenture Route (Min ₹10L • 1%/mo)' : 'Direct AIF Route (Min ₹1Cr • Annual)'}</strong> for <strong>{detailDeal?.customerName}</strong>? This will be used for conversion.
         </div>
       </Modal>
     </div>

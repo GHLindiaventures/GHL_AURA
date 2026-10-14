@@ -631,8 +631,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const isCallFromKyc = callMod === 'kyc';
       const isCallFromOpportunities = callMod === 'opportunities';
       const isCallFromInvestor360 = callMod === 'investor_360';
+      const isCallFromOther = callMod === 'other';
       const isCustomerContact = lastCallRecord.matchedRecord?.type === 'customer' || Boolean(lastCallRecord.customerId);
-      const isCallFromMyLeads = callMod === 'my_leads' || (!isCallFromFollowup && !isCallFromKyc && !isCallFromOpportunities && !isCallFromInvestor360 && !isCustomerContact);
+      const isCallFromMyLeads = callMod === 'my_leads' || (!isCallFromFollowup && !isCallFromKyc && !isCallFromOpportunities && !isCallFromInvestor360 && !isCallFromOther && !isCustomerContact);
       const isIrmRole = user?.role?.code === 'irm' || (user as any)?.roleCode === 'irm';
 
       // Locate matched deal / customer / investor if any
@@ -719,6 +720,15 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
           // Setting status to 'Follow-up Required' reliably moves it out of My Leads to Follow-up
           matchedLead.status = 'Follow-up Required';
           matchedLead.nextFollowupDate = followupScheduledAt;
+          if (isIrmRole) {
+            matchedLead.assignedAgentId = user.id;
+            matchedLead.assignedAgentName = user.name;
+            matchedLead.assignedIrmId = user.id;
+            matchedLead.assignedIrmName = user.name;
+            if (!matchedLead.assignedByName) {
+              matchedLead.assignedByName = 'Created by IRM';
+            }
+          }
           if (notes) {
             matchedLead.notes = `${matchedLead.notes ? matchedLead.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] Follow-up Required: ${notes}`;
           }
@@ -749,6 +759,10 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
             priority: followupPriority,
             status: 'Pending',
             notes: followupNotes,
+            assignedAgentId: isIrmRole ? user.id : (existingFollowup.assignedAgentId || user.id),
+            assignedAgentName: isIrmRole ? user.name : (existingFollowup.assignedAgentName || user.name),
+            assignedRole: isIrmRole ? 'irm' : existingFollowup.assignedRole,
+            assignedByName: isIrmRole && (!existingFollowup.assignedByName || existingFollowup.assignedByName === 'Created by IRM') ? 'Created by IRM' : existingFollowup.assignedByName,
           });
         } else {
           await apiSaveFollowup({
@@ -763,10 +777,11 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
             priority: followupPriority,
             status: 'Pending',
             notes: followupNotes,
-            assignedAgentId: matchedLead?.assignedAgentId || user.id,
-            assignedAgentName: matchedLead?.assignedAgentName || user.name,
+            assignedAgentId: isIrmRole ? user.id : (matchedLead?.assignedAgentId || user.id),
+            assignedAgentName: isIrmRole ? user.name : (matchedLead?.assignedAgentName || user.name),
+            assignedRole: isIrmRole ? 'irm' : undefined,
             assignedById: matchedLead?.assignedById,
-            assignedByName: matchedLead?.assignedByName,
+            assignedByName: isIrmRole && (!matchedLead?.assignedByName || matchedLead.assignedByName === 'Created by IRM') ? 'Created by IRM' : matchedLead?.assignedByName,
           });
         }
       }
@@ -780,7 +795,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const followupPriority = scheduleFollowup?.priority || 'Medium';
         const cbNotes = scheduleFollowup?.notes || (notes ? `Call Back: ${notes}` : existingFollowup?.notes || `Callback scheduled for ${lastCallRecord.contactName}`);
 
-        if (isCallFromKyc || isCallFromOpportunities || isCallFromInvestor360 || (isCustomerContact && !isCallFromFollowup && !isCallFromMyLeads)) {
+        if (isCallFromKyc || isCallFromOpportunities || isCallFromInvestor360 || (isCustomerContact && !isCallFromFollowup && !isCallFromMyLeads && !isCallFromOther)) {
           // Contact is in KYC, Opportunities, or Investor 360.
           // CRITICAL: They must STAY in their current module! Do NOT create a separate sales lead or external follow-up task!
           if (existingFollowup) {
@@ -790,6 +805,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
               priority: followupPriority,
               status: 'Pending',
               notes: cbNotes,
+              assignedAgentId: isIrmRole ? user.id : (existingFollowup.assignedAgentId || user.id),
               assignedRole: isIrmRole ? 'irm' : existingFollowup.assignedRole,
             });
           }
@@ -816,8 +832,11 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
             }
             storageService.saveLead(matchedLead);
           }
-        } else if (isCallFromFollowup) {
-          // Stay in Follow-ups: update existing follow-up in place
+        } else if (isCallFromFollowup || isCallFromOther) {
+          // Stay in Follow-ups or transition from Other to Follow-ups: update/create follow-up
+          const targetAgentId = isIrmRole ? user.id : (matchedLead?.assignedAgentId || user.id);
+          const targetAgentName = isIrmRole ? user.name : (matchedLead?.assignedAgentName || user.name);
+
           if (existingFollowup) {
             await apiSaveFollowup({
               ...existingFollowup,
@@ -825,6 +844,10 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
               priority: followupPriority,
               status: 'Pending',
               notes: cbNotes,
+              assignedAgentId: targetAgentId,
+              assignedAgentName: targetAgentName,
+              assignedRole: isIrmRole ? 'irm' : existingFollowup.assignedRole,
+              assignedByName: isIrmRole && (!existingFollowup.assignedByName || existingFollowup.assignedByName === 'Created by IRM') ? 'Created by IRM' : existingFollowup.assignedByName,
             });
           } else {
             await apiSaveFollowup({
@@ -839,14 +862,25 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
               priority: followupPriority,
               status: 'Pending',
               notes: cbNotes,
-              assignedAgentId: matchedLead?.assignedAgentId || user.id,
-              assignedAgentName: matchedLead?.assignedAgentName || user.name,
+              assignedAgentId: targetAgentId,
+              assignedAgentName: targetAgentName,
               assignedRole: isIrmRole ? 'irm' : undefined,
+              assignedByName: isIrmRole && (!matchedLead?.assignedByName || matchedLead.assignedByName === 'Created by IRM') ? 'Created by IRM' : matchedLead?.assignedByName,
             });
           }
 
           if (matchedLead) {
             matchedLead.nextFollowupDate = followupScheduledAt;
+            matchedLead.status = 'Callback';
+            if (isIrmRole) {
+              matchedLead.assignedAgentId = user.id;
+              matchedLead.assignedAgentName = user.name;
+              matchedLead.assignedIrmId = user.id;
+              matchedLead.assignedIrmName = user.name;
+              if (!matchedLead.assignedByName) {
+                matchedLead.assignedByName = 'Created by IRM';
+              }
+            }
             if (notes) {
               matchedLead.notes = `${matchedLead.notes ? matchedLead.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] Call Back: ${notes}`;
             }
@@ -860,6 +894,15 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (matchedLead) {
             matchedLead.status = 'Callback';
             matchedLead.nextFollowupDate = followupScheduledAt;
+            if (isIrmRole) {
+              matchedLead.assignedAgentId = user.id;
+              matchedLead.assignedAgentName = user.name;
+              matchedLead.assignedIrmId = user.id;
+              matchedLead.assignedIrmName = user.name;
+              if (!matchedLead.assignedByName) {
+                matchedLead.assignedByName = 'Created by IRM';
+              }
+            }
             if (notes) {
               matchedLead.notes = `${matchedLead.notes ? matchedLead.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] Call Back: ${notes}`;
             }
@@ -1074,6 +1117,15 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
           if (matchedLead) {
             matchedLead.status = 'No Response';
             matchedLead.nextFollowupDate = followupScheduledAt;
+            if (isIrmRole) {
+              matchedLead.assignedAgentId = user.id;
+              matchedLead.assignedAgentName = user.name;
+              matchedLead.assignedIrmId = user.id;
+              matchedLead.assignedIrmName = user.name;
+              if (!matchedLead.assignedByName) {
+                matchedLead.assignedByName = 'Created by IRM';
+              }
+            }
             if (notes) {
               matchedLead.notes = `${matchedLead.notes ? matchedLead.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] No Response: ${notes}`;
             }

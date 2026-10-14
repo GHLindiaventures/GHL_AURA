@@ -31,17 +31,116 @@ import {
   ChevronRight,
   Layers,
   Percent,
+  Info,
+  X,
+  AlertTriangle,
 } from 'lucide-react';
 import { Deal, CallRecord, Consultation, Followup } from '../../types';
 
-export const INVESTMENT_PRESETS = [
-  { label: '₹5L', value: 500000 },
-  { label: '₹10L', value: 1000000 },
-  { label: '₹25L', value: 2500000 },
-  { label: '₹50L', value: 5000000 },
-  { label: '₹1Cr', value: 10000000 },
-  { label: '₹2Cr', value: 20000000 },
-];
+export interface InvestmentRouteDetails {
+  id: 'direct_aif' | 'debenture';
+  name: string;
+  pillLabel: string;
+  fundType: string;
+  focus: string;
+  minInvestmentNum: number;
+  minInvestmentLabel: string;
+  targetReturns: string;
+  returnStructure: string;
+  capitalAppreciation?: string;
+  totalAssuredReturns?: string;
+  payoutFrequency: string;
+  taxation: string;
+  tenure: string;
+  fundSize: string;
+  strategyBullets: string[];
+  documentsProvided: string[];
+  securityStructure: string[];
+  presets: { label: string; value: number }[];
+}
+
+export const INVESTMENT_ROUTES: Record<'direct_aif' | 'debenture', InvestmentRouteDetails> = {
+  debenture: {
+    id: 'debenture',
+    name: 'Alternate route to Invest in AIF via Debenture',
+    pillLabel: 'Alternate route to Invest in AIF via Debenture',
+    fundType: 'Category II AIF (as per SEBI Alternative Investment Fund Regulations, 2012)',
+    focus: 'Stressed and special situation real estate assets',
+    minInvestmentNum: 1000000,
+    minInvestmentLabel: 'starting from ₹10,00,000',
+    targetReturns: '24% per annum',
+    returnStructure: '1% per month (means 12% per annum)',
+    capitalAppreciation: '12% per annum payable at redemption',
+    totalAssuredReturns: '24% per annum',
+    payoutFrequency: '1% Monthly Interest Payout',
+    taxation: 'Interest taxable at applicable slab rate (10% TDS). Capital appreciation taxed at redemption.',
+    tenure: 'Min 3 years, Max 10 years',
+    fundSize: '₹100 crore',
+    strategyBullets: [
+      'Acquire industrial land, residential layouts, and commercial land at 30-50% below market value through bank auctions, distressed sales, and private deals.',
+      'Monetize quickly by selling to industries, developers, or other end-users at less than fair market price.',
+      'Short-to-medium term exits (usually 8-12 months) to generate attractive returns.',
+    ],
+    documentsProvided: [
+      'Acknowledgment letter',
+      'Debenture Agreement',
+      'Debenture allotment letter',
+      'Debenture Certificate (physical or demat)',
+      'Investor portal access',
+    ],
+    securityStructure: [
+      'Debenture Trustee appointed as per the Companies Act',
+      'Mortgage / Charge creation on company assets',
+      'CHG - 9 Form filed with Ministry of Corporate Affairs',
+    ],
+    presets: [
+      { label: '₹10L', value: 1000000 },
+      { label: '₹25L', value: 2500000 },
+      { label: '₹50L', value: 5000000 },
+      { label: '₹75L', value: 7500000 },
+      { label: '₹1Cr', value: 10000000 },
+    ],
+  },
+  direct_aif: {
+    id: 'direct_aif',
+    name: 'Direct AIF Route',
+    pillLabel: 'Direct AIF Route',
+    fundType: 'Category II AIF — Direct Investment',
+    focus: 'SEBI-registered AIF with stressed real estate exposure',
+    minInvestmentNum: 10000000,
+    minInvestmentLabel: '₹1 crore (Direct AIF)',
+    targetReturns: '24% p.a. (performance-linked; AIF cannot guarantee returns under SEBI guidelines)',
+    returnStructure: '12% distributed annually as income; Balance profit added to capital for long-term wealth creation',
+    payoutFrequency: 'Annual Income Distribution',
+    taxation: 'Dividend / Interest taxable at applicable slab rate (10% TDS). Capital accumulation taxed as capital gains at 12% or 20% (without / with indexation)',
+    tenure: 'Minimum - 3 years, Maximum - 10 years',
+    fundSize: '₹100 crore',
+    strategyBullets: [
+      'Direct participation in SEBI-regulated AIF scheme',
+      'Diversified portfolio across stressed real estate assets',
+      'Professional fund management with quarterly NAV updates',
+    ],
+    documentsProvided: [
+      'PPM (Private Placement Memorandum)',
+      'Contribution Agreement',
+      'Capital Call Notice',
+      'NAV Statement',
+    ],
+    securityStructure: [
+      'SEBI registered Category II AIF',
+      'Independent custodian for assets',
+      'Quarterly audited NAV',
+    ],
+    presets: [
+      { label: '₹1 Cr', value: 10000000 },
+      { label: '₹2 Cr', value: 20000000 },
+      { label: '₹5 Cr', value: 50000000 },
+      { label: '₹10 Cr', value: 100000000 },
+    ],
+  },
+};
+
+export const INVESTMENT_PRESETS = INVESTMENT_ROUTES.direct_aif.presets;
 
 function formatCurrency(amount: number): string {
   if (isNaN(amount) || amount === 0) return '₹0';
@@ -90,7 +189,8 @@ export interface OpportunityProfileWorkspaceProps {
   onConvertDeal: (deal: Deal) => void;
   onEditAmount: () => void;
   onAmountInputChange: (val: string) => void;
-  onConfirmAmountClick: () => void;
+  onConfirmAmountClick: (route?: 'direct_aif' | 'debenture') => void;
+  onRouteChange?: (route: 'direct_aif' | 'debenture') => void;
   setActiveDossierTab?: (tab: 'all' | 'basic' | 'identity' | 'bank' | 'demat' | 'nominees') => void;
   copyToClipboard: (text: string, fieldKey: string) => void;
   getDealKycStatus: (deal: Deal, liveKyc?: any) => 'Pending' | 'Partially Completed' | 'Submitted' | 'Verified' | 'Wrong';
@@ -113,9 +213,72 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
   onEditAmount,
   onAmountInputChange,
   onConfirmAmountClick,
+  onRouteChange,
   copyToClipboard,
   getDealKycStatus,
 }) => {
+  // Determine initial route:
+  const initialRoute: 'direct_aif' | 'debenture' =
+    deal.investorType?.toLowerCase().includes('debenture') ||
+    (deal.investmentRoute === 'debenture') ||
+    (deal.value > 0 && deal.value < 10000000)
+      ? 'debenture'
+      : 'direct_aif';
+
+  const [currentRoute, setCurrentRoute] = useState<'direct_aif' | 'debenture'>(initialRoute);
+  const [showFundModal, setShowFundModal] = useState<boolean>(false);
+  const [fundModalRoute, setFundModalRoute] = useState<'direct_aif' | 'debenture'>(initialRoute);
+
+  const activeRouteMeta = INVESTMENT_ROUTES[currentRoute];
+
+  const handleSelectRoute = (route: 'direct_aif' | 'debenture') => {
+    setCurrentRoute(route);
+    if (onRouteChange) {
+      onRouteChange(route);
+    }
+  };
+
+  const handleDownloadTerms = (routeKey: 'direct_aif' | 'debenture') => {
+    const meta = INVESTMENT_ROUTES[routeKey];
+    const textContent = `=====================================================
+GHL INDIA VENTURES — AIF FUND TERMS & CONDITIONS
+Route: ${meta.name}
+Fund Type: ${meta.fundType}
+Focus: ${meta.focus}
+=====================================================
+
+KEY INVESTMENT TERMS:
+- Minimum Investment: ${meta.minInvestmentLabel}
+- Target Returns: ${meta.targetReturns}
+- Return Structure: ${meta.returnStructure}
+${meta.capitalAppreciation ? `- Capital Appreciation: ${meta.capitalAppreciation}\n` : ''}${meta.totalAssuredReturns ? `- Total Assured Returns: ${meta.totalAssuredReturns}\n` : ''}- Taxation: ${meta.taxation}
+- Tenure: ${meta.tenure}
+- Fund Size: ${meta.fundSize}
+
+INVESTMENT STRATEGY:
+${meta.strategyBullets.map(b => `• ${b}`).join('\n')}
+
+DOCUMENTS PROVIDED:
+${meta.documentsProvided.map(d => `• ${d}`).join('\n')}
+
+SECURITY STRUCTURE:
+${meta.securityStructure.map(s => `• ${s}`).join('\n')}
+
+Generated for: ${deal.customerName} (Deal #${deal.id})
+Date: ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short', year: 'numeric' })}
+=====================================================`;
+
+    const blob = new Blob([textContent], { type: 'text/plain;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `GHL_AIF_${routeKey.toUpperCase()}_Terms.txt`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   // Default to Investor Dossier & KYC as primary deal view
   const [activeWorkspaceTab, setActiveWorkspaceTab] = useState<'dossier' | 'activity' | 'documents'>('dossier');
 
@@ -164,14 +327,53 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
     return false;
   });
 
-  // Calculate uploaded docs count
-  const hasPanDoc = Boolean(kycData?.panDoc?.url || kycData?.panNumber);
-  const hasAadhaarDoc = Boolean(kycData?.aadhaarDoc?.url || kycData?.aadhaarNumber);
-  const hasBankDoc = Boolean(kycData?.bankProofDoc?.url || kycData?.bankName);
-  const hasDematDoc = Boolean(kycData?.dematDoc?.url || kycData?.dematAccountNumber);
-  const docsCount = [hasPanDoc, hasAadhaarDoc, hasBankDoc, hasDematDoc].filter(Boolean).length;
+  // Calculate uploaded docs count strictly from genuine document URLs
+  const panDocUrl = kycData?.panDoc?.url || kycData?.panDocumentUrl;
+  const aadhaarDocUrl = kycData?.aadhaarDoc?.url || kycData?.aadhaarDocumentUrl;
+  const bankProofDocUrl = kycData?.bankProofDoc?.url || kycData?.bankChequeUrl;
+  const dematDocUrl = kycData?.dematDoc?.url || kycData?.dematDocumentUrl;
+
+  const docsCount = [panDocUrl, aadhaarDocUrl, bankProofDocUrl, dematDocUrl].filter(Boolean).length;
+
+  // Primary nominee extraction
+  const primaryNominee = Array.isArray(kycData?.nominees) && kycData.nominees.length > 0
+    ? kycData.nominees[0]
+    : null;
+  const nomineeName = primaryNominee?.name || primaryNominee?.nomineeName || kycData?.nomineeName || '';
+  const nomineeRelation = primaryNominee?.relationship || primaryNominee?.relation || kycData?.nomineeRelation || '';
+  const nomineeDob = primaryNominee?.dateOfBirth || primaryNominee?.dob || kycData?.nomineeDob || null;
+  const nomineeShare = primaryNominee?.allocationPercentage ?? primaryNominee?.sharePercentage ?? kycData?.nomineeAllocation ?? null;
 
   const dealValueNum = Number(deal.value || 0);
+  const isUnderMinTicket = dealValueNum > 0 && dealValueNum < activeRouteMeta.minInvestmentNum;
+
+  const formatStageName = (stage?: string) => {
+    if (!stage) return 'Investment Opportunity';
+    return stage
+      .replace(/_/g, ' ')
+      .replace(/\b\w/g, c => c.toUpperCase());
+  };
+
+  const renderKvValue = (val: string | number | null | undefined, isMono?: boolean, copyKey?: string) => {
+    const isValEmpty = val === null || val === undefined || val === '' || val === '—';
+    const displayVal = isValEmpty ? '—' : String(val);
+
+    return (
+      <span className={`opp-kv-value ${isMono ? 'mono' : ''} ${isValEmpty ? 'is-empty' : ''}`}>
+        <span>{displayVal}</span>
+        {!isValEmpty && copyKey && (
+          <button
+            type="button"
+            className="opp-kv-copy-btn"
+            onClick={() => copyToClipboard(displayVal, copyKey)}
+            title="Copy to clipboard"
+          >
+            {copiedField === copyKey ? <Check size={11} color="#16a34a" /> : <Copy size={11} />}
+          </button>
+        )}
+      </span>
+    );
+  };
 
   return (
     <div className={`opp-dealroom-root ${isDark ? 'dark-theme' : 'light-theme'}`}>
@@ -196,14 +398,27 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
             {deal.customerId && (
               <span className="opp-ribbon-cid">Cust ID: #{deal.customerId}</span>
             )}
+            <button
+              type="button"
+              className="opp-ribbon-btn-fund-details"
+              onClick={() => {
+                setFundModalRoute(currentRoute);
+                setShowFundModal(true);
+              }}
+              title="View Fund Details & Route Comparison"
+            >
+              <FileText size={13} />
+              <span>Fund Details & Terms</span>
+            </button>
           </div>
         </div>
 
         <div className="opp-ribbon-right">
           <div className="opp-ribbon-metric">
-            <span className="opp-ribbon-metric-label">PIPELINE STATUS</span>
+            <span className="opp-ribbon-metric-label">PIPELINE STAGE</span>
             <span className="opp-ribbon-stage-pill">
-              <span className="opp-pulse-beacon" /> Syndicate Mandate
+              <span className="opp-pulse-beacon" />
+              <span className="opp-stage-pill-text">{formatStageName(deal.stage)}</span>
             </span>
           </div>
 
@@ -245,13 +460,13 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
       <div className="opp-dealroom-body">
         {/* ═════════════════════════════════════════════════════════════════════
             LEFT EXECUTION RAIL (Sticky Deal Passport & Action Terminal)
-           ═════════════════════════════════════════════════════════════════════ */}
+            ═════════════════════════════════════════════════════════════════════ */}
         <aside className="opp-dealroom-rail">
           {/* Rail Card 1: Capital Mandate & Commitment Terminal */}
           <div className="opp-rail-terminal-card">
             <div className="opp-terminal-head">
               <div className="opp-terminal-badge-row">
-                <span className="opp-terminal-title">SYNDICATE CAPITAL MANDATE</span>
+                <span className="opp-terminal-title">CAPITAL ALLOCATION</span>
                 {deal.investmentAmountConfirmed ? (
                   <span className="opp-mandate-confirmed-chip">
                     <CheckCircle2 size={11} /> MANDATE LOCKED
@@ -263,6 +478,65 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
                 )}
               </div>
             </div>
+
+            {/* ── Investment Route Switcher (Direct AIF vs Debenture) ── */}
+            <div className="opp-route-switcher-container">
+              <div className="opp-route-switcher-header">
+                <span className="opp-route-label">INVESTMENT ROUTE</span>
+                <button
+                  type="button"
+                  className="opp-route-info-btn"
+                  onClick={() => {
+                    setFundModalRoute(currentRoute);
+                    setShowFundModal(true);
+                  }}
+                  title="View Full Route Details & Terms"
+                >
+                  <Info size={11} /> View Terms
+                </button>
+              </div>
+              <div className="opp-route-pills-row">
+                <button
+                  type="button"
+                  className={`opp-route-tab-pill ${currentRoute === 'debenture' ? 'active' : ''}`}
+                  onClick={() => handleSelectRoute('debenture')}
+                >
+                  <span className="opp-route-tab-title">Debenture Route</span>
+                  <span className="opp-route-tab-sub">Min ₹10L • 1%/mo</span>
+                </button>
+                <button
+                  type="button"
+                  className={`opp-route-tab-pill ${currentRoute === 'direct_aif' ? 'active' : ''}`}
+                  onClick={() => handleSelectRoute('direct_aif')}
+                >
+                  <span className="opp-route-tab-title">Direct AIF</span>
+                  <span className="opp-route-tab-sub">Min ₹1Cr • Annual</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Minimum Ticket Warning Alert */}
+            {isUnderMinTicket && (
+              <div className="opp-ticket-warning-box">
+                <div className="opp-warning-text">
+                  <AlertTriangle size={13} color="#f59e0b" style={{ flexShrink: 0, marginTop: 1 }} />
+                  <span>
+                    {currentRoute === 'direct_aif'
+                      ? `Direct AIF minimum is ₹1 Crore (SEBI). For ${formatCurrency(dealValueNum)}, switch to Debenture route.`
+                      : `Debenture route minimum investment is ₹10 Lakhs.`}
+                  </span>
+                </div>
+                {currentRoute === 'direct_aif' && dealValueNum < 10000000 && dealValueNum >= 1000000 && (
+                  <button
+                    type="button"
+                    className="opp-switch-route-cta"
+                    onClick={() => handleSelectRoute('debenture')}
+                  >
+                    Switch to Debenture
+                  </button>
+                )}
+              </div>
+            )}
 
             {/* Live Bold Capital Ticker */}
             <div className="opp-terminal-ticker">
@@ -277,8 +551,8 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
               <div className="opp-ticker-footer">
                 <span className="opp-ticker-hint">
                   {deal.investmentAmountConfirmed
-                    ? 'Legally binding tranche commitment confirmed'
-                    : 'Target allocation tranche under negotiation'}
+                    ? 'Investment amount confirmed'
+                    : 'Target investment amount pending confirmation'}
                 </span>
                 <button
                   type="button"
@@ -305,14 +579,14 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
                   <button
                     type="button"
                     className="opp-editor-confirm-btn"
-                    onClick={onConfirmAmountClick}
+                    onClick={() => onConfirmAmountClick(currentRoute)}
                   >
                     <Check size={13} /> Confirm
                   </button>
                 </div>
 
                 <div className="opp-editor-presets">
-                  {INVESTMENT_PRESETS.map(p => (
+                  {activeRouteMeta.presets.map(p => (
                     <button
                       key={p.value}
                       type="button"
@@ -363,7 +637,7 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
                 </div>
                 <div className="opp-stepper-content">
                   <div className="opp-stepper-name">1. Lead Discovery</div>
-                  <div className="opp-stepper-sub">Owner: {deal.assignedAgentName || 'Assigned IRM'}</div>
+                  <div className="opp-stepper-sub">Owner: {deal.assignedAgentName || 'Unassigned'}</div>
                 </div>
               </div>
 
@@ -412,9 +686,11 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
               </div>
               <div className="opp-passport-titles">
                 <h3 className="opp-passport-name">{deal.customerName}</h3>
-                <span className="opp-passport-asset">
-                  <Building2 size={11} /> {(deal as any).assetClass || liveKycData?.investorType || 'Private Equity'}
-                </span>
+                {((deal as any).assetClass || liveKycData?.investorType) && (
+                  <span className="opp-passport-asset">
+                    <Building2 size={11} /> {(deal as any).assetClass || liveKycData?.investorType}
+                  </span>
+                )}
               </div>
             </div>
 
@@ -550,38 +826,27 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
                     <div className="opp-ledger-keyval-grid">
                       <div className="opp-kv-item">
                         <span className="opp-kv-label">Full Legal Name</span>
-                        <span className="opp-kv-value">{kycData.investorName || deal.customerName || '—'}</span>
+                        {renderKvValue(kycData.investorName || deal.customerName)}
                       </div>
                       <div className="opp-kv-item">
                         <span className="opp-kv-label">PAN Number</span>
-                        <span className="opp-kv-value mono">
-                          {kycData.panNumber || '—'}
-                          {kycData.panNumber && (
-                            <button
-                              type="button"
-                              className="opp-kv-copy-btn"
-                              onClick={() => copyToClipboard(kycData.panNumber, 'k_pan')}
-                            >
-                              {copiedField === 'k_pan' ? <Check size={11} color="#84cc16" /> : <Copy size={11} />}
-                            </button>
-                          )}
-                        </span>
+                        {renderKvValue(kycData.panNumber, true, 'k_pan')}
                       </div>
                       <div className="opp-kv-item">
                         <span className="opp-kv-label">Aadhaar Number</span>
-                        <span className="opp-kv-value mono">{kycData.aadhaarNumber || '—'}</span>
+                        {renderKvValue(kycData.aadhaarNumber, true)}
                       </div>
                       <div className="opp-kv-item">
                         <span className="opp-kv-label">Date of Birth</span>
-                        <span className="opp-kv-value">{formatDate(kycData.dateOfBirth)}</span>
+                        {renderKvValue(formatDate(kycData.dateOfBirth))}
                       </div>
                       <div className="opp-kv-item">
                         <span className="opp-kv-label">Gender</span>
-                        <span className="opp-kv-value">{kycData.gender || '—'}</span>
+                        {renderKvValue(kycData.gender)}
                       </div>
                       <div className="opp-kv-item">
                         <span className="opp-kv-label">Residential Status</span>
-                        <span className="opp-kv-value">{kycData.residentType || 'Resident Indian (RI)'}</span>
+                        {renderKvValue(kycData.residentType)}
                       </div>
                     </div>
                   </div>
@@ -590,36 +855,38 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
                   <div className="opp-formal-ledger-card">
                     <div className="opp-ledger-card-head">
                       <div className="opp-card-title-group">
-                        <Landmark size={16} color="#84cc16" />
+                        <Landmark size={16} color="#16a34a" />
                         <h3>2. Banking & Settlement Accounts</h3>
                       </div>
-                      <span className="opp-meta-pill">Direct RTGS Escrow</span>
+                      {kycData.accountType && (
+                        <span className="opp-meta-pill">{kycData.accountType}</span>
+                      )}
                     </div>
 
                     <div className="opp-ledger-keyval-grid">
                       <div className="opp-kv-item">
                         <span className="opp-kv-label">Bank Name</span>
-                        <span className="opp-kv-value">{kycData.bankName || '—'}</span>
+                        {renderKvValue(kycData.bankName)}
                       </div>
                       <div className="opp-kv-item">
                         <span className="opp-kv-label">Account Number</span>
-                        <span className="opp-kv-value mono">{kycData.accountNumber || '—'}</span>
+                        {renderKvValue(kycData.accountNumber, true, 'k_acc')}
                       </div>
                       <div className="opp-kv-item">
                         <span className="opp-kv-label">IFSC Code</span>
-                        <span className="opp-kv-value mono">{kycData.ifscCode || '—'}</span>
+                        {renderKvValue(kycData.ifscCode, true, 'k_ifsc')}
                       </div>
                       <div className="opp-kv-item">
                         <span className="opp-kv-label">Demat Account Number</span>
-                        <span className="opp-kv-value mono">{kycData.dematAccountNumber || '—'}</span>
+                        {renderKvValue(kycData.dematAccountNumber, true, 'k_demat')}
                       </div>
                       <div className="opp-kv-item">
                         <span className="opp-kv-label">DP Name</span>
-                        <span className="opp-kv-value">{kycData.dpName || '—'}</span>
+                        {renderKvValue(kycData.dematDepository || kycData.dpName || kycData.dpId)}
                       </div>
                       <div className="opp-kv-item">
                         <span className="opp-kv-label">Account Type</span>
-                        <span className="opp-kv-value">Savings / Resident Individual</span>
+                        {renderKvValue(kycData.accountType)}
                       </div>
                     </div>
                   </div>
@@ -631,56 +898,72 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
                         <Users size={16} color="#ef4444" />
                         <h3>3. Nominee & Succession Details</h3>
                       </div>
-                      <span className="opp-meta-pill">100% Allocation</span>
+                      {nomineeShare != null && (
+                        <span className="opp-meta-pill">{nomineeShare}% Allocation</span>
+                      )}
                     </div>
 
-                    <div className="opp-ledger-keyval-grid">
-                      <div className="opp-kv-item">
-                        <span className="opp-kv-label">Nominee Name</span>
-                        <span className="opp-kv-value">{kycData.nomineeName || '—'}</span>
+                    {!nomineeName ? (
+                      <div className="opp-dossier-empty-note">
+                        <Users size={15} color="#94a3b8" />
+                        <span>No nominee registered in investor KYC dossier.</span>
                       </div>
-                      <div className="opp-kv-item">
-                        <span className="opp-kv-label">Relationship with Investor</span>
-                        <span className="opp-kv-value">{kycData.nomineeRelation || '—'}</span>
+                    ) : (
+                      <div className="opp-ledger-keyval-grid">
+                        <div className="opp-kv-item">
+                          <span className="opp-kv-label">Nominee Name</span>
+                          {renderKvValue(nomineeName)}
+                        </div>
+                        <div className="opp-kv-item">
+                          <span className="opp-kv-label">Relationship with Investor</span>
+                          {renderKvValue(nomineeRelation)}
+                        </div>
+                        <div className="opp-kv-item">
+                          <span className="opp-kv-label">Nominee Date of Birth</span>
+                          {renderKvValue(formatDate(nomineeDob))}
+                        </div>
+                        <div className="opp-kv-item">
+                          <span className="opp-kv-label">Nominee Allocation Share</span>
+                          {renderKvValue(nomineeShare != null ? `${nomineeShare}%` : '100%')}
+                        </div>
                       </div>
-                      <div className="opp-kv-item">
-                        <span className="opp-kv-label">Nominee Date of Birth</span>
-                        <span className="opp-kv-value">{formatDate(kycData.nomineeDob)}</span>
-                      </div>
-                      <div className="opp-kv-item">
-                        <span className="opp-kv-label">Nominee Allocation Share</span>
-                        <span className="opp-kv-value highlight-green">100%</span>
-                      </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* Ledger Section 4: Registered Address */}
                   <div className="opp-formal-ledger-card">
                     <div className="opp-ledger-card-head">
                       <div className="opp-card-title-group">
-                        <Building2 size={16} color="#84cc16" />
+                        <Building2 size={16} color="#16a34a" />
                         <h3>4. Permanent Communication Address</h3>
                       </div>
                     </div>
 
-                    <div className="opp-ledger-keyval-grid">
-                      <div className="opp-kv-item" style={{ gridColumn: 'span 2' }}>
-                        <span className="opp-kv-label">Full Residential Address</span>
-                        <span className="opp-kv-value">{kycData.addressLine || '—'}</span>
+                    {(!kycData.address && !kycData.city && !kycData.state && !kycData.pincode) ? (
+                      <div className="opp-dossier-empty-note">
+                        <Building2 size={15} color="#94a3b8" />
+                        <span>No registered communication address on file.</span>
                       </div>
-                      <div className="opp-kv-item">
-                        <span className="opp-kv-label">City</span>
-                        <span className="opp-kv-value">{kycData.city || '—'}</span>
+                    ) : (
+                      <div className="opp-ledger-keyval-grid">
+                        <div className="opp-kv-item" style={{ gridColumn: 'span 2' }}>
+                          <span className="opp-kv-label">Full Residential Address</span>
+                          {renderKvValue(kycData.address || kycData.addressLine)}
+                        </div>
+                        <div className="opp-kv-item">
+                          <span className="opp-kv-label">City</span>
+                          {renderKvValue(kycData.city)}
+                        </div>
+                        <div className="opp-kv-item">
+                          <span className="opp-kv-label">State / Province</span>
+                          {renderKvValue(kycData.state)}
+                        </div>
+                        <div className="opp-kv-item">
+                          <span className="opp-kv-label">PIN Code</span>
+                          {renderKvValue(kycData.pincode, true)}
+                        </div>
                       </div>
-                      <div className="opp-kv-item">
-                        <span className="opp-kv-label">State / Province</span>
-                        <span className="opp-kv-value">{kycData.state || '—'}</span>
-                      </div>
-                      <div className="opp-kv-item">
-                        <span className="opp-kv-label">PIN Code</span>
-                        <span className="opp-kv-value mono">{kycData.pincode || '—'}</span>
-                      </div>
-                    </div>
+                    )}
                   </div>
 
                   {/* Bottom Deal Room Ready Action */}
@@ -752,14 +1035,14 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
                             <span className="opp-stream-time">{formatDate(c.timestamp || (c as any).createdAt)}</span>
                           </div>
                           <div className="opp-stream-notes">
-                            {c.notes || 'Direct deal pitch and syndicated investment review call.'}
+                            {c.notes ? c.notes : <span style={{ opacity: 0.6, fontStyle: 'italic' }}>No call notes recorded</span>}
                           </div>
                           <div className="opp-stream-meta-row">
                             <span className="opp-stream-meta-chip">
                               Duration: {formatDuration(c.duration)}
                             </span>
                             <span className="opp-stream-meta-chip">
-                              Agent: {c.agentName || (c as any).callerName || deal.assignedAgentName || 'IRM'}
+                              Agent: {c.agentName || (c as any).callerName || deal.assignedAgentName || 'Unassigned'}
                             </span>
                           </div>
                         </div>
@@ -774,11 +1057,13 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
                         <div className="opp-stream-body">
                           <div className="opp-stream-item-top">
                             <span className="opp-stream-action-name">
-                              Scheduled Follow-up: {(f as any).title || (f.followupType ? f.followupType.toUpperCase() : 'Term Sheet Discussion')}
+                              Scheduled Follow-up: {(f as any).title || (f.followupType ? f.followupType.toUpperCase() : 'General Follow-up')}
                             </span>
                             <span className="opp-stream-time">{formatDate(f.scheduledAt || (f as any).createdAt)}</span>
                           </div>
-                          <div className="opp-stream-notes">{f.notes || 'Follow-up regarding tranche confirmation'}</div>
+                          <div className="opp-stream-notes">
+                            {f.notes ? f.notes : <span style={{ opacity: 0.6, fontStyle: 'italic' }}>No notes provided</span>}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -801,7 +1086,7 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
                   </div>
                   <span className="opp-vault-verified-tag">
                     <ShieldCheck size={14} color="#84cc16" />
-                    <span>{docsCount} of 4 Documents Verified</span>
+                    <span>{docsCount} of 4 Documents Uploaded</span>
                   </span>
                 </div>
 
@@ -818,15 +1103,22 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
                       </div>
                     </div>
                     <div className="opp-vault-item-bottom">
-                      <span className="opp-vault-status-pill verified">
-                        <Check size={11} /> Verified
-                      </span>
-                      {kycData?.panDoc?.url ? (
-                        <a href={kycData.panDoc.url} target="_blank" rel="noopener noreferrer" className="opp-vault-link">
-                          <Download size={12} /> View File
-                        </a>
+                      {panDocUrl ? (
+                        <>
+                          <span className="opp-vault-status-pill verified">
+                            <Check size={11} /> Uploaded
+                          </span>
+                          <a href={panDocUrl} target="_blank" rel="noopener noreferrer" className="opp-vault-link">
+                            <Download size={12} /> View File
+                          </a>
+                        </>
                       ) : (
-                        <span className="opp-vault-no-file">Stored via Compliance</span>
+                        <>
+                          <span className="opp-vault-status-pill pending">
+                            <Clock size={11} /> Not Uploaded
+                          </span>
+                          <span className="opp-vault-no-file">No document attached</span>
+                        </>
                       )}
                     </div>
                   </div>
@@ -843,15 +1135,22 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
                       </div>
                     </div>
                     <div className="opp-vault-item-bottom">
-                      <span className="opp-vault-status-pill verified">
-                        <Check size={11} /> Verified
-                      </span>
-                      {kycData?.aadhaarDoc?.url ? (
-                        <a href={kycData.aadhaarDoc.url} target="_blank" rel="noopener noreferrer" className="opp-vault-link">
-                          <Download size={12} /> View File
-                        </a>
+                      {aadhaarDocUrl ? (
+                        <>
+                          <span className="opp-vault-status-pill verified">
+                            <Check size={11} /> Uploaded
+                          </span>
+                          <a href={aadhaarDocUrl} target="_blank" rel="noopener noreferrer" className="opp-vault-link">
+                            <Download size={12} /> View File
+                          </a>
+                        </>
                       ) : (
-                        <span className="opp-vault-no-file">Stored via Compliance</span>
+                        <>
+                          <span className="opp-vault-status-pill pending">
+                            <Clock size={11} /> Not Uploaded
+                          </span>
+                          <span className="opp-vault-no-file">No document attached</span>
+                        </>
                       )}
                     </div>
                   </div>
@@ -868,15 +1167,22 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
                       </div>
                     </div>
                     <div className="opp-vault-item-bottom">
-                      <span className="opp-vault-status-pill verified">
-                        <Check size={11} /> Verified
-                      </span>
-                      {kycData?.bankProofDoc?.url ? (
-                        <a href={kycData.bankProofDoc.url} target="_blank" rel="noopener noreferrer" className="opp-vault-link">
-                          <Download size={12} /> View File
-                        </a>
+                      {bankProofDocUrl ? (
+                        <>
+                          <span className="opp-vault-status-pill verified">
+                            <Check size={11} /> Uploaded
+                          </span>
+                          <a href={bankProofDocUrl} target="_blank" rel="noopener noreferrer" className="opp-vault-link">
+                            <Download size={12} /> View File
+                          </a>
+                        </>
                       ) : (
-                        <span className="opp-vault-no-file">Stored via Compliance</span>
+                        <>
+                          <span className="opp-vault-status-pill pending">
+                            <Clock size={11} /> Not Uploaded
+                          </span>
+                          <span className="opp-vault-no-file">No document attached</span>
+                        </>
                       )}
                     </div>
                   </div>
@@ -893,17 +1199,75 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
                       </div>
                     </div>
                     <div className="opp-vault-item-bottom">
-                      <span className="opp-vault-status-pill verified">
-                        <Check size={11} /> Verified
-                      </span>
-                      {kycData?.dematDoc?.url ? (
-                        <a href={kycData.dematDoc.url} target="_blank" rel="noopener noreferrer" className="opp-vault-link">
-                          <Download size={12} /> View File
-                        </a>
+                      {dematDocUrl ? (
+                        <>
+                          <span className="opp-vault-status-pill verified">
+                            <Check size={11} /> Uploaded
+                          </span>
+                          <a href={dematDocUrl} target="_blank" rel="noopener noreferrer" className="opp-vault-link">
+                            <Download size={12} /> View File
+                          </a>
+                        </>
                       ) : (
-                        <span className="opp-vault-no-file">Stored via Compliance</span>
+                        <>
+                          <span className="opp-vault-status-pill pending">
+                            <Clock size={11} /> Not Uploaded
+                          </span>
+                          <span className="opp-vault-no-file">No document attached</span>
+                        </>
                       )}
                     </div>
+                  </div>
+                </div>
+
+                {/* Route-Specific Legal Binders & Scheme Documents */}
+                <div style={{ marginTop: '24px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
+                    <div>
+                      <h4 style={{ margin: 0, fontSize: '13px', fontWeight: 800, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-secondary)' }}>
+                        {activeRouteMeta.name} — Scheme Documents & Binders
+                      </h4>
+                      <span style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
+                        Statutory investment execution paperwork for {activeRouteMeta.fundType}
+                      </span>
+                    </div>
+                    <button
+                      type="button"
+                      className="opp-vault-link"
+                      style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                      onClick={() => handleDownloadTerms(currentRoute)}
+                    >
+                      <Download size={13} /> Download Route Terms
+                    </button>
+                  </div>
+
+                  <div className="opp-vault-grid-list">
+                    {activeRouteMeta.documentsProvided.map((docName, idx) => (
+                      <div key={idx} className="opp-vault-item-card">
+                        <div className="opp-vault-item-top">
+                          <div className="opp-vault-ico red">
+                            <FileText size={16} />
+                          </div>
+                          <div>
+                            <h4 className="opp-vault-doc-title">{docName}</h4>
+                            <span className="opp-vault-doc-sub">{currentRoute === 'debenture' ? 'NCD / Debenture Route' : 'Direct AIF Scheme'}</span>
+                          </div>
+                        </div>
+                        <div className="opp-vault-item-bottom">
+                          <span className="opp-vault-status-pill scheduled">
+                            <Clock size={11} /> Prepared on Allocation
+                          </span>
+                          <button
+                            type="button"
+                            className="opp-vault-link"
+                            style={{ background: 'none', border: 'none', cursor: 'pointer', padding: 0 }}
+                            onClick={() => handleDownloadTerms(currentRoute)}
+                          >
+                            <Download size={12} /> View Terms
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               </div>
@@ -911,6 +1275,190 @@ export const OpportunityProfileWorkspace: React.FC<OpportunityProfileWorkspacePr
           )}
         </main>
       </div>
+
+      {/* ── 3. Fund Details & Terms Modal (Matching GHL screenshots) ── */}
+      {showFundModal && (
+        <div className="opp-fund-modal-overlay" onClick={() => setShowFundModal(false)}>
+          <div className={`opp-fund-modal-dialog ${isDark ? 'dark-theme' : 'light-theme'}`} onClick={e => e.stopPropagation()}>
+            <div className="opp-fund-modal-head">
+              <h2 className="opp-fund-modal-title">
+                <FileText size={18} color="#9b1c24" />
+                <span>GHL India Ventures — Fund Terms & Investment Schemes</span>
+              </h2>
+              <button
+                type="button"
+                className="opp-fund-modal-close"
+                onClick={() => setShowFundModal(false)}
+                title="Close dialog"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <div className="opp-fund-modal-body">
+              {/* Route Selector Pills */}
+              <div className="opp-modal-route-bar">
+                <button
+                  type="button"
+                  className={`opp-modal-route-btn ${fundModalRoute === 'debenture' ? 'active' : ''}`}
+                  onClick={() => setFundModalRoute('debenture')}
+                >
+                  Alternate route to Invest in AIF via Debenture
+                </button>
+                <button
+                  type="button"
+                  className={`opp-modal-route-btn ${fundModalRoute === 'direct_aif' ? 'active' : ''}`}
+                  onClick={() => setFundModalRoute('direct_aif')}
+                >
+                  Direct AIF Route
+                </button>
+              </div>
+
+              {/* Scheme Sheet Content */}
+              {(() => {
+                const modalMeta = INVESTMENT_ROUTES[fundModalRoute];
+                return (
+                  <div className="opp-fund-sheet-box">
+                    <div className="opp-fund-sheet-top">
+                      <div>
+                        <h3 className="opp-sheet-title">{modalMeta.name}</h3>
+                        <span style={{ fontSize: '12px', color: 'var(--text-secondary)' }}>
+                          {modalMeta.fundType}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        className="opp-btn-download-terms"
+                        onClick={() => handleDownloadTerms(fundModalRoute)}
+                        title="Download structured terms sheet"
+                      >
+                        <Download size={14} />
+                        <span>Download Terms</span>
+                      </button>
+                    </div>
+
+                    <div className="opp-fund-two-col">
+                      {/* Left: Key Terms Table */}
+                      <div>
+                        <table className="opp-fund-table">
+                          <tbody>
+                            <tr>
+                              <td className="opp-td-label">Focus</td>
+                              <td className="opp-td-val">{modalMeta.focus}</td>
+                            </tr>
+                            <tr>
+                              <td colSpan={2} style={{ padding: '12px 8px 4px 8px' }}>
+                                <div className="opp-section-subhead">Key Investment Terms</div>
+                              </td>
+                            </tr>
+                            <tr>
+                              <td className="opp-td-label">Minimum Investment</td>
+                              <td className="opp-td-val" style={{ fontWeight: 700, color: '#9b1c24' }}>
+                                {modalMeta.minInvestmentLabel}
+                              </td>
+                            </tr>
+                            <tr>
+                              <td className="opp-td-label">Target Returns</td>
+                              <td className="opp-td-val" style={{ fontWeight: 700 }}>
+                                {modalMeta.targetReturns}
+                              </td>
+                            </tr>
+                            <tr>
+                              <td className="opp-td-label">Return Structure</td>
+                              <td className="opp-td-val">{modalMeta.returnStructure}</td>
+                            </tr>
+                            {modalMeta.capitalAppreciation && (
+                              <tr>
+                                <td className="opp-td-label">Capital Appreciation</td>
+                                <td className="opp-td-val">{modalMeta.capitalAppreciation}</td>
+                              </tr>
+                            )}
+                            {modalMeta.totalAssuredReturns && (
+                              <tr>
+                                <td className="opp-td-label">Total Assured Returns</td>
+                                <td className="opp-td-val" style={{ fontWeight: 700, color: '#16a34a' }}>
+                                  {modalMeta.totalAssuredReturns}
+                                </td>
+                              </tr>
+                            )}
+                            <tr>
+                              <td className="opp-td-label">Payout Frequency</td>
+                              <td className="opp-td-val">{modalMeta.payoutFrequency}</td>
+                            </tr>
+                            <tr>
+                              <td className="opp-td-label">Taxation</td>
+                              <td className="opp-td-val">{modalMeta.taxation}</td>
+                            </tr>
+                            <tr>
+                              <td className="opp-td-label">Tenure</td>
+                              <td className="opp-td-val">{modalMeta.tenure}</td>
+                            </tr>
+                            <tr>
+                              <td className="opp-td-label">Fund Size</td>
+                              <td className="opp-td-val">{modalMeta.fundSize}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+
+                      {/* Right: Strategy, Documents & Security */}
+                      <div className="opp-fund-col-right">
+                        <div>
+                          <h4 className="opp-right-block-title">Investment Strategy</h4>
+                          <ul className="opp-bullet-list">
+                            {modalMeta.strategyBullets.map((bullet, idx) => (
+                              <li key={idx}>{bullet}</li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        <div>
+                          <h4 className="opp-right-block-title">Documents Provided</h4>
+                          <ul className="opp-bullet-list">
+                            {modalMeta.documentsProvided.map((doc, idx) => (
+                              <li key={idx}>{doc}</li>
+                            ))}
+                          </ul>
+                        </div>
+
+                        <div>
+                          <h4 className="opp-right-block-title">Security & Governance Structure</h4>
+                          <ul className="opp-bullet-list">
+                            {modalMeta.securityStructure.map((sec, idx) => (
+                              <li key={idx}>{sec}</li>
+                            ))}
+                          </ul>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+            </div>
+
+            <div className="opp-fund-modal-footer">
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setShowFundModal(false)}
+              >
+                Close
+              </button>
+              <button
+                type="button"
+                className="opp-modal-apply-btn"
+                onClick={() => {
+                  handleSelectRoute(fundModalRoute);
+                  setShowFundModal(false);
+                }}
+              >
+                <Check size={14} />
+                <span>Apply This Route to Deal ({INVESTMENT_ROUTES[fundModalRoute].name})</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
