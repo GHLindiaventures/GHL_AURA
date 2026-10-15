@@ -562,9 +562,9 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         transcription: undefined,
         notes: finalNotes || undefined,
         reason: reason || undefined,
-        callModule: lastCallRecord.callModule,
-        module: lastCallRecord.callModule,
-        isFromOther: lastCallRecord.isFromOther,
+        callModule: (user?.role?.code === 'irm' || (user as any)?.roleCode === 'irm') ? lastCallRecord.callModule : undefined,
+        module: (user?.role?.code === 'irm' || (user as any)?.roleCode === 'irm') ? lastCallRecord.callModule : undefined,
+        isFromOther: (user?.role?.code === 'irm' || (user as any)?.roleCode === 'irm') ? lastCallRecord.isFromOther : undefined,
         leadId: rawLeadId,
         customerId: rawCustomerId,
         twilioCallSid: lastCallRecord.twilioCallSid,
@@ -632,9 +632,8 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const isCallFromOpportunities = callMod === 'opportunities';
       const isCallFromInvestor360 = callMod === 'investor_360';
       const isCallFromOther = callMod === 'other';
-      const isCustomerContact = lastCallRecord.matchedRecord?.type === 'customer' || Boolean(lastCallRecord.customerId);
-      const isCallFromMyLeads = callMod === 'my_leads' || (!isCallFromFollowup && !isCallFromKyc && !isCallFromOpportunities && !isCallFromInvestor360 && !isCallFromOther && !isCustomerContact);
       const isIrmRole = user?.role?.code === 'irm' || (user as any)?.roleCode === 'irm';
+      const isCallFromMyLeads = isIrmRole && (callMod === 'my_leads' || (!isCallFromFollowup && !isCallFromKyc && !isCallFromOpportunities && !isCallFromInvestor360 && !isCallFromOther && !isCustomerContact));
 
       // Locate matched deal / customer / investor if any
       const callTargetId = lastCallRecord.customerId || lastCallRecord.matchedRecord?.id;

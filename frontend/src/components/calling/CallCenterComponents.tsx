@@ -1187,17 +1187,19 @@ export const DispositionModal: React.FC = () => {
     d.setDate(d.getDate() + 1);
     const freshTomorrow = d.toISOString().slice(0, 10);
     const isFollowup = !!lastCallRecord.sourceFollowupId;
-    const isIrm = user?.role?.code === 'irm';
+    const isIrm = user?.role?.code === 'irm' || (user as any)?.roleCode === 'irm';
     const isIrmLead = isIrm && lastCallRecord.matchedRecord?.type === 'lead';
     const isSimulated = !!lastCallRecord.isSimulated;
     const isNotConnected = !isSimulated && lastCallRecord.duration === 0;
 
-    const currentModule = normalizeModule(lastCallRecord.callModule) ||
-      (lastCallRecord.sourceFollowupId ? 'follow_up' : (lastCallRecord.matchedRecord?.type === 'lead' ? 'my_leads' : 'investor_360'));
-    const isFromOther = !!(lastCallRecord as any)?.isFromOther || currentModule === 'other' || (typeof window !== 'undefined' && window.location?.pathname?.includes('/other'));
+    const currentModule = isIrm
+      ? (normalizeModule(lastCallRecord.callModule) ||
+        (lastCallRecord.sourceFollowupId ? 'follow_up' : (lastCallRecord.matchedRecord?.type === 'lead' ? 'my_leads' : 'investor_360')))
+      : undefined;
+    const isFromOther = isIrm && (!!(lastCallRecord as any)?.isFromOther || currentModule === 'other' || (typeof window !== 'undefined' && window.location?.pathname?.includes('/other')));
 
     let defaultDispo: CallDisposition;
-    if (isIrm) {
+    if (isIrm && currentModule) {
       const rawAllowed = IRM_MODULE_OUTCOMES[currentModule] || ['Call Back', 'Other', 'No Response'];
       const allowed = isFromOther ? rawAllowed.filter(d => d !== 'Contacted') : rawAllowed;
       if (isSimulated || isNotConnected) {
@@ -1206,7 +1208,7 @@ export const DispositionModal: React.FC = () => {
         defaultDispo = allowed.includes('Follow-up Required') ? 'Follow-up Required' : (allowed.includes('Contacted') ? 'Contacted' : allowed[0]);
       }
     } else {
-      defaultDispo = 'Interested';
+      defaultDispo = (isSimulated || isNotConnected) ? 'No Response' : 'Interested';
     }
 
     setDisposition(defaultDispo);
@@ -1245,21 +1247,22 @@ export const DispositionModal: React.FC = () => {
 
   if (!showDispositionModal || !lastCallRecord) return null;
 
-  const isGhlSalesExec = (tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01' || tenant?.id === '1' || tenant?.slug === '1' || tenant?.name?.toLowerCase().includes('ghl') || user?.companySlug === 'ghl') && user?.role?.code === 'sales_executive';
+  const roleCode = user?.role?.code || (user as any)?.roleCode;
+  const isIrm = roleCode === 'irm';
   const isFollowupCall = !!lastCallRecord.sourceFollowupId;
-  const isIrm = user?.role?.code === 'irm';
   const isSimulated = !!lastCallRecord.isSimulated;
   const isNotConnected = !isSimulated && lastCallRecord.duration === 0;
 
-  const currentModule = normalizeModule(lastCallRecord.callModule) ||
-    (lastCallRecord.sourceFollowupId ? 'follow_up' : (lastCallRecord.matchedRecord?.type === 'lead' ? 'my_leads' : 'investor_360'));
-  const isFromOther = !!(lastCallRecord as any)?.isFromOther || currentModule === 'other' || (typeof window !== 'undefined' && window.location?.pathname?.includes('/other'));
+  const currentModule = isIrm
+    ? (normalizeModule(lastCallRecord.callModule) ||
+      (lastCallRecord.sourceFollowupId ? 'follow_up' : (lastCallRecord.matchedRecord?.type === 'lead' ? 'my_leads' : 'investor_360')))
+    : undefined;
+  const isFromOther = isIrm && (!!(lastCallRecord as any)?.isFromOther || currentModule === 'other' || (typeof window !== 'undefined' && window.location?.pathname?.includes('/other')));
 
-  const allDispositions: CallDisposition[] = [
+  const SALES_EXEC_DISPOSITIONS: CallDisposition[] = [
     'Interested',
     'Follow-up Required',
     'Call Back',
-    'Converted',
     'Not Interested',
     'Wrong Number',
     'No Response',
@@ -1267,7 +1270,7 @@ export const DispositionModal: React.FC = () => {
 
   const FOLLOWUP_CALL_OUTCOMES: CallDisposition[] = ['Interested', 'Follow-up Required', 'Call Back', 'Not Interested', 'No Response'];
 
-  const rawAllowed: CallDisposition[] = IRM_MODULE_OUTCOMES[currentModule] || ['Call Back', 'Other', 'No Response'];
+  const rawAllowed: CallDisposition[] = (currentModule && IRM_MODULE_OUTCOMES[currentModule]) || ['Call Back', 'Other', 'No Response'];
   const irmDispositions: CallDisposition[] = isFromOther
     ? rawAllowed.filter(d => d !== 'Contacted')
     : rawAllowed;
@@ -1276,9 +1279,7 @@ export const DispositionModal: React.FC = () => {
     ? irmDispositions
     : (isFollowupCall
         ? FOLLOWUP_CALL_OUTCOMES
-        : (isGhlSalesExec || tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01' || tenant?.id === '1' || tenant?.slug === '1')
-          ? allDispositions.filter(d => d !== 'Converted')
-          : allDispositions);
+        : SALES_EXEC_DISPOSITIONS);
 
   const handleSave = async () => {
     if (isSubmitting) return;
