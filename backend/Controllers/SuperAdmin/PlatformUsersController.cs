@@ -575,6 +575,7 @@ public class PlatformUsersController : ControllerBase
         var currentMonthLeads = await _context.Leads.CountAsync(l => l.CreatedAt >= currentMonthStart && l.CreatedAt < nextMonthStart, ct);
         var previousMonthLeads = await _context.Leads.CountAsync(l => l.CreatedAt >= prevMonthStart && l.CreatedAt < currentMonthStart, ct);
 
+        await ConvertedCustomersController.SyncConvertedCustomersAsync(_context, ct);
         var totalCustomers = await _context.Customers.CountAsync(ct);
         decimal ghlDealSum = 0m;
         try

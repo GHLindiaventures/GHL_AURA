@@ -142,6 +142,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         { id: 'admin-dashboard', label: 'Platform Console', icon: <LayoutDashboard size={18} /> },
         { id: 'admin-companies', label: 'Companies (Tenants)', icon: <Building2 size={18} /> },
         { id: 'admin-users', label: 'Cross-Tenant Users', icon: <Users size={18} /> },
+        { id: 'admin-converted-customers', label: 'Converted Customers', icon: <UserCheck size={18} /> },
         { id: 'admin-roles', label: 'Role Management', icon: <Shield size={18} /> },
         { id: 'admin-features', label: 'Feature Packages', icon: <Sparkles size={18} /> },
         { id: 'admin-call-config', label: 'Call Configuration', icon: <PhoneCall size={18} /> },
@@ -171,6 +172,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         ] : []),
         { id: 'followups', label: 'Follow-ups', icon: <CalendarCheck size={18} />, feature: FEATURES.FOLLOWUPS, permission: PERMISSIONS.FOLLOWUPS_VIEW },
         { id: 'customers', label: 'Customers 360', icon: <Building2 size={18} />, feature: FEATURES.CUSTOMERS, permission: PERMISSIONS.CUSTOMERS_VIEW },
+        { id: 'converted-customers', label: 'Converted Customers', icon: <UserCheck size={18} />, feature: FEATURES.CUSTOMERS, permission: PERMISSIONS.CUSTOMERS_VIEW },
         { id: 'pipeline', label: 'Pipeline', icon: <Kanban size={18} />, feature: FEATURES.DEALS, permission: PERMISSIONS.DEALS_VIEW },
         ...(isGhlAdmin ? [
           { id: 'archived-leads', label: 'Archived Leads', icon: <Trash2 size={18} />, feature: FEATURES.LEADS, permission: PERMISSIONS.LEADS_VIEW }

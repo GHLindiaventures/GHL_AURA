@@ -22,6 +22,9 @@ export const routeToPath = (route: string, isSuperAdmin: boolean): string => {
         return '/security';
       case 'admin-documents':
         return '/documents';
+      case 'admin-converted-customers':
+      case 'converted-customers':
+        return '/converted-customers';
       case 'admin-tickets':
         return '/tickets';
       case 'admin-system':
@@ -47,6 +50,8 @@ export const routeToPath = (route: string, isSuperAdmin: boolean): string => {
         return '/audit';
       case 'support':
         return '/support';
+      case 'converted-customers':
+        return '/converted-customers';
       case 'irm-other':
       case 'other':
         return '/other';
@@ -80,6 +85,8 @@ export const pathToRoute = (pathname: string, isSuperAdmin: boolean): string => 
         return 'admin-audit';
       case '/security':
         return 'admin-security';
+      case '/converted-customers':
+        return 'admin-converted-customers';
       case '/tickets':
         return 'admin-tickets';
       case '/system-health':
@@ -105,6 +112,8 @@ export const pathToRoute = (pathname: string, isSuperAdmin: boolean): string => 
         return 'company-audit';
       case '/support':
         return 'support';
+      case '/converted-customers':
+        return 'converted-customers';
       case '/other':
         return 'irm-other';
       default: {
@@ -181,6 +190,7 @@ import { PlatformAuditPage } from './pages/Admin/Audit/PlatformAuditPage';
 import { PlatformSystemPage } from './pages/Admin/System/PlatformSystemPage';
 import { PlatformSecurityPage } from './pages/Admin/Security/PlatformSecurityPage';
 import { PlatformTicketsPage } from './pages/Admin/Tickets/PlatformTicketsPage';
+import { ConvertedCustomersPage } from './pages/Admin/Customers/ConvertedCustomersPage';
 import { TenantSupportPage } from './pages/Support/TenantSupportPage';
 import { signalRService } from './services/signalRService';
 
@@ -718,6 +728,8 @@ export const App: React.FC = () => {
             <PlatformAuditPage />
           ) : currentRoute === 'admin-tickets' ? (
             <PlatformTicketsPage />
+          ) : currentRoute === 'admin-converted-customers' || currentRoute === 'converted-customers' ? (
+            <ConvertedCustomersPage onNavigate={navigate} />
           ) : currentRoute === 'admin-system' ? (
             <PlatformSystemPage />
           ) : currentRoute === 'admin-security' ? (
@@ -780,6 +792,10 @@ export const App: React.FC = () => {
       ) : currentRoute === 'customers' ? (
         <ProtectedRoute permission={PERMISSIONS.CUSTOMERS_VIEW}>
           <CustomersPage />
+        </ProtectedRoute>
+      ) : currentRoute === 'converted-customers' ? (
+        <ProtectedRoute permission={PERMISSIONS.CUSTOMERS_VIEW}>
+          <ConvertedCustomersPage onNavigate={navigate} />
         </ProtectedRoute>
       ) : currentRoute === 'pipeline' ? (
         <ProtectedRoute permission={PERMISSIONS.DEALS_VIEW}>
