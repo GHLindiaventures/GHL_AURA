@@ -231,6 +231,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
     {
       header: 'Help and Support',
       items: [
+        { id: 'support', label: 'Helpdesk & Support', icon: <Ticket size={18} /> },
         { id: 'chat', label: 'Chat', icon: <MessageSquare size={18} />, badge: unreadChatCount > 0 ? unreadChatCount : undefined },
         { id: 'smarty-ai', label: 'Smarty AI', icon: <Sparkles size={18} /> },
       ],
@@ -272,6 +273,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
     {
       header: 'Help and Support',
       items: [
+        { id: 'support', label: 'Helpdesk & Support', icon: <Ticket size={18} /> },
         { id: 'chat', label: 'Chat', icon: <MessageSquare size={18} />, badge: unreadChatCount > 0 ? unreadChatCount : undefined },
         { id: 'smarty-ai', label: 'Smarty AI', icon: <Sparkles size={18} /> },
       ],
@@ -324,6 +326,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
     {
       header: 'Help and Support',
       items: [
+        { id: 'support', label: 'Helpdesk & Support', icon: <Ticket size={18} /> },
         { id: 'chat', label: 'Chat', icon: <MessageSquare size={18} />, badge: unreadChatCount > 0 ? unreadChatCount : undefined },
         { id: 'smarty-ai', label: 'Smarty AI', icon: <Sparkles size={18} /> },
       ],

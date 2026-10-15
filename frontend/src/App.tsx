@@ -45,6 +45,8 @@ export const routeToPath = (route: string, isSuperAdmin: boolean): string => {
         return '/settings';
       case 'company-audit':
         return '/audit';
+      case 'support':
+        return '/support';
       case 'irm-other':
       case 'other':
         return '/other';
@@ -101,6 +103,8 @@ export const pathToRoute = (pathname: string, isSuperAdmin: boolean): string => 
         return 'company-settings';
       case '/audit':
         return 'company-audit';
+      case '/support':
+        return 'support';
       case '/other':
         return 'irm-other';
       default: {
@@ -177,6 +181,7 @@ import { PlatformAuditPage } from './pages/Admin/Audit/PlatformAuditPage';
 import { PlatformSystemPage } from './pages/Admin/System/PlatformSystemPage';
 import { PlatformSecurityPage } from './pages/Admin/Security/PlatformSecurityPage';
 import { PlatformTicketsPage } from './pages/Admin/Tickets/PlatformTicketsPage';
+import { TenantSupportPage } from './pages/Support/TenantSupportPage';
 import { signalRService } from './services/signalRService';
 
 import { ProtectedRoute } from './components/common/Guards';
@@ -862,6 +867,8 @@ export const App: React.FC = () => {
         <ChatPage onNavigate={navigate} />
       ) : currentRoute === 'smarty-ai' ? (
         <SmartyAIPage />
+      ) : currentRoute === 'support' ? (
+        <TenantSupportPage />
       ) : currentRoute === 'profile' ? (
         <ProfilePage />
       ) : currentRoute === 'reports' ? (

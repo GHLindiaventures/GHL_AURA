@@ -1804,16 +1804,39 @@ export class SuperAdminService {
     status?: string;
     priority?: string;
     category?: string;
+    tenantId?: string | number;
     search?: string;
   }): Promise<PlatformTicket[]> {
     const params: Record<string, any> = {};
     if (filters?.status && filters.status !== 'all') params.status = filters.status;
     if (filters?.priority && filters.priority !== 'all') params.priority = filters.priority;
     if (filters?.category && filters.category !== 'all') params.category = filters.category;
+    if (filters?.tenantId && filters.tenantId !== 'all') params.tenantId = filters.tenantId;
     if (filters?.search) params.search = filters.search;
 
-    const res = await apiClient.get<ApiResponse<PlatformTicket[]>>('/super-admin/tickets', { params });
+    const res = await apiClient.get<ApiResponse<PlatformTicket[]>>('/super-admin/tickets', params);
     return res?.data || [];
+  }
+
+  async fetchPlatformTicketMetricsApi(): Promise<{
+    total: number;
+    critical: number;
+    inProgress: number;
+    resolved: number;
+    open: number;
+    statusCounts: Record<string, number>;
+    priorityCounts: Record<string, number>;
+  }> {
+    const res = await apiClient.get<ApiResponse<any>>('/super-admin/tickets/metrics');
+    return res?.data || {
+      total: 0,
+      critical: 0,
+      inProgress: 0,
+      resolved: 0,
+      open: 0,
+      statusCounts: {},
+      priorityCounts: {},
+    };
   }
 
   async fetchPlatformTicketByIdApi(id: string): Promise<PlatformTicket> {
@@ -1833,6 +1856,7 @@ export class SuperAdminService {
     reportedByName?: string;
     reportedByEmail?: string;
     assignedToName?: string;
+    assignedToEmail?: string;
   }): Promise<PlatformTicket> {
     const res = await apiClient.post<ApiResponse<PlatformTicket>>('/super-admin/tickets', ticket);
     if (!res || !res.data) {
@@ -1858,12 +1882,31 @@ export class SuperAdminService {
     return res.data;
   }
 
-  async updateTicketPriorityApi(id: string, priority: string): Promise<PlatformTicket> {
+  async updateTicketPriorityApi(id: string, priority: string, note?: string): Promise<PlatformTicket> {
     const res = await apiClient.put<ApiResponse<PlatformTicket>>(`/super-admin/tickets/${id}/priority`, {
+      priority,
       status: priority,
+      note,
     });
     if (!res || !res.data) {
       throw new Error(res?.message || 'Failed to update ticket priority');
+    }
+    return res.data;
+  }
+
+  async assignPlatformTicketApi(
+    id: string,
+    assignedToName: string,
+    assignedToEmail?: string,
+    note?: string
+  ): Promise<PlatformTicket> {
+    const res = await apiClient.put<ApiResponse<PlatformTicket>>(`/super-admin/tickets/${id}/assign`, {
+      assignedToName,
+      assignedToEmail,
+      note,
+    });
+    if (!res || !res.data) {
+      throw new Error(res?.message || 'Failed to assign ticket');
     }
     return res.data;
   }

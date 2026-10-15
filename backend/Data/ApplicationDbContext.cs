@@ -50,6 +50,8 @@ public class ApplicationDbContext : DbContext
     public DbSet<UserMfaSetting> UserMfaSettings => Set<UserMfaSetting>();
     public DbSet<MfaRecoveryCode> MfaRecoveryCodes => Set<MfaRecoveryCode>();
     public DbSet<MfaChallenge> MfaChallenges => Set<MfaChallenge>();
+    public DbSet<PlatformTicket> PlatformTickets => Set<PlatformTicket>();
+    public DbSet<PlatformTicketEvent> PlatformTicketEvents => Set<PlatformTicketEvent>();
 
     // IRM Entities
     public DbSet<Investor> Investors => Set<Investor>();
@@ -594,5 +596,26 @@ public class ApplicationDbContext : DbContext
                 UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             }
         );
+
+        modelBuilder.Entity<PlatformTicket>(b =>
+        {
+            b.ToTable("platform_tickets");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => x.TicketNumber).IsUnique();
+            b.HasIndex(x => x.Status);
+            b.HasIndex(x => x.Priority);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.CreatedAt);
+            b.HasOne(x => x.Tenant).WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.SetNull);
+            b.HasMany(x => x.Timeline).WithOne(x => x.Ticket).HasForeignKey(x => x.TicketId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PlatformTicketEvent>(b =>
+        {
+            b.ToTable("platform_ticket_events");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => x.TicketId);
+            b.HasIndex(x => x.CreatedAt);
+        });
     }
 }
