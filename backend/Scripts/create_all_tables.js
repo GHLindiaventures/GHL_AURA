@@ -1,8 +1,11 @@
 const { Client } = require('pg');
 
-const client = new Client({
-  connectionString: 'postgresql://neondb_owner:npg_wIWrXLJV9fF3@ep-sparkling-leaf-b3evey2y.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require'
-});
+const connectionString = process.env.DATABASE_URL;
+if (!connectionString) {
+  console.error('ERROR: DATABASE_URL environment variable must be set.');
+  process.exit(1);
+}
+const client = new Client({ connectionString });
 
 const sql = `
 -- 1. PropertyProjects (Jamin Bazaar)

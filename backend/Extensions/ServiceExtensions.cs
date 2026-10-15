@@ -21,7 +21,8 @@ public static class ServiceExtensions
         // 1. Database Context
         services.AddMemoryCache();
         var connectionString = configuration.GetConnectionString("DefaultConnection")
-                               ?? throw new InvalidOperationException("DefaultConnection connection string is not configured.");
+                               ?? configuration["DATABASE_URL"]
+                               ?? throw new InvalidOperationException("Database connection string ('DefaultConnection' or 'DATABASE_URL') is not configured.");
 
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseNpgsql(connectionString));

@@ -1,4 +1,4 @@
--- Run this SQL directly against the Neon DB to create the new GHL tables
+-- Run this SQL directly against the DigitalOcean PostgreSQL DB to create the new GHL tables
 -- and mark the migration as applied in EF migration history
 
 -- ── 1. GhlDeals ──────────────────────────────────────────────────────────────

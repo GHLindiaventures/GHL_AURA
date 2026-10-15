@@ -1,12 +1,15 @@
 const { Client } = require('pg');
 
 async function main() {
-  const client = new Client({
-    connectionString: 'postgres://neondb_owner:npg_wIWrXLJV9fF3@ep-sparkling-leaf-b3evey2y.c-4.ap-southeast-1.aws.neon.tech/neondb?sslmode=require'
-  });
+  const connectionString = process.env.DATABASE_URL;
+  if (!connectionString) {
+    console.error('ERROR: DATABASE_URL environment variable must be set.');
+    process.exit(1);
+  }
+  const client = new Client({ connectionString });
 
   await client.connect();
-  console.log('Connected to Neon PostgreSQL.');
+  console.log('Connected to DigitalOcean PostgreSQL.');
 
   await client.query('ALTER TABLE "GhlDeals" ALTER COLUMN "CustomerId" DROP NOT NULL;');
   console.log('Successfully dropped NOT NULL on "GhlDeals"."CustomerId"');

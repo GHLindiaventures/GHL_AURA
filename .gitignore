@@ -40,6 +40,9 @@ lerna-debug.log*
 .env.production.local
 *.env
 !.env.example
+**/appsettings.json
+**/appsettings.*.json
+!**/appsettings.example.json
 
 # OS Generated Files
 .DS_Store

@@ -654,7 +654,7 @@ export const FollowupsPage: React.FC = () => {
       investmentRange: investmentCapacity,
     };
 
-    // Save deal to DB (API) — this persists stage='qualified_investor' in Neon
+    // Save deal to DB (API) — this persists stage='qualified_investor' in DigitalOcean DB
     try {
       await apiSaveDeal(kycDeal);
     } catch (err) {

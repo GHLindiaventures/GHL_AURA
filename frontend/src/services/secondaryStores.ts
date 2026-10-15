@@ -1,7 +1,7 @@
 /**
  * secondaryStores.ts
  * In-memory reactive stores for secondary and operational entities that do not
- * currently have tables in the Neon PostgreSQL database.
+ * currently have tables in the DigitalOcean PostgreSQL database.
  *
  * All primary CRM business data (Leads, Customers, Follow-ups, Consultations,
  * Calls, and Auth) is routed through the real ASP.NET Core backend APIs via crmApi.ts.

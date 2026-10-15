@@ -25,7 +25,7 @@ export const AuthLayout: React.FC = () => {
           <div className="auth-logo-badge">
             ⚡
           </div>
-          <h2 className="auth-title">NexusSales Platform</h2>
+          <h2 className="auth-title">GHL AURA Platform</h2>
           <p className="auth-subtitle">
             Multi-Tenant Sales CRM & Real-Time Calling Engine
           </p>
