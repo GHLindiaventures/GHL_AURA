@@ -65,6 +65,12 @@ public class ApplicationDbContext : DbContext
     public DbSet<LeaveRequestEvent> LeaveRequestEvents => Set<LeaveRequestEvent>();
     public DbSet<AiChatLog> AiChatLogs => Set<AiChatLog>();
 
+    // Team Chat Entities
+    public DbSet<ChatConversation> ChatConversations => Set<ChatConversation>();
+    public DbSet<ChatParticipant> ChatParticipants => Set<ChatParticipant>();
+    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+    public DbSet<ChatAttachment> ChatAttachments => Set<ChatAttachment>();
+
     public override int SaveChanges()
     {
         NormalizeContacts();
@@ -591,5 +597,46 @@ public class ApplicationDbContext : DbContext
                 UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             }
         );
+
+        // ── Team Chat Relationships & Indices ──────────────────────────────────
+        modelBuilder.Entity<ChatConversation>(b =>
+        {
+            b.HasKey(c => c.Id);
+            b.HasIndex(c => new { c.CompanyId, c.Type });
+        });
+
+        modelBuilder.Entity<ChatParticipant>(b =>
+        {
+            b.HasKey(p => p.Id);
+            b.HasIndex(p => new { p.ConversationId, p.UserId }).IsUnique();
+            b.HasOne(p => p.Conversation)
+             .WithMany(c => c.Participants)
+             .HasForeignKey(p => p.ConversationId)
+             .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(p => p.User)
+             .WithMany()
+             .HasForeignKey(p => p.UserId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ChatMessage>(b =>
+        {
+            b.HasKey(m => m.Id);
+            b.HasIndex(m => new { m.ConversationId, m.CreatedAt });
+            b.HasOne(m => m.Conversation)
+             .WithMany(c => c.Messages)
+             .HasForeignKey(m => m.ConversationId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ChatAttachment>(b =>
+        {
+            b.HasKey(a => a.Id);
+            b.HasIndex(a => a.MessageId);
+            b.HasOne(a => a.Message)
+             .WithMany(m => m.Attachments)
+             .HasForeignKey(a => a.MessageId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
     }
 }
