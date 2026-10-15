@@ -27,7 +27,7 @@ import {
 } from 'lucide-react';
 import { useAuth } from '../../../context/AuthContext';
 import { useUnsavedChanges } from '../../../context/NavigationGuardContext';
-import { Tenant, User, SubscriptionPackage } from '../../../types';
+import { Tenant, User, SubscriptionPackage, TenantDidMapping } from '../../../types';
 import { superAdminService } from '../../../services/superAdminService';
 import { storageService } from '../../../services/storageService';
 import { FEATURES } from '../../../constants/features';
@@ -88,6 +88,7 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({
   const [drawerTab, setDrawerTab] = useState<'profile' | 'features' | 'users' | 'telephony' | 'danger'>('profile');
   const [drawerTenantEdit, setDrawerTenantEdit] = useState<Tenant | null>(null);
   const [drawerUsers, setDrawerUsers] = useState<User[]>([]);
+  const [didMappings, setDidMappings] = useState<TenantDidMapping[]>([]);
   const [saveSuccessMsg, setSaveSuccessMsg] = useState('');
 
   // Add User to Company Modal
@@ -150,6 +151,17 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({
     const id = String(tenant.id || '').toLowerCase().trim();
     const name = (tenant.name || '').toLowerCase().trim();
     return slug === 'jamin' || id === '2' || id === 't-jamin-02' || name.includes('jamin');
+  };
+
+  const getTenantDid = (t?: Tenant | null): string => {
+    if (!t) return '—';
+    const found = didMappings.find(
+      d => (d.tenantId && String(d.tenantId) === String(t.id)) ||
+           (d.tenantSlug && d.tenantSlug.toLowerCase() === (t.slug || '').toLowerCase())
+    );
+    if (found?.phoneNumber) return found.phoneNumber;
+    if (t.phone) return t.phone;
+    return 'Pending DID';
   };
 
   const isGhlUser = (u: User): boolean => {
@@ -275,12 +287,14 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({
     setIsLoading(true);
     setLoadError(null);
     try {
-      const [allTenants, allPackages] = await Promise.all([
+      const [allTenants, allPackages, allDids] = await Promise.all([
         superAdminService.fetchTenantsFromApi(),
         superAdminService.fetchPackagesFromApi(),
+        superAdminService.fetchDidMappingsFromApi().catch(() => superAdminService.getDidMappings()),
       ]);
       setTenants(allTenants);
       setPackages(allPackages);
+      setDidMappings(allDids || []);
 
       if (selectedTenantId) {
         const match = allTenants.find(t => t.id === selectedTenantId || t.slug === selectedTenantId);
@@ -711,7 +725,7 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({
                   <div className="meta-spec-item">
                     <span className="spec-label">Inbound DID</span>
                     <span className="spec-value font-mono">
-                      +91 80 4700 800{t.slug === 'ghl' ? '1' : t.slug === 'jamin' ? '2' : '9'}
+                      {getTenantDid(t)}
                     </span>
                   </div>
                 </div>
@@ -789,7 +803,7 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({
                     </td>
                     <td>{stats.usersCount}</td>
                     <td>
-                      <code>+91 80 4700 800{t.slug === 'ghl' ? '1' : t.slug === 'jamin' ? '2' : '9'}</code>
+                      <code>{getTenantDid(t)}</code>
                     </td>
                     <td>
                       <span className={`tenant-status-chip ${t.status?.toLowerCase() || 'active'}`}>
@@ -1578,7 +1592,7 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({
                       name="phone"
                       type="text"
                       className="form-control"
-                      value={drawerTenantEdit.phone || '+91 80 4700 8001'}
+                      value={drawerTenantEdit.phone || getTenantDid(drawerTenantEdit) || ''}
                       onChange={e => setDrawerTenantEdit({ ...drawerTenantEdit, phone: e.target.value })}
                     />
                   </div>

@@ -524,7 +524,7 @@ export const PlatformDocumentsPage: React.FC = () => {
                             if (doc.fileUrl && doc.fileUrl !== '#') {
                               window.open(doc.fileUrl, '_blank');
                             } else {
-                              showToast('error', 'This mock document does not have a real file URL attached.');
+                              showToast('error', 'This document does not have a valid file URL attached.');
                             }
                           }}
                         >
