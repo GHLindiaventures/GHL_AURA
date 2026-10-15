@@ -301,6 +301,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
   const [importResults, setImportResults] = useState<{ success: number; skipped: number } | null>(null);
 
   // Filter states
+  const [statusFilter, setStatusFilter] = useState('All');
   const [capacityFilter, setCapacityFilter] = useState('All');
   const [agentFilter, setAgentFilter] = useState('All');
   const [handoverFilter, setHandoverFilter] = useState('Mine');
@@ -637,6 +638,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
       });
       if (hasPendingFollowup) return false;
     }
+    if (!isGhlAdmin && statusFilter !== 'All' && (lead.status as string) !== statusFilter) return false;
     if (agentFilter !== 'All' && lead.assignedAgentName !== agentFilter) return false;
     if (capacityFilter !== 'All') {
       if (!matchCapacity(lead, capacityFilter)) return false;
@@ -1799,6 +1801,17 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
                   onChange: setHandoverFilter,
                   options: handoverOptions
                 }] : []),
+                ...(isGhlAdmin ? [] : [{
+                  key: 'status',
+                  label: 'Status',
+                  value: statusFilter,
+                  onChange: setStatusFilter,
+                  options: [
+                    { value: 'New', label: 'New' },
+                    { value: 'Callback', label: 'Callback' },
+                    { value: 'No Response', label: 'No Response' },
+                  ],
+                }]),
                 ...(!isExec ? [{
                   key: 'agent',
                   label: 'Agent',
@@ -1823,6 +1836,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
                 onChange: handleCustomDateChange,
               }}
               onClearAll={() => {
+                setStatusFilter('All');
                 setAgentFilter('All');
                 setCapacityFilter('All');
                 setHandoverFilter('Mine');

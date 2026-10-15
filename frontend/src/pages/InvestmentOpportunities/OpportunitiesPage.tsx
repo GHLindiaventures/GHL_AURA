@@ -11,27 +11,10 @@ import {
   Clock,
   CheckCircle,
   FileText,
-  User,
-  ShieldCheck,
-  IndianRupee,
-  TrendingUp,
-  Building2,
-  Users,
-  Copy,
-  Check,
-  ExternalLink,
-  CheckCircle2,
-  Hash,
-  Layers,
-  Landmark,
-  Sparkles,
-  ArrowLeft,
-  ChevronRight,
 } from 'lucide-react';
-import { InvestmentOpportunity, Investor, Deal, DealActivity, CallRecord, Consultation, Followup } from '../../types';
+import { InvestmentOpportunity, Investor, Deal, DealActivity } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useCall } from '../../context/CallContext';
-import { useTheme } from '../../context/ThemeContext';
 import { storageService } from '../../services/storageService';
 import {
   getOpportunities,
@@ -39,9 +22,6 @@ import {
   deleteOpportunity as apiDeleteOpportunity,
   getInvestors,
   getDeals,
-  getCalls,
-  getConsultations,
-  getFollowups,
   saveDeal as apiSaveDeal,
   addDealActivity as apiAddDealActivity,
   saveInvestor as apiSaveInvestor,
@@ -51,7 +31,6 @@ import { DataTable, Column, RowAction } from '../../components/common/DataTable'
 import { StatusChip } from '../../components/common/StatusChip';
 import { FilterBar } from '../../components/common/FilterBar';
 import { Modal } from '../../components/common/Modal';
-import { OpportunityProfileWorkspace } from './OpportunityProfileWorkspace';
 import { apiUrl } from '../../utils/apiUrl';
 import { getAuthHeaders } from '../../utils/authHeaders';
 import './OpportunitiesPage.css';
@@ -101,8 +80,6 @@ const BLANK_OPP_FORM: OppForm = {
 export const OpportunitiesPage: React.FC = () => {
   const { tenant, user } = useAuth();
   const { initiateCall } = useCall();
-  const { theme } = useTheme();
-  const isDark = theme === 'dark';
 
   const roleCode = (user?.role?.code || '').toLowerCase();
   const isExec = roleCode === 'sales_executive';
@@ -123,9 +100,6 @@ export const OpportunitiesPage: React.FC = () => {
   const [opps, setOpps] = useState<InvestmentOpportunity[]>([]);
   const [investors, setInvestors] = useState<Investor[]>([]);
   const [deals, setDeals] = useState<Deal[]>([]);
-  const [allCalls, setAllCalls] = useState<CallRecord[]>([]);
-  const [allConsultations, setAllConsultations] = useState<Consultation[]>([]);
-  const [allFollowups, setAllFollowups] = useState<Followup[]>([]);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   const showToast = (msg: string) => {
@@ -155,46 +129,19 @@ export const OpportunitiesPage: React.FC = () => {
   const [isEditingAmount, setIsEditingAmount] = useState<boolean>(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState<boolean>(false);
   const [loadError, setLoadError] = useState<string | null>(null);
-  const [activeDossierTab, setActiveDossierTab] = useState<'all' | 'basic' | 'identity' | 'bank' | 'demat' | 'nominees'>('all');
-  const [copiedField, setCopiedField] = useState<string | null>(null);
-  const [dealRoute, setDealRoute] = useState<'direct_aif' | 'debenture'>('direct_aif');
-
-  const copyToClipboard = (text: string, label: string) => {
-    if (!text || text === '—') return;
-    try {
-      navigator.clipboard.writeText(text);
-      setCopiedField(label);
-      setTimeout(() => setCopiedField(null), 2000);
-    } catch {}
-  };
-
-  const INVESTMENT_PRESETS = [
-    { label: '₹5L', value: 500000 },
-    { label: '₹10L', value: 1000000 },
-    { label: '₹25L', value: 2500000 },
-    { label: '₹50L', value: 5000000 },
-    { label: '₹1Cr', value: 10000000 },
-    { label: '₹2Cr', value: 20000000 },
-  ];
 
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadData = async () => {
     try {
       setLoadError(null);
-      const [oppsData, investorsData, dealsData, callsData, consultationsData, followupsData] = await Promise.all([
+      const [oppsData, investorsData, dealsData] = await Promise.all([
         getOpportunities(tenant?.id),
         getInvestors(tenant?.id),
         getDeals(tenant?.id),
-        getCalls(tenant?.id).catch(() => []),
-        getConsultations(tenant?.id).catch(() => []),
-        getFollowups(tenant?.id).catch(() => []),
       ]);
       setOpps(oppsData || []);
       setInvestors(investorsData || []);
       setDeals(dealsData || []);
-      setAllCalls(callsData || []);
-      setAllConsultations(consultationsData || []);
-      setAllFollowups(followupsData || []);
       setDetailDeal(prev => {
         if (!prev) return null;
         const fresh = (dealsData || []).find(d => d.id === prev.id);
@@ -538,13 +485,6 @@ export const OpportunitiesPage: React.FC = () => {
     setAmountInput(deal.value ? String(deal.value) : '');
     setIsEditingAmount(false);
     setShowConfirmDialog(false);
-    const initialRoute: 'direct_aif' | 'debenture' =
-      deal.investorType?.toLowerCase().includes('debenture') ||
-      (deal.investmentRoute === 'debenture') ||
-      (deal.value > 0 && deal.value < 10000000)
-        ? 'debenture'
-        : 'direct_aif';
-    setDealRoute(initialRoute);
   };
 
   const handleCloseDetailModal = () => {
@@ -574,13 +514,10 @@ export const OpportunitiesPage: React.FC = () => {
   const handleConfirmAmount = async () => {
     if (!detailDeal) return;
     const numericAmount = parseFloat(amountInput) || 0;
-    const routeName = dealRoute === 'debenture' ? 'Debenture' : 'Direct AIF';
     const updatedDeal: Deal = {
       ...detailDeal,
       value: numericAmount,
       investmentAmountConfirmed: true,
-      investorType: routeName,
-      investmentRoute: dealRoute,
     };
 
     // Save investment amount confirmed to DB
@@ -596,7 +533,7 @@ export const OpportunitiesPage: React.FC = () => {
     setIsEditingAmount(false);
     setShowConfirmDialog(false);
     loadData();
-    showToast(`✓ Investment amount ₹${numericAmount.toLocaleString('en-IN')} confirmed via ${routeName} for "${detailDeal.customerName}"`);
+    showToast(`✓ Investment amount ₹${numericAmount.toLocaleString('en-IN')} confirmed for "${detailDeal.customerName}"`);
   };
 
   const getDealKycStatus = (deal: Deal, liveKyc?: any): 'Pending' | 'Partially Completed' | 'Submitted' | 'Verified' | 'Wrong' => {
@@ -686,24 +623,23 @@ export const OpportunitiesPage: React.FC = () => {
             const res = await fetch(apiUrl(`/irm/kyc/${kycId}`), { headers: getAuthHeaders() });
             if (res.ok) {
               const json = await res.json();
-              if (json.success && json.data) {
-                if (json.data.panNumber || json.data.aadhaarNumber || json.data.bankName || json.data.status === 'Approved' || json.data.status === 'Verified') {
-                  kycRecord = json.data;
-                }
-              }
+              if (json.success && json.data) kycRecord = json.data;
             }
           } catch {}
         }
 
-        // 2. Fetch by phone (Primary unique identifier for investor dossier)
-        if (!kycRecord && detailDeal.phone && detailDeal.phone.trim()) {
-          try {
-            const res = await fetch(apiUrl(`/irm/kyc/by-phone?phone=${encodeURIComponent(detailDeal.phone.trim())}`), { headers: getAuthHeaders() });
-            if (res.ok) {
-              const json = await res.json();
-              if (json.success && json.data) kycRecord = json.data;
-            }
-          } catch {}
+        // 2. Fetch by numeric customer ID / investor ID
+        if (!kycRecord && detailDeal.customerId) {
+          const numId = parseInt(String(detailDeal.customerId).replace(/\D/g, ''), 10);
+          if (numId > 0) {
+            try {
+              const res = await fetch(apiUrl(`/irm/kyc/${numId}`), { headers: getAuthHeaders() });
+              if (res.ok) {
+                const json = await res.json();
+                if (json.success && json.data) kycRecord = json.data;
+              }
+            } catch {}
+          }
         }
 
         // 3. Fetch by email
@@ -717,7 +653,18 @@ export const OpportunitiesPage: React.FC = () => {
           } catch {}
         }
 
-        // 4. Fallback: match from all KYCs in DB
+        // 4. Fetch by phone
+        if (!kycRecord && detailDeal.phone && detailDeal.phone.trim()) {
+          try {
+            const res = await fetch(apiUrl(`/irm/kyc/by-phone?phone=${encodeURIComponent(detailDeal.phone.trim())}`), { headers: getAuthHeaders() });
+            if (res.ok) {
+              const json = await res.json();
+              if (json.success && json.data) kycRecord = json.data;
+            }
+          } catch {}
+        }
+
+        // 5. Fallback: match from all KYCs in DB
         if (!kycRecord) {
           try {
             const res = await fetch(apiUrl('/irm/kyc/all'), { headers: getAuthHeaders() });
@@ -728,7 +675,7 @@ export const OpportunitiesPage: React.FC = () => {
                 const cleanMail = (detailDeal.email || '').trim().toLowerCase();
                 const cleanName = (detailDeal.customerName || '').trim().toLowerCase();
 
-                const candidates = json.data.filter((k: any) => {
+                const matchedSummary = json.data.find((k: any) => {
                   const kp = (k.phone || '').replace(/\D/g, '').slice(-10);
                   if (pDigits && kp && pDigits === kp) return true;
                   const km = (k.email || '').trim().toLowerCase();
@@ -738,11 +685,8 @@ export const OpportunitiesPage: React.FC = () => {
                   return false;
                 });
 
-                // Prioritize approved/verified record or one with PAN number over empty draft
-                const bestCandidate = candidates.find((c: any) => c.status === 'Approved' || c.status === 'Verified' || c.panNumber) || candidates[0];
-
-                if (bestCandidate?.id) {
-                  const detailRes = await fetch(apiUrl(`/irm/kyc/${bestCandidate.id}`), { headers: getAuthHeaders() });
+                if (matchedSummary?.id) {
+                  const detailRes = await fetch(apiUrl(`/irm/kyc/${matchedSummary.id}`), { headers: getAuthHeaders() });
                   if (detailRes.ok) {
                     const detailJson = await detailRes.json();
                     if (detailJson.success && detailJson.data) kycRecord = detailJson.data;
@@ -751,20 +695,6 @@ export const OpportunitiesPage: React.FC = () => {
               }
             }
           } catch {}
-        }
-
-        // 5. Fetch by numeric investor ID via by-investor endpoint (as final fallback)
-        if (!kycRecord && detailDeal.customerId) {
-          const numId = parseInt(String(detailDeal.customerId).replace(/\D/g, ''), 10);
-          if (numId > 0) {
-            try {
-              const res = await fetch(apiUrl(`/irm/kyc/by-investor/${numId}`), { headers: getAuthHeaders() });
-              if (res.ok) {
-                const json = await res.json();
-                if (json.success && json.data) kycRecord = json.data;
-              }
-            } catch {}
-          }
         }
 
         if (!isCancelled) {
@@ -949,45 +879,10 @@ export const OpportunitiesPage: React.FC = () => {
         </div>
       )}
 
-      {detailDeal && !isGhlAdmin ? (
-        <OpportunityProfileWorkspace
-          deal={detailDeal}
-          liveKycData={liveKycData}
-          isKycLoading={isKycLoading}
-          amountInput={amountInput}
-          isEditingAmount={isEditingAmount}
-          activeDossierTab={activeDossierTab}
-          copiedField={copiedField}
-          isDark={isDark}
-          calls={allCalls}
-          consultations={allConsultations}
-          followups={allFollowups}
-          onClose={handleCloseDetailModal}
-          onCallInvestor={(name, phone, id) => initiateCall(name, phone, 'customer', id, undefined, 'opportunities')}
-          onConvertDeal={deal => {
-            handleAdvanceToConverted(deal);
-            handleCloseDetailModal();
-          }}
-          onEditAmount={handleEditAmount}
-          onAmountInputChange={val => setAmountInput(val)}
-          onRouteChange={route => setDealRoute(route)}
-          onConfirmAmountClick={(route) => {
-            if (route) setDealRoute(route);
-            const val = parseFloat(amountInput);
-            if (val && val > 0) {
-              setShowConfirmDialog(true);
-            }
-          }}
-          setActiveDossierTab={setActiveDossierTab}
-          copyToClipboard={copyToClipboard}
-          getDealKycStatus={getDealKycStatus}
-        />
-      ) : (
-        <>
-          <div className="page-header">
+      <div className="page-header">
         <div>
           <h1 className="page-title">
-            <Briefcase size={24} color={isGhlIrm ? '#84cc16' : isGhlAdmin ? '#ec4899' : '#0284c7'} />{' '}
+            <Briefcase size={24} color={(isGhlIrm || isGhlAdmin) ? '#ec4899' : '#0284c7'} />{' '}
             {(isGhlIrm || isGhlAdmin) ? 'Investment Opportunities & Term Sheets' : 'Investment Opportunities Syndicate'}
           </h1>
           <p className="page-subtitle">
@@ -1325,13 +1220,14 @@ export const OpportunitiesPage: React.FC = () => {
         </div>
       </Modal>
 
-      {/* ── Customer Detail Card Modal (GHL Admin Oversight Mode) ────────── */}
-      {detailDeal && isGhlAdmin && (
+      {/* ── Customer Detail Card Modal (IRM Only) ────────────────────────── */}
+      {detailDeal && (
         <Modal
-          isOpen={Boolean(detailDeal && isGhlAdmin)}
+          isOpen={!!detailDeal}
           onClose={handleCloseDetailModal}
           title="Customer Detail Card"
-          size="lg"
+          subtitle={`${detailDeal.customerName} • Deal Details`}
+          maxWidth={760}
           footer={
             <button
               type="button"
@@ -1343,111 +1239,98 @@ export const OpportunitiesPage: React.FC = () => {
           }
         >
           {(() => {
-            const kycData = liveKycData || {};
-            const isConfirmed = Boolean(detailDeal.investmentAmountConfirmed);
             const kycStatus = getDealKycStatus(detailDeal, liveKycData);
+            const kycBadgeStyles = {
+              Verified: { bg: '#ecfdf5', color: '#059669', border: '#a7f3d0' },
+              Submitted: { bg: '#eff6ff', color: '#2563eb', border: '#bfdbfe' },
+              'Partially Completed': { bg: '#fffbeb', color: '#d97706', border: '#fde68a' },
+              Wrong: { bg: '#fef2f2', color: '#dc2626', border: '#fecaca' },
+              Pending: { bg: '#f8fafc', color: '#64748b', border: '#cbd5e1' },
+            }[kycStatus];
+            const kycData = liveKycData;
+            const isConfirmed = Boolean(detailDeal.investmentAmountConfirmed) && !isEditingAmount;
 
             return (
               <div style={{ display: 'flex', flexDirection: 'column', gap: 20 }}>
-                {/* Header Information Card */}
+                {/* Header: Customer Name, Phone, Email */}
                 <div
                   style={{
-                    padding: '16px',
+                    padding: '16px 20px',
                     borderRadius: 10,
-                    border: '1px solid var(--border-color, #e2e8f0)',
                     background: 'var(--bg-surface-hover, #f8fafc)',
+                    border: '1px solid var(--border-color, #e2e8f0)',
                     display: 'flex',
-                    flexDirection: 'column',
-                    gap: 12,
+                    flexWrap: 'wrap',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    gap: 16,
                   }}
                 >
-                  <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', flexWrap: 'wrap', gap: 12 }}>
-                    <div>
-                      <div style={{ fontSize: 18, fontWeight: 800, color: 'var(--text-primary)' }}>
-                        {detailDeal.customerName}
-                      </div>
-                      <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginTop: 4, flexWrap: 'wrap' }}>
-                        {detailDeal.phone && (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-secondary)' }}>
-                            <Phone size={13} color="var(--text-muted)" />
-                            {detailDeal.phone}
-                          </span>
-                        )}
-                        {detailDeal.email && (
-                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 12, color: 'var(--text-secondary)' }}>
-                            <Mail size={13} color="var(--text-muted)" />
-                            {detailDeal.email}
-                          </span>
-                        )}
-                        <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                          Assigned Owner: <strong style={{ color: 'var(--text-primary)' }}>{detailDeal.assignedAgentName || 'Dhinakaran'}</strong>
-                        </span>
-                      </div>
+                  <div>
+                    <div style={{ fontSize: 18, fontWeight: 700, color: 'var(--text-primary)' }}>
+                      {detailDeal.customerName}
                     </div>
-                  </div>
-
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 16, fontSize: 12, color: 'var(--text-muted)', borderTop: '1px solid var(--border-color, #e2e8f0)', paddingTop: 10 }}>
-                    <div>
-                      Preferred Asset Class: <strong style={{ color: 'var(--text-primary)' }}>{detailDeal.preferredAssetClass || 'Not Specified'}</strong>
-                    </div>
-                    <div>
-                      Customer ID: <strong style={{ color: 'var(--text-primary)' }}>#{detailDeal.customerId || detailDeal.id}</strong>
+                    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 16, marginTop: 6, fontSize: 13, color: 'var(--text-secondary)' }}>
+                      {detailDeal.phone && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <Phone size={13} color="var(--text-muted)" />
+                          <span>{detailDeal.phone}</span>
+                        </div>
+                      )}
+                      {detailDeal.email && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <Mail size={13} color="var(--text-muted)" />
+                          <span>{detailDeal.email}</span>
+                        </div>
+                      )}
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Assigned Owner:</span>
+                        <strong style={{ color: 'var(--text-primary)' }}>{detailDeal.assignedAgentName || 'Unassigned'}</strong>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <span style={{ color: 'var(--text-muted)' }}>Preferred Asset Class:</span>
+                        {detailDeal.preferredAssetClass && detailDeal.preferredAssetClass !== '—' ? (
+                          <strong style={{ color: 'var(--text-primary)' }}>{detailDeal.preferredAssetClass}</strong>
+                        ) : (
+                          <span className="not-specified-badge">Not Specified</span>
+                        )}
+                      </div>
+                      {detailDeal.customerId && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                          <span style={{ color: 'var(--text-muted)' }}>Customer ID:</span>
+                          <strong style={{ fontFamily: 'monospace' }}>#{detailDeal.customerId}</strong>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
 
-                {/* Status and Amount Grid */}
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 14 }}>
-                  {/* KYC Status Card */}
+                {/* Top Row: KYC Status & Investment Amount */}
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))', gap: 16 }}>
+                  {/* KYC Status Section */}
                   <div
                     style={{
                       padding: '16px',
                       borderRadius: 10,
                       border: '1px solid var(--border-color, #e2e8f0)',
                       background: 'var(--bg-surface, #ffffff)',
-                      display: 'flex',
-                      flexDirection: 'column',
-                      justifyContent: 'space-between',
-                      gap: 8,
                     }}
                   >
-                    <span style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                    <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 10 }}>
                       KYC Status
-                    </span>
-                    <div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span
                         style={{
                           display: 'inline-flex',
                           alignItems: 'center',
-                          padding: '4px 10px',
+                          padding: '4px 12px',
                           borderRadius: 9999,
                           fontSize: 12,
                           fontWeight: 700,
-                          backgroundColor:
-                            kycStatus === 'Verified'
-                              ? '#ecfdf5'
-                              : kycStatus === 'Submitted'
-                              ? '#eff6ff'
-                              : kycStatus === 'Partially Completed'
-                              ? '#fffbeb'
-                              : 'rgba(239, 68, 68, 0.1)',
-                          color:
-                            kycStatus === 'Verified'
-                              ? '#059669'
-                              : kycStatus === 'Submitted'
-                              ? '#2563eb'
-                              : kycStatus === 'Partially Completed'
-                              ? '#d97706'
-                              : '#ef4444',
-                          border: `1px solid ${
-                            kycStatus === 'Verified'
-                              ? '#a7f3d0'
-                              : kycStatus === 'Submitted'
-                              ? '#bfdbfe'
-                              : kycStatus === 'Partially Completed'
-                              ? '#fde68a'
-                              : '#fecaca'
-                          }`,
+                          backgroundColor: kycBadgeStyles.bg,
+                          color: kycBadgeStyles.color,
+                          border: `1px solid ${kycBadgeStyles.border}`,
                         }}
                       >
                         {kycStatus}
@@ -1455,7 +1338,7 @@ export const OpportunitiesPage: React.FC = () => {
                     </div>
                   </div>
 
-                  {/* Investment Amount Section (Admin Oversight View) */}
+                  {/* Investment Amount Section (Editable) */}
                   <div
                     style={{
                       padding: '16px',
@@ -1503,31 +1386,98 @@ export const OpportunitiesPage: React.FC = () => {
                       )}
                     </div>
 
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                      <div style={{ flex: 1, position: 'relative' }}>
-                        <input
-                          id="opp-admin-amount"
-                          name="adminAmount"
-                          aria-label="Investment Amount"
-                          type="text"
-                          readOnly
-                          className="form-input"
-                          value={detailDeal.value && Number(detailDeal.value) > 0 ? formatCurrency(detailDeal.value) : 'Not Specified'}
-                          style={{
-                            width: '100%',
-                            fontSize: 14,
-                            fontWeight: 700,
-                            color: detailDeal.value && Number(detailDeal.value) > 0 ? '#10b981' : 'var(--text-muted)',
-                            height: 38,
-                            backgroundColor: 'var(--bg-surface-hover, #f8fafc)',
-                            cursor: 'default',
-                          }}
-                        />
+                    {isGhlAdmin ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ flex: 1, position: 'relative' }}>
+                          <input
+                            id="opp-admin-amount"
+                            name="adminAmount"
+                            aria-label="Investment Amount"
+                            type="text"
+                            readOnly
+                            className="form-input"
+                            value={detailDeal.value && Number(detailDeal.value) > 0 ? formatCurrency(detailDeal.value) : 'Not Specified'}
+                            style={{
+                              width: '100%',
+                              fontSize: 14,
+                              fontWeight: 700,
+                              color: detailDeal.value && Number(detailDeal.value) > 0 ? '#10b981' : 'var(--text-muted)',
+                              height: 38,
+                              backgroundColor: 'var(--bg-surface-hover, #f8fafc)',
+                              cursor: 'default',
+                            }}
+                          />
+                        </div>
                       </div>
-                    </div>
-                    <div style={{ marginTop: 6, fontSize: 11, color: 'var(--text-muted)' }}>
-                      Admin Oversight Mode: Only assigned IRM can modify investment amounts or execute conversions.
-                    </div>
+                    ) : isConfirmed ? (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <div style={{ flex: 1, position: 'relative' }}>
+                          <input
+                            id="opp-confirmed-amount"
+                            name="confirmedAmount"
+                            aria-label="Confirmed Investment Amount"
+                            type="text"
+                            readOnly
+                            className="form-input"
+                            value={formatCurrency(detailDeal.value)}
+                            style={{
+                              width: '100%',
+                              fontSize: 14,
+                              fontWeight: 700,
+                              color: '#10b981',
+                              height: 38,
+                              backgroundColor: 'var(--bg-surface-hover, #f8fafc)',
+                              cursor: 'default',
+                            }}
+                          />
+                        </div>
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={handleEditAmount}
+                          style={{ display: 'flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px' }}
+                        >
+                          <Edit2 size={13} /> Edit
+                        </button>
+                      </div>
+                    ) : (
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <div style={{ position: 'relative', flex: 1 }}>
+                            <input
+                              id="opp-enter-amount"
+                              name="amountInput"
+                              aria-label="Enter investment amount in rupees"
+                              type="number"
+                              min="0"
+                              step="100000"
+                              className="form-input"
+                              placeholder="Enter amount in ₹"
+                              value={amountInput}
+                              onChange={e => setAmountInput(e.target.value)}
+                              style={{ width: '100%', fontSize: 13, height: 38 }}
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            className="btn btn-primary btn-sm"
+                            disabled={!amountInput || parseFloat(amountInput) <= 0}
+                            onClick={() => {
+                              const val = parseFloat(amountInput);
+                              if (val && val > 0) {
+                                setShowConfirmDialog(true);
+                              }
+                            }}
+                            style={{ display: 'flex', alignItems: 'center', gap: 6, height: 38, padding: '0 14px' }}
+                          >
+                            <CheckCircle size={13} /> Confirm
+                          </button>
+                        </div>
+                        <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+                          Display format: <strong style={{ color: '#10b981' }}>{formatCurrency(parseFloat(amountInput) || 0)}</strong>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
 
@@ -1568,7 +1518,21 @@ export const OpportunitiesPage: React.FC = () => {
                           animation: 'spin 1s linear infinite',
                         }}
                       />
-                      <span>Retrieving live customer dossier and KYC records...</span>
+                      <span>Loading KYC details from database...</span>
+                    </div>
+                  ) : !kycData ? (
+                    <div
+                      style={{
+                        padding: '24px',
+                        borderRadius: 8,
+                        background: 'var(--bg-surface-hover, #f8fafc)',
+                        border: '1px dashed var(--border-color, #cbd5e1)',
+                        color: 'var(--text-muted, #94a3b8)',
+                        fontSize: 13,
+                        textAlign: 'center',
+                      }}
+                    >
+                      Not filled yet.
                     </div>
                   ) : (
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -1587,7 +1551,7 @@ export const OpportunitiesPage: React.FC = () => {
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px 16px', fontSize: 13 }}>
                           <div>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Investor Name</div>
-                            <div style={{ color: 'var(--text-primary)', fontWeight: 600, marginTop: 2 }}>{kycData.investorName || detailDeal.customerName || '—'}</div>
+                            <div style={{ color: 'var(--text-primary)', fontWeight: 500, marginTop: 2 }}>{kycData.investorName || detailDeal.customerName || '—'}</div>
                           </div>
                           <div>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Phone</div>
@@ -1603,12 +1567,18 @@ export const OpportunitiesPage: React.FC = () => {
                           </div>
                           <div>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Investor Type</div>
-                            <div style={{ color: 'var(--text-primary)', fontWeight: 500, marginTop: 2 }}>{kycData.investorType || 'Individual / Retail HNI'}</div>
+                            <div style={{ color: 'var(--text-primary)', fontWeight: 500, marginTop: 2 }}>{kycData.investorType || '—'}</div>
                           </div>
                           <div>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Resident Type</div>
-                            <div style={{ color: 'var(--text-primary)', fontWeight: 500, marginTop: 2 }}>{kycData.residentType || 'Resident Indian (RI)'}</div>
+                            <div style={{ color: 'var(--text-primary)', fontWeight: 500, marginTop: 2 }}>{kycData.residentType || '—'}</div>
                           </div>
+                          {kycData.occupation && (
+                            <div>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Occupation</div>
+                              <div style={{ color: 'var(--text-primary)', fontWeight: 500, marginTop: 2 }}>{kycData.occupation}</div>
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -1622,23 +1592,21 @@ export const OpportunitiesPage: React.FC = () => {
                         }}
                       >
                         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 12 }}>
-                          2. Identity Details &amp; Address
+                          2. Identity Details & Address
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px 16px', fontSize: 13 }}>
                           <div>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>PAN Number</div>
-                            <div style={{ color: 'var(--text-primary)', fontWeight: 600, marginTop: 2, fontFamily: 'monospace' }}>
-                              {kycData.panNumber || '—'}
-                            </div>
+                            <div style={{ color: 'var(--text-primary)', fontWeight: 600, marginTop: 2, fontFamily: 'monospace' }}>{kycData.panNumber || '—'}</div>
                           </div>
                           <div>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Name as per PAN</div>
-                            <div style={{ color: 'var(--text-primary)', fontWeight: 600, marginTop: 2 }}>{kycData.panName || detailDeal.customerName || '—'}</div>
+                            <div style={{ color: 'var(--text-primary)', fontWeight: 500, marginTop: 2 }}>{kycData.nameAsPerPan || '—'}</div>
                           </div>
                           <div>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Aadhaar Number</div>
                             <div style={{ color: 'var(--text-primary)', fontWeight: 500, marginTop: 2, fontFamily: 'monospace' }}>
-                              {kycData.aadhaarNumber ? `XXXX-XXXX-${String(kycData.aadhaarNumber).slice(-4)}` : '—'}
+                              {kycData.aadhaarNumber ? (kycData.aadhaarNumber.length >= 4 ? `•••• •••• ${kycData.aadhaarNumber.slice(-4)}` : kycData.aadhaarNumber) : '—'}
                             </div>
                           </div>
                           <div>
@@ -1647,7 +1615,7 @@ export const OpportunitiesPage: React.FC = () => {
                           </div>
                           <div>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Date of Birth</div>
-                            <div style={{ color: 'var(--text-primary)', fontWeight: 500, marginTop: 2 }}>{kycData.dob ? formatDate(kycData.dob) : '—'}</div>
+                            <div style={{ color: 'var(--text-primary)', fontWeight: 500, marginTop: 2 }}>{kycData.dob || '—'}</div>
                           </div>
                           <div>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>City / State / Pincode</div>
@@ -1655,18 +1623,32 @@ export const OpportunitiesPage: React.FC = () => {
                               {[kycData.city, kycData.state, kycData.pincode].filter(Boolean).join(', ') || '—'}
                             </div>
                           </div>
-                          {kycData.addressLine1 && (
+                          {kycData.address && (
                             <div style={{ gridColumn: '1 / -1' }}>
-                              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Communication Address</div>
-                              <div style={{ color: 'var(--text-primary)', fontWeight: 400, marginTop: 2 }}>
-                                {[kycData.addressLine1, kycData.addressLine2, kycData.city, kycData.state, kycData.pincode].filter(Boolean).join(', ')}
-                              </div>
+                              <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Address</div>
+                              <div style={{ color: 'var(--text-primary)', fontWeight: 500, marginTop: 2 }}>{kycData.address}</div>
+                            </div>
+                          )}
+                          {(kycData.panDoc || kycData.aadhaarDoc) && (
+                            <div style={{ gridColumn: '1 / -1', display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 4 }}>
+                              {kycData.panDoc && (
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, background: 'var(--bg-surface-hover, #f1f5f9)', padding: '4px 10px', borderRadius: 6 }}>
+                                  <FileText size={13} color="#0284c7" />
+                                  <span>PAN Document: {kycData.panDoc.name || 'Uploaded'}</span>
+                                </div>
+                              )}
+                              {kycData.aadhaarDoc && (
+                                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, background: 'var(--bg-surface-hover, #f1f5f9)', padding: '4px 10px', borderRadius: 6 }}>
+                                  <FileText size={13} color="#0284c7" />
+                                  <span>Aadhaar Document: {kycData.aadhaarDoc.name || 'Uploaded'}</span>
+                                </div>
+                              )}
                             </div>
                           )}
                         </div>
                       </div>
 
-                      {/* 3. Bank Account */}
+                      {/* 3. Bank Details */}
                       <div
                         style={{
                           border: '1px solid var(--border-color, #e2e8f0)',
@@ -1676,7 +1658,7 @@ export const OpportunitiesPage: React.FC = () => {
                         }}
                       >
                         <div style={{ fontSize: 12, fontWeight: 700, color: 'var(--text-secondary)', textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 12 }}>
-                          3. Bank Account
+                          3. Bank Details
                         </div>
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '12px 16px', fontSize: 13 }}>
                           <div>
@@ -1684,15 +1666,19 @@ export const OpportunitiesPage: React.FC = () => {
                             <div style={{ color: 'var(--text-primary)', fontWeight: 500, marginTop: 2 }}>{kycData.bankName || '—'}</div>
                           </div>
                           <div>
+                            <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Branch Name</div>
+                            <div style={{ color: 'var(--text-primary)', fontWeight: 500, marginTop: 2 }}>{kycData.branchName || '—'}</div>
+                          </div>
+                          <div>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>Account Number</div>
                             <div style={{ color: 'var(--text-primary)', fontWeight: 600, marginTop: 2, fontFamily: 'monospace' }}>
-                              {kycData.accountNumber ? `•••• •••• ${String(kycData.accountNumber).slice(-4)}` : '—'}
+                              {kycData.accountNumber || kycData.bankAccountNumber || '—'}
                             </div>
                           </div>
                           <div>
                             <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600 }}>IFSC Code</div>
                             <div style={{ color: 'var(--text-primary)', fontWeight: 600, marginTop: 2, fontFamily: 'monospace' }}>
-                              {kycData.ifscCode || '—'}
+                              {kycData.ifscCode || kycData.bankIfsc || '—'}
                             </div>
                           </div>
                           <div>
@@ -1819,9 +1805,6 @@ export const OpportunitiesPage: React.FC = () => {
         </Modal>
       )}
 
-      </>
-      )}
-
       {/* ── Confirm Investment Amount Dialog ──────────────────────────────── */}
       <Modal
         isOpen={showConfirmDialog}
@@ -1852,7 +1835,7 @@ export const OpportunitiesPage: React.FC = () => {
           <strong style={{ color: '#10b981' }}>
             {formatCurrency(parseFloat(amountInput) || 0)}
           </strong>{' '}
-          via <strong style={{ color: '#9b1c24' }}>{dealRoute === 'debenture' ? 'Debenture Route (Min ₹10L • 1%/mo)' : 'Direct AIF Route (Min ₹1Cr • Annual)'}</strong> for <strong>{detailDeal?.customerName}</strong>? This will be used for conversion.
+          for <strong>{detailDeal?.customerName}</strong>? This will be used for conversion.
         </div>
       </Modal>
     </div>
