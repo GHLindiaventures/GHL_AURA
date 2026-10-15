@@ -164,6 +164,18 @@ public class PlatformTicketsProductionTests
                 ReportedByName = "Mani Admin",
                 ReportedByEmail = "mani@ghlindiaventures.com",
                 CreatedAt = DateTime.UtcNow.AddHours(-1)
+            },
+            new PlatformTicket
+            {
+                TicketNumber = "INC-2026-0003",
+                Title = "High Priority Jitter on Outbound Gateway",
+                Description = "Replica latency spike",
+                Category = "Database / Latency",
+                Priority = "high",
+                Status = "open",
+                ReportedByName = "NOC Operations",
+                ReportedByEmail = "noc@nexusplatform.io",
+                CreatedAt = DateTime.UtcNow.AddMinutes(-30)
             }
         );
         await context.SaveChangesAsync();
@@ -188,6 +200,14 @@ public class PlatformTicketsProductionTests
         var priorityData = Assert.IsType<ApiResponse<List<PlatformTicketDto>>>(priorityOk.Value).Data;
         Assert.Single(priorityData);
         Assert.Equal("INC-2026-0001", priorityData[0].TicketNumber);
+
+        // 3b. Filter by combined critical_high
+        var criticalHighResult = await controller.GetTickets(null, "critical_high", null, null, null);
+        var criticalHighOk = Assert.IsType<OkObjectResult>(criticalHighResult.Result);
+        var criticalHighData = Assert.IsType<ApiResponse<List<PlatformTicketDto>>>(criticalHighOk.Value).Data;
+        Assert.Equal(2, criticalHighData.Count);
+        Assert.Contains(criticalHighData, t => t.Priority == "critical");
+        Assert.Contains(criticalHighData, t => t.Priority == "high");
 
         // 4. Combined non-matching filter
         var mismatchResult = await controller.GetTickets("resolved", "critical", null, null, null);

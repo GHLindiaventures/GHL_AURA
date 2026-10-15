@@ -46,7 +46,14 @@ public class PlatformTicketsController : ControllerBase
         if (!string.IsNullOrWhiteSpace(priority) && !priority.Equals("all", StringComparison.OrdinalIgnoreCase))
         {
             var p = priority.Trim().ToLowerInvariant();
-            query = query.Where(t => t.Priority.ToLower() == p);
+            if (p == "critical_high" || p == "critical,high")
+            {
+                query = query.Where(t => t.Priority.ToLower() == "critical" || t.Priority.ToLower() == "high");
+            }
+            else
+            {
+                query = query.Where(t => t.Priority.ToLower() == p);
+            }
         }
 
         if (!string.IsNullOrWhiteSpace(category) && !category.Equals("all", StringComparison.OrdinalIgnoreCase))

@@ -181,7 +181,7 @@ export const PlatformTicketsPage: React.FC = () => {
       setCategoryFilter('all');
       setTenantFilter('all');
     } else if (type === 'critical') {
-      setPriorityFilter(prev => (prev === 'critical' ? 'all' : 'critical'));
+      setPriorityFilter(prev => (prev === 'critical_high' ? 'all' : 'critical_high'));
     } else if (type === 'inProgress') {
       setStatusFilter(prev => (prev === 'in_progress' ? 'all' : 'in_progress'));
     } else if (type === 'resolved') {
@@ -428,7 +428,7 @@ export const PlatformTicketsPage: React.FC = () => {
         </div>
 
         <div
-          className={`ticket-kpi-card critical ${priorityFilter === 'critical' ? 'is-active-filter' : ''}`}
+          className={`ticket-kpi-card critical ${priorityFilter === 'critical_high' || priorityFilter === 'critical' ? 'is-active-filter' : ''}`}
           onClick={() => handleKpiCardClick('critical')}
           title="Click to filter by Critical & High Priority"
         >
@@ -529,6 +529,7 @@ export const PlatformTicketsPage: React.FC = () => {
               onChange={e => setPriorityFilter(e.target.value)}
             >
               <option value="all">All Priorities</option>
+              <option value="critical_high">Critical & High (P1 & P2)</option>
               <option value="critical">Critical (P1)</option>
               <option value="high">High (P2)</option>
               <option value="medium">Medium (P3)</option>
