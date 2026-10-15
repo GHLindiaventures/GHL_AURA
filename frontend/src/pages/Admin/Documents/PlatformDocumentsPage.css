@@ -38,6 +38,7 @@
     opacity: 0;
     transform: translateY(-8px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -120,7 +121,6 @@
   gap: 16px;
   padding: 18px 20px;
   border-radius: 12px;
-  background: var(--surface-card, #ffffff);
   border: 1px solid var(--border-subtle, #e5e7eb);
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
@@ -444,7 +444,7 @@
   height: 32px;
   border-radius: 6px;
   border: 1px solid var(--border-subtle, #e5e7eb);
-  background: var(--surface-card, #ffffff);
+  /* background: var(--surface-card, #ffffff); */
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -623,7 +623,7 @@
   padding: 12px 14px;
   border-radius: 8px;
   border: 1px solid var(--border-subtle, #e5e7eb);
-  background: var(--surface-card, #ffffff);
+  /* background: var(--surface-card, #ffffff); */
   cursor: pointer;
   transition: all 0.15s ease;
 }
@@ -692,8 +692,13 @@
 }
 
 @keyframes spin {
-  from { transform: rotate(0deg); }
-  to { transform: rotate(360deg); }
+  from {
+    transform: rotate(0deg);
+  }
+
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 @media (max-width: 768px) {
@@ -701,21 +706,26 @@
     flex-direction: column;
     align-items: stretch;
   }
+
   .platform-docs-header-actions {
     justify-content: stretch;
   }
+
   .target-radio-grid,
   .audience-radio-grid {
     grid-template-columns: 1fr;
   }
+
   .platform-docs-filter-bar {
     flex-direction: column;
     align-items: stretch;
   }
+
   .platform-filter-dropdowns {
     flex-direction: column;
     align-items: stretch;
   }
+
   .filter-select {
     width: 100%;
   }

@@ -240,7 +240,11 @@ export const PlatformFeaturesPage: React.FC = () => {
         <div className="packages-tab-container animate-fade-in">
           <div className="packages-grid">
             {packages.map(pkg => {
-              const enrolledTenants = tenants.filter(t => t.subscriptionPlan === pkg.name);
+              const enrolledTenants = tenants.filter(
+                t =>
+                  t.subscriptionPlan?.trim().toLowerCase() === pkg.name.trim().toLowerCase() ||
+                  t.subscriptionPlan?.trim().toLowerCase() === pkg.code.trim().toLowerCase()
+              );
               return (
                 <div key={pkg.id} className={`card package-card ${pkg.isPopular ? 'popular-glow' : ''}`}>
                   {pkg.isPopular && <div className="popular-badge">MOST POPULAR</div>}
