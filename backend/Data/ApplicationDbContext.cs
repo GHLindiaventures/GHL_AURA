@@ -525,7 +525,6 @@ public class ApplicationDbContext : DbContext
             }
         );
 
-<<<<<<< HEAD
         // ── Team Chat Relationships & Indices ──────────────────────────────────
         modelBuilder.Entity<ChatConversation>(b =>
         {
@@ -565,7 +564,8 @@ public class ApplicationDbContext : DbContext
              .WithMany(m => m.Attachments)
              .HasForeignKey(a => a.MessageId)
              .OnDelete(DeleteBehavior.Cascade);
-=======
+        });
+
         modelBuilder.Entity<PlatformTicket>(b =>
         {
             b.ToTable("platform_tickets");
@@ -585,7 +585,6 @@ public class ApplicationDbContext : DbContext
             b.HasKey(x => x.Id);
             b.HasIndex(x => x.TicketId);
             b.HasIndex(x => x.CreatedAt);
->>>>>>> yanosh/Yanosh-P
         });
     }
 }

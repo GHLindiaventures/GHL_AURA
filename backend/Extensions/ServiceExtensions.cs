@@ -62,15 +62,9 @@ public static class ServiceExtensions
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<ITotpService, TotpService>();
-<<<<<<< HEAD
         services.AddScoped<IReportService, ReportService>();
         services.AddSingleton<IMfaEncryptionService, MfaEncryptionService>();
         services.AddScoped<IMfaService, MfaService>();
-=======
-        services.AddSingleton<IMfaEncryptionService, MfaEncryptionService>();
-        services.AddScoped<IMfaService, MfaService>();
-        services.AddScoped<IReportService, ReportService>();
->>>>>>> yanosh/Yanosh-P
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IAdminUserService, AdminUserService>();
         services.AddScoped<ILeadService, LeadService>();

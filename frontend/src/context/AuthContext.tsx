@@ -316,13 +316,10 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('nexus_auth_token');
     localStorage.removeItem('nexus_current_user');
     localStorage.removeItem('nexus_current_tenant');
-<<<<<<< HEAD
     clearAllKycLocalStorage();
     setMfaChallenge(null);
-=======
     setMfaChallenge(null);
     clearAllKycLocalStorage();
->>>>>>> yanosh/Yanosh-P
     setLoginError(reason || null);
     setUser(null);
     setTenant(null);

@@ -1605,10 +1605,6 @@ export class SuperAdminService {
   getCarrierSettings(): PlatformCarrierSettings {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.CARRIER_SETTINGS);
-<<<<<<< HEAD
-      if (raw) return JSON.parse(raw);
-    } catch { }
-=======
       if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.primaryCarrier !== 'Twilio Elastic SIP Trunking') {
@@ -1616,7 +1612,6 @@ export class SuperAdminService {
         }
       }
     } catch {}
->>>>>>> yanosh/Yanosh-P
     return {
       primaryCarrier: '',
       secondaryCarrier: '',
