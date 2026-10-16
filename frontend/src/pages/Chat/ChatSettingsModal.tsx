@@ -95,7 +95,7 @@ const DEFAULT_SETTINGS: ChatSettings = {
   },
   files: {
     fileOpenPreference: 'teams',
-    downloadLocation: 'C:\\Users\\NexusSales\\Downloads',
+    downloadLocation: 'C:\\Users\\GHLAura\\Downloads',
     alwaysAskWhereToSave: false,
   },
   calls: {
@@ -951,7 +951,7 @@ export const ChatSettingsModal: React.FC<Props> = ({
                   <input
                     type="text"
                     className="form-input"
-                    value={settings.files?.downloadLocation || 'C:\\Users\\NexusSales\\Downloads'}
+                    value={settings.files?.downloadLocation || 'C:\\Users\\GHLAura\\Downloads'}
                     readOnly
                   />
                   <button

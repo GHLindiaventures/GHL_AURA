@@ -99,7 +99,7 @@ export const PlatformAuditPage: React.FC = () => {
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `NexusSales_Platform_Audit_Log_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `GHL_AURA_Platform_Audit_Log_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -366,7 +366,7 @@ export const PlatformAuditPage: React.FC = () => {
               <div className="meta-row">
                 <span className="meta-key">Client Origin:</span>
                 <span className="meta-val font-mono">
-                  {inspectedLog.ipAddress || '127.0.0.1'} ({inspectedLog.userAgent || 'Nexus Platform Console'})
+                  {inspectedLog.ipAddress || '127.0.0.1'} ({inspectedLog.userAgent || 'GHL AURA Console'})
                 </span>
               </div>
               <div className="meta-row">

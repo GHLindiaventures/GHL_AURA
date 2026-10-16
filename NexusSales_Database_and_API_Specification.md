@@ -1,4 +1,4 @@
-# NexusSales Multi-Tenant Platform
+# GHL AURA Multi-Tenant Platform
 ## Complete Database Architecture & REST API Specification
 **Version:** 2.0  
 **Stack:** ASP.NET Core 8 Web API, PostgreSQL (Neon DB), Entity Framework Core 8, React 19, TypeScript  
@@ -8,7 +8,7 @@
 
 ## 1. Executive Summary & Architecture Model
 
-NexusSales is built as a **Single Database, Multi-Tenant Partitioned Architecture**.
+GHL AURA is built as a **Single Database, Multi-Tenant Partitioned Architecture**.
 * **Tenant Isolation:** Every shared operational record is tagged with an indexed `CompanyId` (`1` = GHL India Ventures, `2` = Jamin Bazaar).
 * **Feature Gating:** Each tenant's accessible feature suite is governed by `tenants.EnabledFeatures` (stored as JSON array).
 * **Domain Modules:**

@@ -1,15 +1,15 @@
-# NexusSales Frontend — Architecture, Functional Specification & User Guide
+# GHL AURA Frontend — Architecture, Functional Specification & User Guide
 
-**Application:** NexusSales Multi-Tenant CRM & Telephony Cockpit  
+**Application:** GHL AURA Multi-Tenant CRM & Telephony Cockpit  
 **Target Focus:** Frontend Architecture, User Personas, Feature Breakdown & Operational Workflows  
 **Stack:** React 19, TypeScript, Vite 8, Vanilla CSS (Custom Design System), Lucide React  
-**Date:** September 2026  
+**Date:** October 2026  
 
 ---
 
 ## 1. Executive Summary
 
-**NexusSales** is an enterprise-grade, multi-tenant **Sales Engagement, CRM, and Telephony Cockpit** built as a high-performance Single-Page Application (SPA). 
+**GHL AURA** is an enterprise-grade, multi-tenant **Sales Engagement, CRM, and Telephony Cockpit** built as a high-performance Single-Page Application (SPA). 
 
 It bridges the gap between sales management and active voice communication by combining:
 1. **Full-Cycle CRM Pipelines** (Leads, Deals, Customer 360, Interactive Kanban).

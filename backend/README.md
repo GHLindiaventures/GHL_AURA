@@ -1,16 +1,16 @@
-# NexusSales Backend - Authentication & Architecture Documentation
+# GHL AURA Backend - Authentication & Architecture Documentation
 
-**Platform:** NexusSales Multi-Tenant CRM  
+**Platform:** GHL AURA Multi-Tenant CRM  
 **Module:** Authentication & Multi-Tenancy Core  
 **Stack:** ASP.NET Core 8 Web API, Entity Framework Core 8, PostgreSQL, JWT Bearer Auth, FluentValidation  
-**Author / Team:** Sales Rep App Engineering Team  
-**Date:** September 2026  
+**Author / Team:** GHL India Engineering Team  
+**Date:** October 2026  
 
 ---
 
 ## 1. Executive Summary
 
-This document provides a comprehensive technical overview of the **Authentication and Tenant Core Backend** implemented for the **NexusSales** platform. 
+This document provides a comprehensive technical overview of the **Authentication and Tenant Core Backend** implemented for the **GHL AURA** platform. 
 
 The backend has been developed from scratch as a modular, production-ready ASP.NET Core 8 Web API, strictly adhering to the frontend data contracts and business requirements. It manages:
 - Multi-tenant data segregation with integer-based primary/foreign keys (`1, 2, 3...`)

@@ -1327,7 +1327,7 @@ class SuperAdminService {
         companyName: log.companyName || (log.companyId ? `Company #${log.companyId}` : 'PLATFORM CONSOLE'),
         details: log.details || 'Platform operation executed.',
         ipAddress: '127.0.0.1 (Platform Console)',
-        userAgent: 'Nexus Platform Console v2.4 (Internal)',
+        userAgent: 'GHL AURA Console v2.4 (Internal)',
         module: log.module || 'Platform',
         status: log.status || 'success',
         beforeValue: log.beforeValue,
@@ -1688,7 +1688,7 @@ class SuperAdminService {
   exportPlatformSnapshot(): string {
     const snapshot = {
       exportedAt: new Date().toISOString(),
-      platformVersion: 'NexusSales Enterprise v2.4',
+      platformVersion: 'GHL AURA Enterprise v2.4',
       tenants: this.getTenants(),
       users: this.getUsers(),
       roles: this.getRoles(),

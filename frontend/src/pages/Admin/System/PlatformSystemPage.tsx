@@ -126,7 +126,7 @@ export const PlatformSystemPage: React.FC = () => {
     link.href = url;
     link.setAttribute(
       'download',
-      `NexusSales_Platform_Backup_Snapshot_${new Date().toISOString().slice(0, 10)}.json`
+      `GHL_AURA_Platform_Backup_Snapshot_${new Date().toISOString().slice(0, 10)}.json`
     );
     document.body.appendChild(link);
     link.click();

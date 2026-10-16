@@ -12,7 +12,16 @@ public static class AuthenticationExtensions
         var jwtSettings = configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>() 
                           ?? throw new InvalidOperationException("JwtSettings section is missing in configuration.");
 
-        var key = Encoding.UTF8.GetBytes(jwtSettings.SecretKey);
+        var secret = configuration["JWT_SECRET_KEY"] 
+                     ?? configuration["JwtSettings:SecretKey"] 
+                     ?? jwtSettings.SecretKey;
+
+        if (string.IsNullOrWhiteSpace(secret))
+        {
+            throw new InvalidOperationException("JWT SecretKey is not configured. Please set JWT_SECRET_KEY or JwtSettings:SecretKey.");
+        }
+
+        var key = Encoding.UTF8.GetBytes(secret);
 
         services.AddAuthentication(options =>
         {

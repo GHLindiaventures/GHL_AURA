@@ -48,9 +48,9 @@ builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo
     {
-        Title = "NexusSales Platform API",
+        Title = "GHL Aura Platform API",
         Version = "v1",
-        Description = "Customer Sales Executive Management Platform & Real-Time Calling Engine API"
+        Description = "GHL India Ventures - Multi-Tenant CRM & Calling Engine API"
     });
 
     c.CustomSchemaIds(type => type.FullName?.Replace("+", ".") ?? type.Name);
@@ -268,7 +268,7 @@ app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "NexusSales API v1");
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "GHL Aura API v1");
     c.RoutePrefix = "swagger";
 });
 

@@ -254,7 +254,7 @@ public class PlatformSystemService : IPlatformSystemService
         var snapshot = new
         {
             exportedAt = DateTime.UtcNow.ToString("o"),
-            platformVersion = "NexusSales Cloud v2.4",
+            platformVersion = "GHL Aura Cloud v2.4",
             totalTenants = tenants.Count,
             totalUsers = users.Count,
             tenants,

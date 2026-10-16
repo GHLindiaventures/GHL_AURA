@@ -103,7 +103,7 @@ export const PlatformDashboardPage: React.FC<PlatformDashboardPageProps> = ({ on
             <span className="platform-pill-badge">
               <span className="live-pulse-dot" /> PLATFORM OPERATOR CONSOLE
             </span>
-            <span className="platform-version-tag">NexusSales Cloud v2.4</span>
+            <span className="platform-version-tag">GHL AURA Cloud v2.4</span>
           </div>
           <h1 className="platform-main-title">Global Fleet Telemetry & Management</h1>
           <p className="platform-main-subtitle">

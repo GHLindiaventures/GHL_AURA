@@ -1,6 +1,6 @@
-# NexusSales — Frontend Application
+# GHL AURA — Frontend Application
 
-**NexusSales** is a multi-tenant Sales Engagement, CRM, and Telephony Cockpit built with **React 19**, **TypeScript**, and **Vite**.
+**GHL AURA** is a multi-tenant Sales Engagement, CRM, and Telephony Cockpit built with **React 19**, **TypeScript**, and **Vite**.
 
 > For the comprehensive architectural guide, user personas, and complete module specifications, refer to [Frontend_Architecture_and_User_Guide.md](../Frontend_Architecture_and_User_Guide.md).
 

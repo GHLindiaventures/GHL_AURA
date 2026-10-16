@@ -45,7 +45,7 @@ public class EmailService : IEmailService
           <tr>
             <td style=""background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); padding: 32px 40px; text-align: left; border-bottom: 3px solid #0284c7;"">
               <div style=""display: inline-block; background-color: #0284c7; color: #ffffff; font-weight: 800; font-size: 14px; padding: 4px 10px; border-radius: 6px; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 8px;"">
-                NexusSales Platform
+                GHL Aura Platform
               </div>
               <h1 style=""margin: 0; color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: -0.5px;"">
                 GHL India Ventures
@@ -152,7 +152,7 @@ public class EmailService : IEmailService
           <tr>
             <td style=""background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); padding: 28px 36px; text-align: left; border-bottom: 3px solid #0284c7;"">
               <div style=""display: inline-block; background-color: #0284c7; color: #ffffff; font-weight: 800; font-size: 12px; padding: 3px 8px; border-radius: 4px; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 6px;"">
-                NexusSales Security
+                GHL Aura Security
               </div>
               <h1 style=""margin: 0; color: #ffffff; font-size: 20px; font-weight: 700;"">
                 GHL India Ventures
@@ -257,7 +257,7 @@ public class EmailService : IEmailService
 
             using var mail = new MailMessage
             {
-                From = new MailAddress(senderEmail, string.IsNullOrWhiteSpace(cfg.SenderName) ? "NexusSales IRM Compliance" : cfg.SenderName),
+                From = new MailAddress(senderEmail, string.IsNullOrWhiteSpace(cfg.SenderName) ? "GHL India Compliance" : cfg.SenderName),
                 Subject = subject,
                 Body = htmlBody,
                 IsBodyHtml = true
