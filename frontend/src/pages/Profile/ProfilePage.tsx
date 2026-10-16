@@ -700,7 +700,7 @@ export const ProfilePage: React.FC = () => {
   // ── Certifications ────────────────────────────────────────────────────────
   const certs = [
     { name: 'Certified Sales Professional (CSP)', issuer: 'Sales & Marketing Assoc.', date: '2024-03-10', color: '#2563eb' },
-    { name: 'Call Center Excellence Badge', issuer: 'GHL AURA Platform', date: '2025-01-20', color: '#7c3aed' },
+    { name: 'Call Center Excellence Badge', issuer: 'Nexus Platform', date: '2025-01-20', color: '#7c3aed' },
     { name: 'Real Estate Fundamentals', issuer: 'RERA Board', date: '2023-11-05', color: '#059669' },
     { name: 'CRM Power User', issuer: `Internal — ${tenant?.name || 'Company'}`, date: '2025-06-01', color: '#d97706' },
   ];

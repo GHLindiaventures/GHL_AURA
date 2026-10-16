@@ -10,10 +10,9 @@ import {
   ShieldCheck,
   CheckCircle,
   Pencil,
-X,
+  X,
   CalendarRange,
   Clock,
-
 } from 'lucide-react';
 import { Followup, CallRecord, Deal, Lead, Customer } from '../../types';
 import { storageService } from '../../services/storageService';
@@ -37,7 +36,6 @@ import { Modal } from '../../components/common/Modal';
 import { Drawer } from '../../components/common/Drawer';
 import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawerContent';
 type FollowupRoleFilter = 'all' | 'sales_executive' | 'irm';
-
 import { DateRangePreset } from '../../types/kanban';
 import { adminUserService } from '../../services/adminUserService';
 import { fetchIrmAllLeads, IrmAllLeadsSummary } from '../../services/irmAllLeadsService';
@@ -351,50 +349,13 @@ export const FollowupsPage: React.FC = () => {
   const [customEndDate, setCustomEndDate] = useState<string>(() => {
     return new Date().toISOString().split('T')[0];
   });
-
-  // ── Time Priority and Date Filter States ──────────────────────────────────
-  const [timeSortOption, setTimeSortOption] = useState<TimeSortOption>('time_asc');
-  const [dateFilterOption, setDateFilterOption] = useState<DateFilterOption>('all');
-  const [specificDate, setSpecificDate] = useState<string>(() => {
-    return new Date().toISOString().split('T')[0];
-  });
-
-  const handleTabClick = (tabId: 'all' | 'due' | 'overdue') => {
-    setActiveTab(tabId);
-    if (tabId === 'due') {
-      setDateFilterOption('today');
-    } else if (tabId === 'overdue') {
-      setDateFilterOption('yesterday');
-    } else {
-      setDateFilterOption('all');
-    }
-  };
-
-  const handleDateFilterChange = (newVal: DateFilterOption) => {
-    setDateFilterOption(newVal);
-    if (newVal === 'today') {
-      setActiveTab('due');
-    } else if (newVal === 'yesterday') {
-      setActiveTab('overdue');
-    } else {
-      setActiveTab('all');
-    }
-  };
-
-  const handleResetFilters = () => {
-    setDateFilterOption('all');
-    setTimeSortOption('time_asc');
-    setActiveTab('all');
-    setSpecificDate(new Date().toISOString().split('T')[0]);
-  };
-
   const handleRoleChange = (newRole: FollowupRoleFilter) => {
     setSelectedRole(newRole);
     setSelectedPerson('All');
   };
 
   const personOptions = useMemo(() => {
-if (users && users.length > 0) {
+    if (users && users.length > 0) {
       if (selectedRole === 'sales_executive') {
         const sales = users.filter(u => {
           const code = (u.role?.code || '').toLowerCase();
@@ -432,7 +393,6 @@ if (users && users.length > 0) {
           });
         }
       }
-
     }
     const storageAgents = storageService.getAgents ? storageService.getAgents(tenant?.id) : [];
     const storageIrms = storageService.getIrms ? storageService.getIrms(tenant?.id) : [];
@@ -989,11 +949,10 @@ if (users && users.length > 0) {
       }
       return 'Sales Executive';
     }
-// Direct check for known IRMs in db or storage
+    // Direct check for known IRMs in db or storage
     if (agentName.includes('dhinakaran') || agentId === '5' || agentName.includes('irm')) {
       return 'IRM';
     }
-
     const irmsList = storageService.getIrms ? storageService.getIrms(tenant?.id) : [];
     if (
       irmsList.some(
@@ -1221,7 +1180,7 @@ if (users && users.length > 0) {
       return true;
     });
   } else if (isExec) {
-scopedFollowups = followups.filter(f => {
+    scopedFollowups = followups.filter(f => {
       if (f.status !== 'Pending') return false;
       const isDirectlyAssigned =
         (f.assignedAgentId && String(f.assignedAgentId) === String(user?.id)) ||
@@ -1243,7 +1202,6 @@ scopedFollowups = followups.filter(f => {
       }
       return false;
     });
-
   } else if (isIrm) {
     // IRM: Show pending follow-ups assigned to THIS authenticated IRM OR associated with a lead assigned to THIS IRM
     // Build sets of contacts that have moved beyond follow-up (KYC, Opportunities, Converted, etc.)
@@ -1517,7 +1475,7 @@ scopedFollowups = followups.filter(f => {
         .filter(Boolean)
     );
 
-processedFollowups = processedFollowups.filter(f => {
+    processedFollowups = processedFollowups.filter(f => {
       if (f.contactId && f.contactId !== 'contact-new' && otherLeadIds.has(String(f.contactId)))
         return false;
       const fPhone = (f.contactPhone || '').replace(/\D/g, '').slice(-10);
@@ -1626,7 +1584,6 @@ processedFollowups = processedFollowups.filter(f => {
       return (a.contactName || '').localeCompare(b.contactName || '');
     });
   }, [dateScopedFollowups, isIrm, activeTab]);
-
 
   const drawerFollowupRole = drawerFollowup ? getFollowupRole(drawerFollowup) : '';
 
@@ -1761,26 +1718,6 @@ processedFollowups = processedFollowups.filter(f => {
                 />
               </div>
             )}
-
-            {/* 4. Time Priority Filter */}
-            <div className="followup-filter-item">
-              <span className="followup-filter-label">
-                <Clock size={14} color="var(--primary-600)" />
-                Time Priority:
-              </span>
-              <select
-                id="admin-filter-time-priority"
-                className="followup-filter-select"
-                value={timeSortOption}
-                onChange={e => setTimeSortOption(e.target.value as TimeSortOption)}
-                title="Sort follow-ups by time of day (Earliest first e.g. 10 AM before 12 PM)"
-              >
-                <option value="time_asc">Earliest First (10 AM → 12 PM)</option>
-                <option value="time_desc">Latest First (12 PM → 10 AM)</option>
-                <option value="priority_desc">Priority: High to Low</option>
-                <option value="default">Default Order</option>
-              </select>
-            </div>
           </div>
 
           {/* Right Section: Role Mode Tag & Total Count */}
@@ -1809,13 +1746,13 @@ processedFollowups = processedFollowups.filter(f => {
             </span>
 
             <span className="followup-total-badge">
-              Showing: <strong>{finalSortedFollowups.length}</strong> of {activePendingFollowups.length}
+              Total Tasks: <strong>{activePendingFollowups.length}</strong>
             </span>
           </div>
         </div>
       )}
 
-{/* ── IRM Date Range Filter Bar (Only for IRM) - Red and Black Theme ── */}
+      {/* ── IRM Date Range Filter Bar (Only for IRM) - Red and Black Theme ── */}
       {isIrm && (
         <div className="irm-followup-filterbar">
           <div className="irm-followup-filter-left">
@@ -1996,19 +1933,14 @@ processedFollowups = processedFollowups.filter(f => {
         </div>
       )}
 
-
       {/* Follow-ups List Cards */}
       <div className="followups-list">
-        {finalSortedFollowups.length === 0 ? (
+        {filteredFollowups.length === 0 ? (
           <div className="card text-center followups-empty-card">
-            {dateFilterOption === 'specific_date'
-              ? `No follow-up tasks scheduled for ${specificDate}. You're all caught up!`
-              : dateFilterOption === 'tomorrow'
-              ? "No follow-up tasks scheduled for tomorrow. You're all caught up!"
-              : "No tasks in this category. You're all caught up!"}
+            No tasks in this category. You're all caught up!
           </div>
         ) : (
-filteredFollowups.map(f => {
+          filteredFollowups.map(f => {
             const schedStr = (f.scheduledAt || '').trim();
             const dateStr = (f.scheduledDate || '').trim();
             const now = new Date();
@@ -2027,7 +1959,6 @@ filteredFollowups.map(f => {
             };
 
             const isOverdue = f.status === 'Pending' && isOverdueFunc() && !isTodayFunc();
-
             const callCount = getCallCountForFollowup(f);
             const fRole = getFollowupRole(f);
             const agentInfo = getFollowupDisplayAgent(f);

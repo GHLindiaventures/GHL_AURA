@@ -528,18 +528,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
     reason?: string
   ) => {
     if (lastCallRecord && tenant && user) {
-// Locate matched lead if any
-      const leadId = lastCallRecord.matchedRecord?.type === 'lead' ? lastCallRecord.matchedRecord.id : null;
-      const allLeads = leads.length > 0 ? leads : (tenant ? storageService.getLeads(tenant.id) : []);
-      const normalize = (p: string) => (p || '').replace(/\D/g, '').slice(-10);
-      const callPhoneDigits = normalize(lastCallRecord.contactPhone);
-      const matchedLead = leadId
-        ? allLeads.find((l: Lead) => l.id === leadId)
-        : allLeads.find((l: Lead) =>
-            (callPhoneDigits && normalize(l.phone) === callPhoneDigits) ||
-            (l.name && l.name.toLowerCase() === lastCallRecord.contactName.toLowerCase())
-          );
-const isRealConnected = !lastCallRecord.isSimulated && lastCallRecord.status === 'connected';
+      const isRealConnected = !lastCallRecord.isSimulated && lastCallRecord.status === 'connected';
       const isSim = !isRealConnected;
       let finalNotes = notes || lastCallRecord.quickNotes || '';
       if (isSim && !finalNotes.includes('Simulated') && !finalNotes.includes('Not Connected')) {
@@ -573,18 +562,17 @@ const isRealConnected = !lastCallRecord.isSimulated && lastCallRecord.status ===
         transcription: undefined,
         notes: finalNotes || undefined,
         reason: reason || undefined,
-callModule: (user?.role?.code === 'irm' || (user as any)?.roleCode === 'irm') ? lastCallRecord.callModule : undefined,
+        callModule: (user?.role?.code === 'irm' || (user as any)?.roleCode === 'irm') ? lastCallRecord.callModule : undefined,
         module: (user?.role?.code === 'irm' || (user as any)?.roleCode === 'irm') ? lastCallRecord.callModule : undefined,
         isFromOther: (user?.role?.code === 'irm' || (user as any)?.roleCode === 'irm') ? lastCallRecord.isFromOther : undefined,
         leadId: rawLeadId,
         customerId: rawCustomerId,
         twilioCallSid: lastCallRecord.twilioCallSid,
-
       };
 
       await apiLogCall(callRecord);
 
-// Locate matched lead if any
+      // Locate matched lead if any
       const leadId = rawLeadId || null;
       const normalize = (p: string) => (p || '').replace(/\D/g, '').slice(-10);
       const callPhoneDigits = normalize(lastCallRecord.contactPhone);
@@ -673,7 +661,6 @@ callModule: (user?.role?.code === 'irm' || (user as any)?.roleCode === 'irm') ? 
             (f.contactId && (f.contactId === matchedLead?.id || (matchedDeal && f.contactId === matchedDeal.id) || f.contactId === lastCallRecord.matchedRecord?.id)) ||
             (callPhoneDigits && f.contactPhone && normalize(f.contactPhone) === callPhoneDigits)
           )
-
         );
 
       // 1. Interested -> Mark lead as Interested for IRM pickup.
@@ -963,14 +950,10 @@ callModule: (user?.role?.code === 'irm' || (user as any)?.roleCode === 'irm') ? 
         const reasonText = reason || notes || 'Not Interested';
         if (matchedLead) {
           matchedLead.status = 'Not Interested';
-          matchedLead.notes = matchedLead.notes
-            ? `${matchedLead.notes}\n\n[Not Interested Reason]: ${reasonText}`
-            : `[Not Interested Reason]: ${reasonText}`;
           matchedLead.customFields = { ...matchedLead.customFields, dispositionReason: reasonText };
-await apiSaveLead(matchedLead).catch(err => {
+          await apiSaveLead(matchedLead).catch(err => {
             console.warn('[CallContext] apiSaveLead failed/skipped for lead (Not Interested):', err);
           });
-
           storageService.saveLead(matchedLead);
         } else {
           const newLead: Lead = {
@@ -986,10 +969,10 @@ await apiSaveLead(matchedLead).catch(err => {
             assignedAgentId: user.id,
             assignedAgentName: user.name,
             createdAt: new Date().toISOString().split('T')[0],
-            notes: `[Not Interested Reason]: ${reasonText}`,
+            notes: '',
             customFields: { dispositionReason: reasonText },
           };
-await apiSaveLead(newLead);
+          await apiSaveLead(newLead);
           storageService.saveLead(newLead);
         }
 
@@ -1001,10 +984,7 @@ await apiSaveLead(newLead);
               notes: `${existingFollowup.notes ? existingFollowup.notes + ' | ' : ''}Not Interested: ${reasonText}`,
             });
           } catch {}
-
         }
-        window.dispatchEvent(new Event('nexus_storage_updated'));
-        window.dispatchEvent(new CustomEvent('nexus_navigate', { detail: { route: 'not-interested' } }));
       }
 
       // 5. Wrong Number -> Remove from active queue, move to Junk section

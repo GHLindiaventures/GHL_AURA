@@ -16,7 +16,7 @@ public class Tenant
     public string? Industry { get; set; }
     public string Status { get; set; } = "Active"; // Active | Inactive | Suspended
     public string? SubscriptionPlan { get; set; }
-    public int LeadSla { get; set; } = 15;
+    public int? LeadSla { get; set; } = 15;
     public bool CallEnabled { get; set; } = true;
     public bool RecordingEnabled { get; set; } = true;
     public bool TranscriptionEnabled { get; set; } = true;

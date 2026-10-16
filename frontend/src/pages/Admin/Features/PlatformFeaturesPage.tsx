@@ -18,7 +18,6 @@ import {
 import { SubscriptionPackage, Tenant } from '../../../types';
 import { superAdminService } from '../../../services/superAdminService';
 import { FEATURES } from '../../../constants/features';
-import { isMockMode } from '../../../config/environment';
 import { Modal } from '../../../components/common/Modal';
 import './PlatformFeaturesPage.css';
 
@@ -44,7 +43,7 @@ export const PlatformFeaturesPage: React.FC = () => {
   // Success Feedback
   const [successMsg, setSuccessMsg] = useState('');
 
-const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = async () => {
@@ -63,7 +62,6 @@ const [isLoading, setIsLoading] = useState(true);
     } finally {
       setIsLoading(false);
     }
-
   };
 
   useEffect(() => {
@@ -166,23 +164,21 @@ const [isLoading, setIsLoading] = useState(true);
         setPackages(prev => [...prev, created]);
         showSuccess(`Subscription package "${pkgName}" created.`);
       }
-setIsPackageModalOpen(false);
+      setIsPackageModalOpen(false);
     } catch (err: any) {
       alert(err.message || 'Failed to save subscription package');
     }
-
   };
 
   const handleDeletePackage = async (pkg: SubscriptionPackage) => {
     if (confirm(`Are you sure you want to delete package "${pkg.name}"?`)) {
-try {
+      try {
         await superAdminService.deletePackageApi(pkg.id);
         setPackages(prev => prev.filter(p => p.id !== pkg.id));
         showSuccess(`Package "${pkg.name}" removed.`);
       } catch (err: any) {
         alert(err.message || 'Failed to delete package');
       }
-
     }
   };
 

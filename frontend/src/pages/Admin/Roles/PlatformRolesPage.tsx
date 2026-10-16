@@ -22,7 +22,6 @@ import {
 import { Role, PermissionGroup } from '../../../types';
 import { superAdminService } from '../../../services/superAdminService';
 import { useUnsavedChanges } from '../../../context/NavigationGuardContext';
-
 import { Modal } from '../../../components/common/Modal';
 import './PlatformRolesPage.css';
 
@@ -49,7 +48,7 @@ export const PlatformRolesPage: React.FC = () => {
   // Modal in-permissions search
   const [permModalSearch, setPermModalSearch] = useState('');
 
-// Create Role Modal state
+  // Create Role Modal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [createName, setCreateName] = useState('');
   const [createCode, setCreateCode] = useState('');
@@ -121,7 +120,6 @@ export const PlatformRolesPage: React.FC = () => {
     } finally {
       setIsLoading(false);
     }
-
   };
 
   useEffect(() => {
@@ -266,7 +264,7 @@ export const PlatformRolesPage: React.FC = () => {
     }
   };
 
-const handleToggleExpandAllCreate = () => {
+  const handleToggleExpandAllCreate = () => {
     const anyCollapsed = permissionGroups.some(g => !expandedCreateModules[g.group]);
     const next: Record<string, boolean> = {};
     permissionGroups.forEach(g => {
@@ -468,7 +466,6 @@ const handleToggleExpandAllCreate = () => {
         ...current,
         permissions: updatedPerms,
       },
-
     };
     setRoles(updatedRoles);
     setHasUnsavedMatrixChanges(true);

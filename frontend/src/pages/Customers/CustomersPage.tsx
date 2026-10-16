@@ -43,7 +43,6 @@ import { Modal } from '../../components/common/Modal';
 import { Timeline, TimelineEvent } from '../../components/common/Timeline';
 import { formatSmartScheduleDate } from '../../utils/dateUtils';
 
-
 import './CustomersPage.css';
 
 const getCustomFieldDefinitions = (tenantId?: string): CustomFieldDefinition[] => {
@@ -124,14 +123,13 @@ export const CustomersPage: React.FC = () => {
   const { tenant, user } = useAuth();
 
   const [customers, setCustomers] = useState<Customer[]>([]);
-const [leads, setLeads] = useState<Lead[]>([]);
+  const [leads, setLeads] = useState<Lead[]>([]);
   const [dbIrms, setDbIrms] = useState<IrmProfile[]>(() => storageService.getIrms(tenant?.id || tenant?.slug));
   const irms = useMemo<IrmProfile[]>(() => {
     if (dbIrms && dbIrms.length > 0) return dbIrms;
     return storageService.getIrms(tenant?.id || tenant?.slug);
   }, [dbIrms, tenant?.id, tenant?.slug]);
   const setIrms = setDbIrms;
-
 
   // Role-based scoping: Sales Executives see only their own customers.
   // Managers / Admins / Super Admins see the full company customer list (no filter).
@@ -245,16 +243,14 @@ const [leads, setLeads] = useState<Lead[]>([]);
 
   const loadData = async () => {
     try {
-setLoadError(null);
-
+      setLoadError(null);
       const [custs, cCalls, cFollowups, cDeals, cLeads, cIrms] = await Promise.all([
         getCustomers(tenant?.id),
         getCalls(tenant?.id),
         getFollowups(tenant?.id),
         getDeals(tenant?.id),
         getLeads(tenant?.id),
-getCompanyIrms(tenant?.id).catch(() => storageService.getIrms(tenant?.id)),
-
+        getCompanyIrms(tenant?.id).catch(() => storageService.getIrms(tenant?.id)),
       ]);
       setCustomers(custs);
       setCalls(cCalls);
@@ -308,8 +304,6 @@ getCompanyIrms(tenant?.id).catch(() => storageService.getIrms(tenant?.id)),
           setSalesExecutives(fallbackAgents.map(a => ({ id: String(a.id), name: a.name })));
         }
       }
-
-      setIrms(cIrms || []);
 
       const firstVisible = isExec
         ? custs.filter(c =>
@@ -673,8 +667,7 @@ getCompanyIrms(tenant?.id).catch(() => storageService.getIrms(tenant?.id)),
       const selectedCusts = scopedCustomers.filter(c => selectedCustomerIds.has(c.id) && isCustomerEligibleForIrm(c));
       if (selectedCusts.length === 0) return;
 
-setSelectedIrmId(prev => (prev && currentIrms.some(i => i.id === prev) ? prev : currentIrms[0]?.id || ''));
-
+      setSelectedIrmId(prev => (prev && currentIrms.some(i => i.id === prev) ? prev : currentIrms[0]?.id || ''));
       setIsManualModalOpen(true);
     } else {
       if (eligibleUnassignedCustomers.length === 0) return;
@@ -755,56 +748,6 @@ setSelectedIrmId(prev => (prev && currentIrms.some(i => i.id === prev) ? prev : 
     if (!isMockMode()) {
       for (const u of toUpdate) {
         await apiSaveCustomer(u).catch(console.error);
-
-        // Synchronize corresponding Lead to the assigned IRM member
-        const custPhoneDigits = (u.phone || '').replace(/\D/g, '').slice(-10);
-        const matchingLead = (leads || []).find(l =>
-          (custPhoneDigits && (l.phone || '').replace(/\D/g, '').slice(-10) === custPhoneDigits) ||
-          (u.email && l.email && l.email.toLowerCase() === u.email.toLowerCase()) ||
-          (u.name && l.name && l.name.toLowerCase() === u.name.toLowerCase())
-        );
-
-        if (matchingLead) {
-          const updatedLead: Lead = {
-            ...matchingLead,
-            assignedIrmId: selectedIrm.id,
-            assignedIrmName: selectedIrm.name,
-            assignedIrmAt: new Date().toISOString(),
-            customFields: {
-              ...(matchingLead.customFields || {}),
-              assignedIrmId: selectedIrm.id,
-              assignedIrmName: selectedIrm.name,
-              assignedIrmAt: new Date().toISOString(),
-            },
-          };
-          await apiSaveLead(updatedLead).catch(console.error);
-        } else {
-          const newLead: Lead = {
-            id: '',
-            companyId: u.companyId || tenant?.id || '1',
-            name: u.name,
-            phone: u.phone || '',
-            email: u.email || '',
-            location: u.location || '',
-            source: 'Customer 360',
-            status: 'Interested',
-            priority: 'High',
-            assignedAgentId: String(user?.id || ''),
-            assignedAgentName: user?.name || '',
-            assignedIrmId: selectedIrm.id,
-            assignedIrmName: selectedIrm.name,
-            assignedIrmAt: new Date().toISOString(),
-            createdAt: new Date().toISOString(),
-            notes: `Assigned to IRM: ${selectedIrm.name} from Customer 360`,
-            customFields: {
-              assignedIrmId: selectedIrm.id,
-              assignedIrmName: selectedIrm.name,
-              assignedIrmAt: new Date().toISOString(),
-              ...(u.customFields || {}),
-            },
-          };
-          await apiSaveLead(newLead).catch(console.error);
-        }
       }
     }
     await handoverLeadsToIrm(toHandover);
@@ -813,7 +756,6 @@ setSelectedIrmId(prev => (prev && currentIrms.some(i => i.id === prev) ? prev : 
     setIsAssignMode(false);
     setSelectedCustomerIds(new Set());
     loadData();
-    window.dispatchEvent(new Event('nexus_storage_updated'));
     showToast(`Successfully assigned ${assignedCount} customer(s) to ${selectedIrm.name}!`);
   };
 
@@ -845,56 +787,6 @@ setSelectedIrmId(prev => (prev && currentIrms.some(i => i.id === prev) ? prev : 
     if (!isMockMode()) {
       for (const u of toUpdate) {
         await apiSaveCustomer(u).catch(console.error);
-
-        // Synchronize corresponding Lead to the assigned IRM member
-        const custPhoneDigits = (u.phone || '').replace(/\D/g, '').slice(-10);
-        const matchingLead = (leads || []).find(l =>
-          (custPhoneDigits && (l.phone || '').replace(/\D/g, '').slice(-10) === custPhoneDigits) ||
-          (u.email && l.email && l.email.toLowerCase() === u.email.toLowerCase()) ||
-          (u.name && l.name && l.name.toLowerCase() === u.name.toLowerCase())
-        );
-
-        if (matchingLead) {
-          const updatedLead: Lead = {
-            ...matchingLead,
-            assignedIrmId: u.assignedIrmId,
-            assignedIrmName: u.assignedIrmName,
-            assignedIrmAt: new Date().toISOString(),
-            customFields: {
-              ...(matchingLead.customFields || {}),
-              assignedIrmId: u.assignedIrmId,
-              assignedIrmName: u.assignedIrmName,
-              assignedIrmAt: new Date().toISOString(),
-            },
-          };
-          await apiSaveLead(updatedLead).catch(console.error);
-        } else {
-          const newLead: Lead = {
-            id: '',
-            companyId: u.companyId || tenant?.id || '1',
-            name: u.name,
-            phone: u.phone || '',
-            email: u.email || '',
-            location: u.location || '',
-            source: 'Customer 360',
-            status: 'Interested',
-            priority: 'High',
-            assignedAgentId: String(user?.id || ''),
-            assignedAgentName: user?.name || '',
-            assignedIrmId: u.assignedIrmId,
-            assignedIrmName: u.assignedIrmName,
-            assignedIrmAt: new Date().toISOString(),
-            createdAt: new Date().toISOString(),
-            notes: `Auto-assigned to IRM: ${u.assignedIrmName} from Customer 360`,
-            customFields: {
-              assignedIrmId: u.assignedIrmId,
-              assignedIrmName: u.assignedIrmName,
-              assignedIrmAt: new Date().toISOString(),
-              ...(u.customFields || {}),
-            },
-          };
-          await apiSaveLead(newLead).catch(console.error);
-        }
       }
     }
     await handoverLeadsToIrm(toHandover);
@@ -904,7 +796,6 @@ setSelectedIrmId(prev => (prev && currentIrms.some(i => i.id === prev) ? prev : 
     setSelectedCustomerIds(new Set());
     setAutoRecommendations([]);
     loadData();
-    window.dispatchEvent(new Event('nexus_storage_updated'));
     showToast(`Successfully confirmed auto-assignment for ${assignedCount} customer(s)!`);
   };
 

@@ -72,6 +72,7 @@ builder.Services.AddSwaggerGen(c =>
     });
 
     c.CustomSchemaIds(type => type.FullName?.Replace("+", ".") ?? type.Name);
+    c.ResolveConflictingActions(apiDescriptions => apiDescriptions.First());
 
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {

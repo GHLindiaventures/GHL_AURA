@@ -21,7 +21,6 @@ import {
   isLeadAssigned,
   persistLeadAssignment,
 } from '../../services/agentDirectory';
-
 import { DataTable, Column, RowAction } from '../../components/common/DataTable';
 import { FilterBar } from '../../components/common/FilterBar';
 import { Drawer } from '../../components/common/Drawer';
@@ -364,7 +363,7 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
   };
 
   const loadData = async () => {
-if (apiClient.isMockMode()) {
+    if (apiClient.isMockMode()) {
       setLoadError(null);
       const allLeads = storageService.getLeads(tenant?.id);
       setLeads(allLeads);
@@ -373,7 +372,6 @@ if (apiClient.isMockMode()) {
         return allLeads.find(l => l.id === prev.id) || null;
       });
       return;
-
     }
 
     try {
@@ -507,7 +505,7 @@ if (apiClient.isMockMode()) {
     setPendingAgent(null);
   };
 
-const handleOpenAssignIrm = (lead: Lead) => {
+  const handleOpenAssignIrm = (lead: Lead) => {
     setLeadToAssignIrm(lead);
     const existingIrm = lead.assignedIrmId || lead.customFields?.assignedIrmId;
     setSelectedIrmForLead(existingIrm ? String(existingIrm) : (companyIrms[0]?.id || ''));
@@ -566,7 +564,6 @@ const handleOpenAssignIrm = (lead: Lead) => {
     }
   };
 
-
   const handleSaveLead = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!formData.name || !formData.phone) return;
@@ -592,7 +589,7 @@ const handleOpenAssignIrm = (lead: Lead) => {
       }
     };
 
-if (apiClient.isMockMode()) {
+    if (apiClient.isMockMode()) {
       storageService.saveLead(leadToSave);
     } else {
       try {
@@ -618,7 +615,6 @@ if (apiClient.isMockMode()) {
         storageService.saveLead(leadToSave);
       }
     }
-
 
     // If the agent was changed in the edit panel, persist the reassignment
     const agentChanged =
@@ -650,7 +646,7 @@ if (apiClient.isMockMode()) {
     }
 
     setIsEditDrawerOpen(false);
-    await loadData();
+    loadData();
   };
 
   // Table columns: Lead Name & Contact, Email, Investment Amount Range, Assigned Sales Executive, Assigned IRM, Source, Status, Quick Call, Action

@@ -84,7 +84,7 @@ export const AuthLayout: React.FC = () => {
 
   return (
     <div className="auth-page-container">
-{/* Fixed background video */}
+      {/* Fixed background video */}
       <div className="auth-bg-layer">
         <video
           className="auth-bg-video"
@@ -99,7 +99,6 @@ export const AuthLayout: React.FC = () => {
       </div>
       {/* Subtle dark overlay for contrast */}
       <div className="auth-bg-overlay" />
-
 
       {/* Centered Liquid Glass Card */}
       <div className="auth-card-container">

@@ -19,7 +19,7 @@ export const AiAssistant: React.FC = () => {
       setMessages([
         {
           role: 'assistant',
-          content: 'Hi! I am Nexus AI. I can help you find leads, check your follow-ups, or answer questions about your NexusSales data.'
+          content: 'Hi! I am Nexus AI. I can help you find leads, check your follow-ups, or answer questions about your GHL AURA data.'
         }
       ]);
     }

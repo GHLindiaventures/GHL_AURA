@@ -22,7 +22,6 @@ import {
 import { useAuth } from '../../../context/AuthContext';
 import { Tenant, User, AuditLog, PlatformMetrics, PlatformCarrierSettings, TenantDidMapping } from '../../../types';
 import { superAdminService } from '../../../services/superAdminService';
-import { isMockMode } from '../../../config/environment';
 import './PlatformDashboardPage.css';
 
 interface PlatformDashboardPageProps {
@@ -39,7 +38,7 @@ export const PlatformDashboardPage: React.FC<PlatformDashboardPageProps> = ({ on
   const [carrierSettings, setCarrierSettings] = useState<PlatformCarrierSettings>(() => superAdminService.getCarrierSettings());
   const [dids, setDids] = useState<TenantDidMapping[]>(() => superAdminService.getDidMappings());
 
-const [isLoading, setIsLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = async () => {
@@ -84,7 +83,6 @@ const [isLoading, setIsLoading] = useState(true);
     } finally {
       setIsLoading(false);
     }
-
   };
 
   useEffect(() => {
@@ -92,7 +90,7 @@ const [isLoading, setIsLoading] = useState(true);
     window.addEventListener('nexus_admin_updated', loadData);
     return () => {
       window.removeEventListener('nexus_admin_updated', loadData);
-};
+    };
   }, []);
 
   // Scoped periodic polling for real-time SYSTEM CALLS TODAY telemetry
@@ -117,7 +115,6 @@ const [isLoading, setIsLoading] = useState(true);
     return () => {
       isMounted = false;
       clearInterval(intervalId);
-
     };
   }, []);
 
@@ -225,7 +222,6 @@ const [isLoading, setIsLoading] = useState(true);
             <span className="platform-pill-badge">
               <span className="live-pulse-dot" /> {isLoading ? 'SYNCING LIVE TELEMETRY...' : 'PLATFORM OPERATOR CONSOLE'}
             </span>
-
           </div>
           <h1 className="platform-main-title">Global Fleet Telemetry & Management</h1>
           <p className="platform-main-subtitle">

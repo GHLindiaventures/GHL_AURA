@@ -9,14 +9,13 @@ import {
   Trash2,
   Edit,
   ExternalLink,
-CalendarCheck,
+  CalendarCheck,
   AlertTriangle,
   Clock,
   ArrowRight,
   UserCheck,
 } from 'lucide-react';
 import { Lead, Customer, Deal, Followup, IrmProfile } from '../../types';
-
 import { useAuth } from '../../context/AuthContext';
 import { useCall } from '../../context/CallContext';
 import { apiClient } from '../../services/apiClient';
@@ -39,7 +38,6 @@ import {
   isTenantMatch,
   getCompanyIrms,
 } from '../../services/ghlApiService';
-
 import { DataTable, Column, RowAction } from '../../components/common/DataTable';
 import { FilterBar } from '../../components/common/FilterBar';
 import { StatusChip } from '../../components/common/StatusChip';
@@ -47,8 +45,6 @@ import { Drawer } from '../../components/common/Drawer';
 import { Modal } from '../../components/common/Modal';
 import { getAgentRoleInfo, getAssigningSalesAgentInfo } from '../../utils/agentRoleUtils';
 import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawerContent';
-import { isMockMode } from '../../config/environment';
-import { adminUserService } from '../../services/adminUserService';
 import './LeadsPage.css';
 
 export const normalizePhone = (phone?: string): string | null => {
@@ -171,7 +167,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
 
   const agentsList = useMemo(() => storageService.getAgents(tenant?.id), [tenant?.id]);
 
-  const INACTIVE_LEAD_STATUSES = ['Converted', 'Not Interested', 'Junk'];
+  const MOVED_LEAD_STATUSES = ['Interested', 'Converted', 'Follow-up Required', 'Not Interested', 'Junk'];
 
   const pendingFollowupContactIds = useMemo(() => {
     return new Set(
@@ -205,13 +201,12 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
 
   // Role-based scoping: Sales Executives and IRMs see only their own leads.
   // Managers / Admins / Super Admins see the full company lead list (no filter).
-// Inactive / moved leads (Interested, Follow-up Required, Not Interested, Junk, Converted, and those in follow-up stage) are excluded from active Leads.
-
+  // Inactive / moved leads (Interested, Follow-up Required, Not Interested, Junk, Converted, and those in follow-up stage) are excluded from active Leads.
   const roleCode = user?.role?.code;
   const isExec = roleCode === 'sales_executive';
   const isLeadScopedUser = roleCode === 'sales_executive' || roleCode === 'irm';
   const isIrm = roleCode === 'irm';
-const currentTenantId = tenant?.id || tenant?.slug;
+  const currentTenantId = tenant?.id || tenant?.slug;
   const tenantLeads = leads.filter(l => !l.companyId || isTenantMatch(l.companyId, currentTenantId));
 
   const scopedLeads = useMemo(() => {
@@ -290,7 +285,6 @@ const currentTenantId = tenant?.id || tenant?.slug;
 
     return tenantLeads.filter(l => !isLeadInFollowupOrMoved(l));
   }, [tenantLeads, isExec, isIrm, user?.id, user?.name, pendingFollowupContactIds, pendingFollowupPhones, allFollowups]);
-
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
   const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
@@ -408,8 +402,7 @@ const currentTenantId = tenant?.id || tenant?.slug;
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [assignStep, setAssignStep] = useState<'pick-agent' | 'confirm'>('pick-agent');
-const [assignSelectedAgent, setAssignSelectedAgent] = useState<AssignableAgent | null>(null);
-
+  const [assignSelectedAgent, setAssignSelectedAgent] = useState<AssignableAgent | null>(null);
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
   const [aiDistribution, setAiDistribution] = useState<Record<string, Lead[]>>({});
   const [isAiEditMode, setIsAiEditMode] = useState(false);
@@ -467,7 +460,7 @@ const [assignSelectedAgent, setAssignSelectedAgent] = useState<AssignableAgent |
   };
 
   const loadData = async () => {
-if (apiClient.isMockMode()) {
+    if (apiClient.isMockMode()) {
       const updated = storageService.getLeads(tenant?.id);
       setLeads(updated);
       const allFus = storageService.getFollowups ? storageService.getFollowups(tenant?.id) : [];
@@ -478,14 +471,13 @@ if (apiClient.isMockMode()) {
         if (!prev) return null;
         const found = updated.find(l => l.id === prev.id);
         if (!found || MOVED_LEAD_STATUSES.includes(found.status) || isLeadInFollowupOrMoved(found) || found.status === 'Junk') {
-
           setIsDetailDrawerOpen(false);
           setIsEditDrawerOpen(false);
           return null;
         }
         return found;
       });
-return;
+      return;
     }
 
     try {
@@ -533,7 +525,6 @@ return;
       console.error('Failed to load leads from API', err);
       setLeads([]);
       setLoadError(err?.message || 'Failed to load leads from server.');
-
     }
   };
 
@@ -635,7 +626,18 @@ return;
   };
 
   const filteredLeads = scopedLeads.filter(lead => {
-    if (isMockMode() && assignedLeadIds.has(lead.id) && agentFilter === 'All') return false;
+    if (assignedLeadIds.has(lead.id)) return false;
+    if (isGhlSalesExec && lead.status !== 'Callback') {
+      const leadPhoneDigits = (lead.phone || '').replace(/\D/g, '').slice(-10);
+      const hasPendingFollowup = ghlPendingFollowups.some(f => {
+        if (f.contactId && f.contactId !== 'contact-new' && f.contactId === lead.id) {
+          return true;
+        }
+        const fPhoneDigits = (f.contactPhone || '').replace(/\D/g, '').slice(-10);
+        return fPhoneDigits && leadPhoneDigits && fPhoneDigits === leadPhoneDigits;
+      });
+      if (hasPendingFollowup) return false;
+    }
     if (!isGhlAdmin && statusFilter !== 'All' && (lead.status as string) !== statusFilter) return false;
     if (agentFilter !== 'All' && lead.assignedAgentName !== agentFilter) return false;
     if (capacityFilter !== 'All') {
@@ -674,7 +676,7 @@ return;
     setTimeout(() => setToast(null), 3500);
   };
 
-// Saves assignments to the backend (real agents) and mirrors them locally.
+  // Saves assignments to the backend (real agents) and mirrors them locally.
   const assignLeads = async (pairs: Array<{ lead: Lead; agent: AssignableAgent }>): Promise<number> => {
     const results = await Promise.allSettled(pairs.map(p => persistLeadAssignment(p.lead, p.agent)));
     const failed = results.filter(r => r.status === 'rejected') as PromiseRejectedResult[];
@@ -684,7 +686,6 @@ return;
     }
     return results.length - failed.length;
   };
-
 
   const handleOpenAssignIrm = (lead: Lead) => {
     setLeadToAssignIrm(lead);
@@ -698,28 +699,25 @@ return;
     if (!chosenIrm) return;
 
     const nowIso = new Date().toISOString();
-const assigningSalesPerson = user?.name || leadToAssignIrm.assignedByName || leadToAssignIrm.assignedAgentName || 'Naveen';
+    const assigningSalesPerson = user?.name || leadToAssignIrm.assignedByName || leadToAssignIrm.assignedAgentName || 'Naveen';
     const assigningSalesId = user?.id || leadToAssignIrm.assignedById || leadToAssignIrm.assignedAgentId || '3';
-
 
     const updatedLead: Lead = {
       ...leadToAssignIrm,
       assignedIrmId: String(chosenIrm.id),
       assignedIrmName: chosenIrm.name,
       assignedIrmAt: nowIso,
-assignedById: assigningSalesId,
+      assignedById: assigningSalesId,
       assignedByName: assigningSalesPerson,
       notes: `${leadToAssignIrm.notes ? leadToAssignIrm.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] Assigned to IRM: ${chosenIrm.name} by ${assigningSalesPerson}`,
-
       customFields: {
         ...leadToAssignIrm.customFields,
         assignedIrmId: String(chosenIrm.id),
         assignedIrmName: chosenIrm.name,
         assignedIrmAt: nowIso,
-qualifiedByAgentName: assigningSalesPerson,
+        qualifiedByAgentName: assigningSalesPerson,
         assignedByAgentName: assigningSalesPerson,
         salesAgentName: assigningSalesPerson,
-
       }
     };
 
@@ -736,17 +734,17 @@ qualifiedByAgentName: assigningSalesPerson,
       setSelectedLead(updatedLead);
     }
     await loadData();
-const toast = document.createElement('div');
+
+    const toast = document.createElement('div');
     toast.className = 'nexus-toast success';
     toast.textContent = `✓ Lead "${updatedLead.name}" successfully assigned to IRM ${chosenIrm.name}!`;
     document.body.appendChild(toast);
     setTimeout(() => toast.remove(), 3000);
-
   };
 
   const handleManualAssignConfirm = async () => {
     if (!assignSelectedAgent) return;
-const agent = assignSelectedAgent;
+    const agent = assignSelectedAgent;
     const leadIds = Array.from(selectedLeadIds).map(id => id.replace('db-', ''));
     let realAssigned = 0;
 
@@ -770,7 +768,6 @@ const agent = assignSelectedAgent;
     }
 
     const okCount = apiClient.isMockMode() ? leadIds.length : realAssigned;
-
     setSelectedLeadIds(new Set());
     setIsAssignModalOpen(false);
     setAssignStep('pick-agent');
@@ -787,11 +784,10 @@ const agent = assignSelectedAgent;
       return;
     }
     const pool = filteredLeads;
-const dist: Record<string, Lead[]> = {};
+    const dist: Record<string, Lead[]> = {};
     agents.forEach(a => { dist[a.id] = []; });
     pool.forEach((lead, i) => {
       const agent = agents[i % agents.length];
-
       dist[agent.id].push(lead);
     });
     setAiDistribution(dist);
@@ -799,9 +795,8 @@ const dist: Record<string, Lead[]> = {};
     setIsAiModalOpen(true);
   };
 
-const handleAiMoveLead = (leadId: string, fromAgentId: string, direction: 'left' | 'right') => {
+  const handleAiMoveLead = (leadId: string, fromAgentId: string, direction: 'left' | 'right') => {
     const agentIds = agents.map(a => a.id);
-
     const fromIdx = agentIds.indexOf(fromAgentId);
     const toIdx = direction === 'left' ? fromIdx - 1 : fromIdx + 1;
     if (toIdx < 0 || toIdx >= agentIds.length) return;
@@ -816,7 +811,7 @@ const handleAiMoveLead = (leadId: string, fromAgentId: string, direction: 'left'
   };
 
   const handleAiConfirm = async () => {
-let okCount = 0;
+    let okCount = 0;
 
     if (apiClient.isMockMode()) {
       const pairs: Array<{ lead: Lead; agent: AssignableAgent }> = [];
@@ -849,7 +844,6 @@ let okCount = 0;
       }
     }
 
-
     setIsAiModalOpen(false);
     loadData();
     if (okCount > 0) {
@@ -862,9 +856,8 @@ let okCount = 0;
       console.warn('[LeadsPage] Cannot create lead: user session is not yet loaded.');
       return;
     }
-const defaultAgentId = isLeadScopedUser ? user.id : undefined;
+    const defaultAgentId = isLeadScopedUser ? user.id : undefined;
     const defaultAgentName = isLeadScopedUser ? user.name : undefined;
-
 
     setFormData({
       id: `lead-${Date.now()}`,
@@ -997,10 +990,9 @@ const defaultAgentId = isLeadScopedUser ? user.id : undefined;
     }
 
     // Pull real agent ID and name at save-time to prevent stale/fallback placeholder IDs from leaking
-    const matchedAgent = availableAgents.find(a => String(a.id) === String(formData.assignedAgentId));
     const resolvedAgentId = (isLeadScopedUser && user?.id)
       ? user.id
-: (formData.assignedAgentId && formData.assignedAgentId !== 'usr-exec' && formData.assignedAgentId !== 'unassigned'
+      : (formData.assignedAgentId && formData.assignedAgentId !== 'usr-exec' && formData.assignedAgentId !== 'unassigned'
         ? formData.assignedAgentId
         : undefined);
     const resolvedAgentName = (isLeadScopedUser && user?.name)
@@ -1009,14 +1001,13 @@ const defaultAgentId = isLeadScopedUser ? user.id : undefined;
         ? formData.assignedAgentName
         : undefined);
 
-
-    const existingInList = leads.find(l => l.id === formData.id);
+    const isExistingById = leads.some(l => l.id === formData.id);
     const targetCompanyId = formData.companyId || tenant?.id || 't-ghl-01';
 
     let leadToSave: Lead;
-    let isUpdated = !!existingInList;
+    let isUpdated = isExistingById;
 
-if (!isExistingById) {
+    if (!isExistingById) {
       const normNewPhone = normalizePhone(formData.phone);
       const normNewEmail = normalizeEmail(formData.email);
 
@@ -1188,26 +1179,14 @@ if (!isExistingById) {
       leadToSave = {
         ...formData,
         status: isIrm ? 'Interested' : (formData.status || 'New'),
-
         assignedAgentId: resolvedAgentId,
         assignedAgentName: resolvedAgentName,
-        companyId: targetCompanyId,
-        createdAt: formData.createdAt || new Date().toISOString().split('T')[0],
-      } as Lead;
-    } else {
-      leadToSave = {
-        ...existingInList,
-        ...formData,
-        id: existingInList.id,
-        status: formData.status || existingInList.status || 'New',
-        assignedAgentId: resolvedAgentId || existingInList.assignedAgentId,
-        assignedAgentName: resolvedAgentName || existingInList.assignedAgentName,
         companyId: targetCompanyId,
       } as Lead;
     }
 
     try {
-await apiSaveLead(leadToSave);
+      await apiSaveLead(leadToSave);
 
       storageService.addAuditLog({
         id: `aud-${Date.now()}`,
@@ -1294,13 +1273,12 @@ await apiSaveLead(leadToSave);
         showToast(`⚠️ ${displayErr}`);
       }
     }
-
   };
 
   const handleDeleteLead = async (lead: Lead) => {
     if (confirm(`Delete lead ${lead.name}?`)) {
       try {
-if (lead.id.toString().startsWith('db-')) {
+        if (lead.id.toString().startsWith('db-')) {
           const dbId = lead.id.toString().replace('db-', '');
           await apiClient.delete(`/sales-executive/leads/${dbId}`);
         } else {
@@ -1313,7 +1291,6 @@ if (lead.id.toString().startsWith('db-')) {
       setLeads(prev => prev.filter(l => l.id !== lead.id));
       window.dispatchEvent(new CustomEvent('nexus_storage_updated'));
       showToast(`Lead ${lead.name} deleted`);
-
       loadData();
     }
   };
@@ -1408,13 +1385,13 @@ if (lead.id.toString().startsWith('db-')) {
     if (file) handleFileSelect(file);
   };
 
-  const handleImportLeads = async () => {
+  const handleImportLeads = () => {
     let successCount = 0;
     let skipCount = 0;
     let updatedCount = 0;
     const companyId = tenant?.id || 't-ghl-01';
 
-// Build a dedup set from current leads AND customers so we detect duplicates across both
+    // Build a dedup set from current leads AND customers so we detect duplicates across both
     const normalizePhone = (ph: string) => (ph || '').replace(/\D/g, '').slice(-10);
     const normalizeEmail = (em: string) => (em || '').trim().toLowerCase();
 
@@ -1430,7 +1407,6 @@ if (lead.id.toString().startsWith('db-')) {
     });
 
     parsedRows.forEach((row, index) => {
-
       const nameVal = row[columnMap['name']];
       const phoneVal = row[columnMap['phone']];
 
@@ -1448,7 +1424,7 @@ if (lead.id.toString().startsWith('db-')) {
         priorityVal = rawPriority;
       }
 
-      // Check for existing lead by phone — uses localStorage cache (populated from API)
+      // Check for existing lead by phone in this company
       const existingMatch = storageService.findLeadByPhone(phoneVal, companyId);
       if (existingMatch) {
         const updatedLead: Lead = {
@@ -1459,7 +1435,7 @@ if (lead.id.toString().startsWith('db-')) {
           source: sourceVal || existingMatch.source,
           priority: (priorityVal as any) || existingMatch.priority,
         };
-        try { await apiSaveLead(updatedLead); } catch { storageService.saveLead(updatedLead); }
+        storageService.saveLead(updatedLead);
         updatedCount++;
         successCount++;
         return;
@@ -1495,11 +1471,9 @@ if (lead.id.toString().startsWith('db-')) {
         customFields: {}
       };
 
-      try { await apiSaveLead(newLead); } catch { storageService.saveLead(newLead); }
+      storageService.saveLead(newLead);
       successCount++;
     });
-
-    await Promise.allSettled(promises);
 
     storageService.addAuditLog({
       id: `aud-${Date.now()}`,
@@ -1598,23 +1572,6 @@ if (lead.id.toString().startsWith('db-')) {
         </div>
       );
     },
-  };
-
-  const assignedIrmColumn: Column<Lead> = {
-    key: 'assignedIrm',
-    header: 'Assigned IRM',
-    sortable: true,
-    render: l => (
-      l.assignedIrmName ? (
-        <span className="customer-irm-status-pill assigned">
-          <UserCheck size={11} /> {l.assignedIrmName}
-        </span>
-      ) : (
-        <span className="customer-irm-status-pill unassigned">
-          Unassigned
-        </span>
-      )
-    ),
   };
 
   const columns: Column<Lead>[] = [
@@ -1722,7 +1679,7 @@ if (lead.id.toString().startsWith('db-')) {
         return <span className="lead-investment-val">{amount}</span>;
       },
     },
-    ...(isIrm ? [assignedAgentColumn] : [statusColumn, sourceColumn, assignedIrmColumn]),
+    ...(isIrm ? [assignedAgentColumn] : [statusColumn, sourceColumn]),
     {
       key: 'quickCall',
       header: 'Quick Call',
@@ -1754,11 +1711,6 @@ if (lead.id.toString().startsWith('db-')) {
         setIsDetailDrawerOpen(true);
       },
     },
-    ...(!isIrm ? [{
-      label: 'Assign to IRM',
-      icon: <UserCheck size={14} className="leads-action-icon" style={{ color: '#8b5cf6' }} />,
-      onClick: (l: Lead) => handleOpenAssignIrm(l),
-    }] : []),
     {
       label: 'Edit Lead',
       icon: <Edit size={14} className="leads-action-icon" />,
@@ -1856,10 +1808,7 @@ if (lead.id.toString().startsWith('db-')) {
                   onChange: setStatusFilter,
                   options: [
                     { value: 'New', label: 'New' },
-                    { value: 'Contacted', label: 'Contacted' },
                     { value: 'Callback', label: 'Callback' },
-                    { value: 'Interested', label: 'Interested' },
-                    { value: 'Follow-up Required', label: 'Follow-up Required' },
                     { value: 'No Response', label: 'No Response' },
                   ],
                 }]),
@@ -1997,7 +1946,7 @@ if (lead.id.toString().startsWith('db-')) {
                 </div>
               </div>
 
-{isLeadReturned(selectedLead) && (
+              {isLeadReturned(selectedLead) && (
                 <div style={{
                   margin: '10px 0',
                   padding: '10px 14px',
@@ -2012,7 +1961,6 @@ if (lead.id.toString().startsWith('db-')) {
                   <div>
                     <div style={{ fontSize: 13, fontWeight: 700, color: '#34d399' }}>
                       Returned from Coverage by {getReturnedCoveringName(selectedLead)}
-
                     </div>
                     <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
                       This lead was covered while you were away and handed back to you{getReturnedDate(selectedLead) ? ` on ${new Date(getReturnedDate(selectedLead)!).toLocaleDateString()}` : ''}. Review recent call logs and updated notes below.
@@ -2232,7 +2180,7 @@ if (lead.id.toString().startsWith('db-')) {
             </div>
           </div>
 
-{!isLeadScopedUser && (
+          {!isLeadScopedUser && (
             <div className="form-group">
               <label className="form-label">Assigned Sales Agent</label>
               <select
@@ -2257,7 +2205,6 @@ if (lead.id.toString().startsWith('db-')) {
               </select>
             </div>
           )}
-
 
           {/* DYNAMIC TENANT CUSTOM FIELDS (Blueprint Section 7.3) */}
           <div className="lead-custom-schema-box">
@@ -2436,67 +2383,6 @@ if (lead.id.toString().startsWith('db-')) {
             ✓ On {tenant?.name}, this also automatically schedules a{' '}
             <strong>{tenant?.slug === 'jamin' ? 'Site Visit' : 'Wealth Consultation'}</strong> step!
           </div>
-        </div>
-      </Modal>
-
-      {/* Assign Lead to IRM Modal */}
-      <Modal
-        isOpen={isAssignIrmModalOpen && !!leadToAssignIrm}
-        onClose={() => setIsAssignIrmModalOpen(false)}
-        title="Assign Lead to IRM"
-        subtitle={`Assigning ${leadToAssignIrm?.name} to an Investment Relationship Manager`}
-        footer={
-          <>
-            <button className="btn btn-secondary" onClick={() => setIsAssignIrmModalOpen(false)}>
-              Cancel
-            </button>
-            <button
-              className="btn btn-primary"
-              disabled={!selectedIrmForLead}
-              onClick={handleConfirmAssignIrm}
-            >
-              Confirm IRM Assignment
-            </button>
-          </>
-        }
-      >
-        <div className="lead-modal-content">
-          <p className="lead-irm-modal-desc">
-            Select an active IRM from the company database. Once assigned, this lead will be routed directly to the IRM&apos;s portal and consultations dashboard.
-          </p>
-
-          {companyIrms.length === 0 ? (
-            <div className="lead-irm-empty" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
-              No active IRMs found for this organization.
-            </div>
-          ) : (
-            <div className="lead-irm-agent-list">
-              {companyIrms.map(irm => {
-                const isSelected = String(selectedIrmForLead) === String(irm.id);
-                return (
-                  <div
-                    key={irm.id}
-                    className={`lead-irm-agent-row ${isSelected ? 'selected' : ''}`}
-                    onClick={() => setSelectedIrmForLead(String(irm.id))}
-                  >
-                    <input
-                      type="radio"
-                      name="selectedLeadIrm"
-                      checked={isSelected}
-                      onChange={() => setSelectedIrmForLead(String(irm.id))}
-                    />
-                    <div className="lead-irm-agent-avatar">
-                      {irm.name[0]?.toUpperCase()}
-                    </div>
-                    <div className="lead-irm-agent-details">
-                      <div className="lead-irm-agent-name">{irm.name}</div>
-                      <div className="lead-irm-agent-email">{irm.email}</div>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
         </div>
       </Modal>
 
@@ -2691,8 +2577,7 @@ if (lead.id.toString().startsWith('db-')) {
               <>
                 <p className="assign-modal-sub">Select an agent to assign the {selectedLeadIds.size} selected lead{selectedLeadIds.size !== 1 ? 's' : ''} to:</p>
                 <div className="assign-agent-list">
-{agents.map(agent => (
-
+                  {agents.map(agent => (
                     <label key={agent.id} className={`assign-agent-row${assignSelectedAgent?.id === agent.id ? ' selected' : ''}`}>
                       <input
                         type="radio"
@@ -2745,8 +2630,7 @@ if (lead.id.toString().startsWith('db-')) {
               <div>
                 <h3 className="assign-modal-title">✦ AI Suggestion — Round Robin</h3>
                 <p className="assign-modal-sub" style={{ margin: '2px 0 0' }}>
-{Object.values(aiDistribution).flat().length} leads distributed across {agents.length} agents
-
+                  {Object.values(aiDistribution).flat().length} leads distributed across {agents.length} agents
                 </p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2761,8 +2645,7 @@ if (lead.id.toString().startsWith('db-')) {
             </div>
 
             <div className="ai-dist-grid">
-{agents.map((agent, agentIdx) => {
-
+              {agents.map((agent, agentIdx) => {
                 const agentLeads = aiDistribution[agent.id] || [];
                 return (
                   <div key={agent.id} className="ai-dist-col">
@@ -2782,17 +2665,14 @@ if (lead.id.toString().startsWith('db-')) {
                             {isAiEditMode && (
                               <div className="ai-dist-move-btns">
                                 <button
-                                  type="button"
                                   className="ai-move-btn"
                                   disabled={agentIdx === 0}
                                   onClick={() => handleAiMoveLead(lead.id, agent.id, 'left')}
                                   title="Move left"
                                 >◀</button>
                                 <button
-                                  type="button"
                                   className="ai-move-btn"
-disabled={agentIdx === agents.length - 1}
-
+                                  disabled={agentIdx === agents.length - 1}
                                   onClick={() => handleAiMoveLead(lead.id, agent.id, 'right')}
                                   title="Move right"
                                 >▶</button>

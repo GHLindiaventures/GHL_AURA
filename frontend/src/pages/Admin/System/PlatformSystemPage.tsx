@@ -35,7 +35,6 @@ import {
 import { superAdminService } from '../../../services/superAdminService';
 import { signalRService } from '../../../services/signalRService';
 import { useUnsavedChanges } from '../../../context/NavigationGuardContext';
-
 import { Modal } from '../../../components/common/Modal';
 import './PlatformSystemPage.css';
 
@@ -101,7 +100,7 @@ export const PlatformSystemPage: React.FC = () => {
   );
   const isAnnDirty = isAnnModalOpen && (annTitle.trim() !== '' || annMessage.trim() !== '');
 
-useUnsavedChanges(
+  useUnsavedChanges(
     isConfigDirty || isAnnDirty,
     'You have unsaved changes in system settings or broadcast announcement. Are you sure you want to leave?',
     'platform-system-page'
@@ -148,7 +147,6 @@ useUnsavedChanges(
       setIsLoading(false);
       setIsRefreshing(false);
     }
-
   };
 
   useEffect(() => {
@@ -158,7 +156,7 @@ useUnsavedChanges(
     window.addEventListener('nexus_admin_updated', handleUpdate);
     window.addEventListener('nexus_signalr_reconnected', handleUpdate);
 
-const handleAnnouncementEvent = (data: any) => {
+    const handleAnnouncementEvent = (data: any) => {
       const action = data?.action || (data?.isActive === false ? 'deactivated' : 'activated');
       const ann: BroadcastAnnouncement | undefined = data?.announcement || (data?.title ? data : undefined);
       const annId = String(data?.announcementId || ann?.id || '');
@@ -400,7 +398,6 @@ const handleAnnouncementEvent = (data: any) => {
     } finally {
       setIsExporting(false);
     }
-
   };
 
   const handleGenerateBackup = async () => {

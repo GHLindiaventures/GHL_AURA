@@ -51,7 +51,6 @@ const DEFAULT_SETTINGS: ChatSettings = {
     sound: true,
     mentionOnly: false,
     showPreview: true,
-
   },
   adminGovernance: {
     retentionDays: 0,
@@ -532,8 +531,7 @@ export const ChatSettingsModal: React.FC<Props> = ({
             </div>
           )}
 
-{/* 5. ADMIN GOVERNANCE */}
-
+          {/* 5. ADMIN GOVERNANCE */}
           {activeTab === 'admin' && isAdmin && (
             <div className="settings-section">
               <h4 className="settings-section-title">Admin Governance & Organization Policies</h4>

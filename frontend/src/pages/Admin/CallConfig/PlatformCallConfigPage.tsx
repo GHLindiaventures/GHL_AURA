@@ -37,7 +37,6 @@ import {
 } from '../../../types';
 import { superAdminService } from '../../../services/superAdminService';
 import { useUnsavedChanges } from '../../../context/NavigationGuardContext';
-
 import { Modal } from '../../../components/common/Modal';
 import './PlatformCallConfigPage.css';
 
@@ -120,7 +119,7 @@ export const PlatformCallConfigPage: React.FC = () => {
   const [successMsg, setSuccessMsg] = useState('');
 
   const loadData = async () => {
-setIsLoading(true);
+    setIsLoading(true);
     setErrorMsg(null);
     try {
       const [allDids, allTenants, carrier, vocabs] = await Promise.all([
@@ -144,7 +143,6 @@ setIsLoading(true);
     } finally {
       setIsLoading(false);
     }
-
   };
 
   useEffect(() => {
@@ -183,7 +181,7 @@ setIsLoading(true);
   };
 
   const handleSaveDid = async () => {
-if (!didPhone.trim() || isSavingDid) return;
+    if (!didPhone.trim() || isSavingDid) return;
     setIsSavingDid(true);
 
     try {
@@ -235,12 +233,11 @@ if (!didPhone.trim() || isSavingDid) return;
       } finally {
         setIsActionInProgress(false);
       }
-
     }
   };
 
   const handleSaveCarrierSettings = async () => {
-setIsSavingCarrier(true);
+    setIsSavingCarrier(true);
     setErrorMsg(null);
     try {
       const saved = await superAdminService.updateCarrierSettingsApi(carrierSettings);
@@ -251,7 +248,6 @@ setIsSavingCarrier(true);
     } finally {
       setIsSavingCarrier(false);
     }
-
   };
 
   const handleTestCarrier = async () => {

@@ -4,15 +4,13 @@ import { Lead, CallRecord } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useCall } from '../../context/CallContext';
 import {
-getLeads,
-
+  getLeads,
   getNotInterestedLeads,
   saveLead as apiSaveLead,
   saveFollowup as apiSaveFollowup,
   getCalls,
 } from '../../services/ghlApiService';
 import { apiClient } from '../../services/apiClient';
-
 import { storageService } from '../../services/storageService';
 import { DataTable, Column, RowAction } from '../../components/common/DataTable';
 import { Drawer } from '../../components/common/Drawer';
@@ -36,7 +34,7 @@ export const NotInterestedPage: React.FC = () => {
 
   const loadData = async () => {
     try {
-const [niLeads, allCalls] = await Promise.all([
+      const [niLeads, allCalls] = await Promise.all([
         getNotInterestedLeads(tenant?.id),
         getCalls(tenant?.id),
       ]);
@@ -58,9 +56,8 @@ const [niLeads, allCalls] = await Promise.all([
           })
         : niLeads;
 
-
       setLeads(scopedLeads);
-      setCalls(allCalls || []);
+      setCalls(allCalls);
     } catch (err) {
       console.error('Failed to load not-interested leads', err);
     }

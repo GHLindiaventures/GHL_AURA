@@ -18,7 +18,7 @@ export const SmartyAIPage: React.FC = () => {
       setMessages([
         {
           role: 'assistant',
-          content: 'Hi! I am **Smarty AI**, your built-in assistant for NexusSales.\n\nI can help you view and manage leads, follow-ups, customers, deals, and reports. Let me know what you\'d like to do today!'
+          content: 'Hi! I am **Smarty AI**, your built-in assistant for GHL AURA.\n\nI can help you view and manage leads, follow-ups, customers, deals, and reports. Let me know what you\'d like to do today!'
         }
       ]);
     }

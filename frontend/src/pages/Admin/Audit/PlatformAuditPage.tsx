@@ -17,7 +17,6 @@ import {
 } from 'lucide-react';
 import { AuditLog, Tenant } from '../../../types';
 import { superAdminService } from '../../../services/superAdminService';
-import { isMockMode } from '../../../config/environment';
 import { Modal } from '../../../components/common/Modal';
 import { Drawer } from '../../../components/common/Drawer';
 import './PlatformAuditPage.css';
@@ -39,7 +38,7 @@ export const PlatformAuditPage: React.FC = () => {
   const [isInspectDrawerOpen, setIsInspectDrawerOpen] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
 
-const [loadError, setLoadError] = useState<string | null>(null);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = async () => {
     try {
@@ -47,13 +46,12 @@ const [loadError, setLoadError] = useState<string | null>(null);
       setTenants(allTenants);
     } catch (err: any) {
       console.warn('Could not load tenants for audit filters:', err);
-
     }
     await applyFilters();
   };
 
   const applyFilters = async () => {
-setIsLoading(true);
+    setIsLoading(true);
     setLoadError(null);
     try {
       const list = await superAdminService.fetchAuditLogsFromApi({
@@ -72,14 +70,15 @@ setIsLoading(true);
     } finally {
       setIsLoading(false);
     }
-
   };
 
   useEffect(() => {
     loadData();
     window.addEventListener('nexus_admin_updated', loadData);
+    window.addEventListener('nexus_storage_updated', loadData);
     return () => {
       window.removeEventListener('nexus_admin_updated', loadData);
+      window.removeEventListener('nexus_storage_updated', loadData);
     };
   }, []);
 
@@ -93,7 +92,7 @@ setIsLoading(true);
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.setAttribute('download', `GHL_AURA_Platform_Audit_Log_${new Date().toISOString().slice(0, 10)}.csv`);
+    link.setAttribute('download', `GHL AURA_Platform_Audit_Log_${new Date().toISOString().slice(0, 10)}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -386,7 +385,7 @@ setIsLoading(true);
               <div className="meta-row">
                 <span className="meta-key">Client Origin:</span>
                 <span className="meta-val font-mono">
-                  {inspectedLog.ipAddress || '127.0.0.1'} ({inspectedLog.userAgent || 'GHL AURA Console'})
+                  {inspectedLog.ipAddress || '127.0.0.1'} ({inspectedLog.userAgent || 'Nexus Platform Console'})
                 </span>
               </div>
               <div className="meta-row">

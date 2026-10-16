@@ -65,8 +65,6 @@ interface ConsultationForm {
   investorId: string;
   investorName: string;
   investorPhone: string;
-  scheduledDate: string;
-  scheduledTime: string;
   scheduledAt: string;
   consultantId: string;
   consultantName: string;
@@ -86,8 +84,6 @@ const BLANK_FORM: ConsultationForm = {
   investorId: '',
   investorName: '',
   investorPhone: '',
-  scheduledDate: '',
-  scheduledTime: '15:00',
   scheduledAt: '',
   consultantId: '',
   consultantName: '',
@@ -95,63 +91,6 @@ const BLANK_FORM: ConsultationForm = {
   agenda: '',
   outcomeNotes: '',
   referredByAgentName: '',
-};
-
-const formatSlotDateTime = (dateStr: string, timeStr: string): string => {
-  if (!dateStr) return '';
-  const time = timeStr || '15:00';
-  const parts = dateStr.split('-');
-  if (parts.length !== 3) return `${dateStr} ${time}`;
-  const [year, month, day] = parts.map(Number);
-  const [hour, minute] = time.split(':').map(Number);
-  const dt = new Date(year, month - 1, day, hour || 0, minute || 0);
-  if (isNaN(dt.getTime())) return `${dateStr} ${time}`;
-  return (
-    dt.toLocaleDateString('en-US', {
-      weekday: 'short',
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    }) +
-    ', ' +
-    dt.toLocaleTimeString('en-US', {
-      hour: '2-digit',
-      minute: '2-digit',
-      hour12: true,
-    })
-  );
-};
-
-const parseScheduledSlot = (val: string): { date: string; time: string } => {
-  let date = '';
-  let time = '15:00';
-  if (val) {
-    const parsed = Date.parse(val);
-    if (!isNaN(parsed)) {
-      const d = new Date(parsed);
-      const year = d.getFullYear();
-      const month = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      const hours = String(d.getHours()).padStart(2, '0');
-      const mins = String(d.getMinutes()).padStart(2, '0');
-      return { date: `${year}-${month}-${day}`, time: `${hours}:${mins}` };
-    }
-    const tMatch = val.match(/(\d{1,2}):(\d{2})\s*(AM|PM)/i);
-    if (tMatch) {
-      let h = parseInt(tMatch[1], 10);
-      const m = tMatch[2];
-      const ap = tMatch[3].toUpperCase();
-      if (ap === 'PM' && h < 12) h += 12;
-      if (ap === 'AM' && h === 12) h = 0;
-      time = `${String(h).padStart(2, '0')}:${m}`;
-    }
-  }
-  const now = new Date();
-  const year = now.getFullYear();
-  const month = String(now.getMonth() + 1).padStart(2, '0');
-  const day = String(now.getDate()).padStart(2, '0');
-  date = `${year}-${month}-${day}`;
-  return { date, time };
 };
 
 // ─── Component ───────────────────────────────────────────────────────────────
@@ -239,19 +178,17 @@ export const ConsultationsPage: React.FC = () => {
 
   // ── Helper to parse timestamp for newest-first sorting / deduplication ────
   const getConsultationTimestamp = (c: Consultation): number => {
-
     const match = (c.id || '').match(/^cns-(\d+)$/);
     if (match) {
       const ts = parseInt(match[1], 10);
       if (!isNaN(ts) && ts > 10000000000) return ts;
     }
-if (c.scheduledAt) {
+    if (c.scheduledAt) {
       const parsed = Date.parse(c.scheduledAt);
       if (!isNaN(parsed)) return parsed;
     }
     if (match) {
       const ts = parseInt(match[1], 10);
-
       if (!isNaN(ts)) return ts;
     }
     return 0;
@@ -609,7 +546,7 @@ if (c.scheduledAt) {
   const openCreateModal = () => {
     setEditingConsultation(null);
     setIsRescheduleMode(false);
-const defaultIrm = availableIrms.length > 0 ? availableIrms[0] : null;
+    const defaultIrm = availableIrms.length > 0 ? availableIrms[0] : null;
 
     setForm({
       ...BLANK_FORM,
@@ -618,7 +555,6 @@ const defaultIrm = availableIrms.length > 0 ? availableIrms[0] : null;
       consultantId: defaultIrm?.id || '',
       consultantName: defaultIrm?.name || (user?.name ?? 'Advisor'),
       referredByAgentName: isExec ? (user?.name ?? '') : '',
-
     });
     setFormErrors({});
     setIsModalOpen(true);
@@ -627,14 +563,11 @@ const defaultIrm = availableIrms.length > 0 ? availableIrms[0] : null;
   const openRescheduleModal = (c: Consultation) => {
     setEditingConsultation(c);
     setIsRescheduleMode(true);
-    const { date, time } = parseScheduledSlot(c.scheduledAt);
     setForm({
       investorId: c.investorId,
       investorName: c.investorName,
       investorPhone: c.investorPhone,
-      scheduledDate: date,
-      scheduledTime: time,
-      scheduledAt: c.scheduledAt || formatSlotDateTime(date, time),
+      scheduledAt: c.scheduledAt,
       consultantId: c.consultantId,
       consultantName: c.consultantName,
       status: 'Rescheduled',
@@ -663,15 +596,14 @@ const defaultIrm = availableIrms.length > 0 ? availableIrms[0] : null;
     if (e) e.preventDefault();
 
     const errors: Partial<Record<keyof ConsultationForm, string>> = {};
-if (!form.investorId) errors.investorId = 'Please select a lead.';
+    if (!form.investorId) errors.investorId = 'Please select a lead.';
     if (!form.scheduledAt.trim()) errors.scheduledAt = 'Consultation slot is required.';
-
     if (Object.keys(errors).length > 0) {
       setFormErrors(errors);
       return;
     }
 
-const targetMs = new Date(form.scheduledAt).getTime();
+    const targetMs = new Date(form.scheduledAt).getTime();
     if (!isNaN(targetMs)) {
       const targetConsultantId = form.consultantId.trim() || (user?.id ?? '');
       const targetConsultantName = form.consultantName.trim() || (user?.name ?? '');
@@ -710,22 +642,20 @@ const targetMs = new Date(form.scheduledAt).getTime();
       }
     }
 
-
     const isEdit = !!editingConsultation;
     const cons: Consultation = {
       id: editingConsultation ? editingConsultation.id : `cns-${Date.now()}`,
       companyId: tenant?.id || 't-ghl-01',
-      investorId: resolvedInvestorId,
-      investorName: form.investorName.trim(),
-      investorPhone: form.investorPhone.trim(),
-      scheduledAt: slotValue,
+      investorId: form.investorId,
+      investorName: form.investorName,
+      investorPhone: form.investorPhone,
+      scheduledAt: form.scheduledAt.trim(),
       consultantId: form.consultantId.trim() || (user?.id ?? 'usr-admin'),
       consultantName: form.consultantName.trim() || (user?.name ?? 'Advisor'),
       status: form.status,
       agenda: form.agenda.trim(),
-outcomeNotes: form.outcomeNotes.trim() || undefined,
+      outcomeNotes: form.outcomeNotes.trim() || undefined,
       referredByAgentName: form.referredByAgentName.trim() || (isExec ? (user?.name ?? undefined) : undefined),
-
     };
 
     apiSaveConsultation(cons)
@@ -1198,7 +1128,7 @@ outcomeNotes: form.outcomeNotes.trim() || undefined,
         }
       >
         <form onSubmit={handleSaveConsultation} className="consultation-form">
-{/* Select Lead Dropdown */}
+          {/* Select Lead Dropdown */}
           <div className="form-group">
             <label htmlFor="consultation-form-investor" className="form-label">Select Lead / Investor *</label>
             <select
@@ -1218,12 +1148,11 @@ outcomeNotes: form.outcomeNotes.trim() || undefined,
                 <option key={lead.id} value={lead.id}>
                   {lead.name} {lead.phone ? `(${lead.phone})` : ''}
                   {!isExec && lead.assignedAgentName ? ` • ${lead.assignedAgentName}` : ''}
-
                 </option>
               ))}
-            </datalist>
-            {formErrors.investorName && (
-              <div className="form-error">{formErrors.investorName}</div>
+            </select>
+            {formErrors.investorId && (
+              <div className="form-error">{formErrors.investorId}</div>
             )}
           </div>
 
@@ -1243,7 +1172,7 @@ outcomeNotes: form.outcomeNotes.trim() || undefined,
             </div>
 
             <div className="form-group">
-<label htmlFor="consultation-form-slot" className="form-label">Consultation Slot / Date *</label>
+              <label htmlFor="consultation-form-slot" className="form-label">Consultation Slot / Date *</label>
               <input
                 id="consultation-form-slot"
                 name="scheduledAt"
@@ -1252,7 +1181,6 @@ outcomeNotes: form.outcomeNotes.trim() || undefined,
                 value={form.scheduledAt}
                 onChange={e => setField('scheduledAt', e.target.value)}
               />
-
               {formErrors.scheduledAt && (
                 <div className="form-error">{formErrors.scheduledAt}</div>
               )}
@@ -1414,7 +1342,8 @@ outcomeNotes: form.outcomeNotes.trim() || undefined,
               style={{ resize: 'vertical' }}
             />
           </div>
-{/* Outcome Notes */}
+
+          {/* Outcome Notes */}
           <div className="form-group">
             <label htmlFor="consultation-form-outcome" className="form-label">
               Outcome Notes & Recommendations
@@ -1440,7 +1369,6 @@ outcomeNotes: form.outcomeNotes.trim() || undefined,
               style={{ resize: 'vertical' }}
             />
           </div>
-
         </form>
       </Modal>
 

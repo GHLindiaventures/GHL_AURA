@@ -22,14 +22,14 @@ import {
   TicketTimelineEvent,
   DocumentItem,
 } from '../types';
+import { DEFAULT_TENANTS } from '../constants/defaultTenants';
 import { SYSTEM_ROLES } from '../constants/roles';
 import { FEATURES } from '../constants/features';
 import { apiClient, ApiResponse, PagedResult } from './apiClient';
 import { isMockMode } from '../config/environment';
 import { storageService } from './storageService';
 
-
-// Storage Keys for caching and mock mode
+// Storage Keys
 const STORAGE_KEYS = {
   TENANTS: 'nexus_tenants',
   USERS: 'nexus_users',
@@ -165,159 +165,22 @@ export const notifyAdminStorageUpdated = () => {
 
 export class SuperAdminService {
   // ── TENANTS / COMPANIES ───────────────────────────────────────────────────
-  async fetchTenantsFromApi(filters?: { search?: string; status?: string; industry?: string }): Promise<Tenant[]> {
-    if (isMockMode()) {
-      return this.getTenants();
-    }
 
-async fetchTenantsFromApi(): Promise<Tenant[]> {
+  async fetchTenantsFromApi(): Promise<Tenant[]> {
     const res = await apiClient.get<ApiResponse<Tenant[]>>('/super-admin/tenants');
     if (res && res.data) {
       localStorage.setItem(STORAGE_KEYS.TENANTS, JSON.stringify(res.data));
       return res.data;
-
     }
     throw new Error(res?.message || 'Failed to fetch organizations from backend database.');
-  }
-
-  async fetchTenantByIdFromApi(id: string): Promise<Tenant | undefined> {
-    if (isMockMode()) {
-      return this.getTenantById(id);
-    }
-
-    try {
-      const res = await apiClient.get<ApiResponse<Tenant>>(`/super-admin/tenants/${id}`);
-      if (res && res.data) {
-        return res.data;
-      }
-    } catch (err) {
-      console.warn(`Could not fetch tenant ${id} from API:`, err);
-    }
-    return this.getTenantById(id);
-  }
-
-  async createTenantApi(
-    tenantData: Partial<Tenant>,
-    adminUserData?: { name: string; email: string; phone?: string; password?: string },
-    didData?: { phoneNumber?: string; routingStrategy?: string; queueName?: string }
-  ): Promise<Tenant> {
-    if (!isMockMode()) {
-      try {
-        const payload = {
-          name: tenantData.name,
-          legalName: tenantData.legalName,
-          slug: tenantData.slug,
-          industry: tenantData.industry,
-          tagline: tenantData.tagline,
-          brandColor: tenantData.brandColor,
-          timezone: tenantData.timezone,
-          currency: tenantData.currency,
-          businessHours: tenantData.businessHours,
-          subscriptionPlan: tenantData.subscriptionPlan,
-          enabledFeatures: tenantData.enabledFeatures,
-          adminName: adminUserData?.name,
-          adminEmail: adminUserData?.email,
-          adminPhone: adminUserData?.phone,
-          adminPassword: adminUserData?.password,
-          didPhoneNumber: didData?.phoneNumber,
-          didRoutingStrategy: didData?.routingStrategy,
-          didQueueName: didData?.queueName,
-        };
-
-        const res = await apiClient.post<ApiResponse<Tenant>>('/super-admin/tenants', payload);
-        if (res && res.data) {
-          await this.fetchTenantsFromApi();
-          return res.data;
-        }
-      } catch (err) {
-        console.warn('Could not create tenant via API, falling back to local creation:', err);
-      }
-    }
-
-    return this.createTenant(tenantData, adminUserData, didData);
-  }
-
-  async updateTenantApi(id: string, updates: Partial<Tenant>): Promise<Tenant | undefined> {
-    if (!isMockMode()) {
-      try {
-        const res = await apiClient.put<ApiResponse<Tenant>>(`/super-admin/tenants/${id}`, updates);
-        if (res && res.data) {
-          await this.fetchTenantsFromApi();
-          return res.data;
-        }
-      } catch (err) {
-        console.warn('Could not update tenant via API, falling back to local update:', err);
-      }
-    }
-    return this.updateTenant(id, updates);
-  }
-
-  async updateTenantStatusApi(id: string, status: 'Active' | 'Inactive' | 'Suspended'): Promise<boolean> {
-    if (!isMockMode()) {
-      try {
-        const res = await apiClient.patch<ApiResponse<boolean>>(`/super-admin/tenants/${id}/status`, { status });
-        if (res && res.data) {
-          await this.fetchTenantsFromApi();
-          return true;
-        }
-      } catch (err) {
-        console.warn('Could not update tenant status via API:', err);
-      }
-    }
-    return this.updateTenantStatus(id, status);
-  }
-
-  async updateTenantFeaturesApi(id: string, features: string[]): Promise<boolean> {
-    if (!isMockMode()) {
-      try {
-        const res = await apiClient.put<ApiResponse<string[]>>(`/super-admin/tenants/${id}/features`, { enabledFeatures: features });
-        if (res && res.data) {
-          await this.fetchTenantsFromApi();
-          return true;
-        }
-      } catch (err) {
-        console.warn('Could not update tenant features via API:', err);
-      }
-    }
-    return this.updateTenantFeatures(id, features);
-  }
-
-  async deleteTenantApi(id: string): Promise<boolean> {
-    if (!isMockMode()) {
-      try {
-        const res = await apiClient.delete<ApiResponse<boolean>>(`/super-admin/tenants/${id}`);
-        if (res && res.data) {
-          await this.fetchTenantsFromApi();
-          return true;
-        }
-      } catch (err) {
-        console.warn('Could not delete tenant via API:', err);
-      }
-    }
-    return this.deleteTenant(id);
-  }
-
-  async impersonateTenantApi(id: string): Promise<{ token: string; tenant: Tenant } | undefined> {
-    if (!isMockMode()) {
-      try {
-        const res = await apiClient.post<ApiResponse<any>>(`/super-admin/tenants/${id}/impersonate`);
-        if (res && res.data) {
-          return res.data;
-        }
-      } catch (err) {
-        console.warn('Could not impersonate tenant via API:', err);
-      }
-    }
-    return undefined;
   }
 
   getTenants(): Tenant[] {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.TENANTS);
-return raw ? JSON.parse(raw) : [];
+      return raw ? JSON.parse(raw) : [];
     } catch {
       return [];
-
     }
   }
 
@@ -440,7 +303,7 @@ return raw ? JSON.parse(raw) : [];
   createTenant(
     tenantData: Partial<Tenant>,
     adminUserData?: { name: string; email: string; phone?: string; password?: string },
-    didData?: { phoneNumber?: string; routingStrategy?: string; queueName?: string }
+    didData?: { phoneNumber?: string; routingStrategy?: string }
   ): Tenant {
     this.createTenantApi(tenantData, adminUserData, didData).catch(err => {
       console.error('Async createTenantApi error:', err);
@@ -482,12 +345,11 @@ return raw ? JSON.parse(raw) : [];
 
     tenants.push(newTenant);
     localStorage.setItem(STORAGE_KEYS.TENANTS, JSON.stringify(tenants));
-
     notifyAdminStorageUpdated();
     return newTenant;
   }
 
-updateTenant(tenant: Tenant): Tenant {
+  updateTenant(tenant: Tenant): Tenant {
     this.updateTenantApi(tenant).catch(err => {
       console.error('Async updateTenantApi error:', err);
     });
@@ -496,18 +358,22 @@ updateTenant(tenant: Tenant): Tenant {
     const idx = tenants.findIndex(t => t.id === tenant.id);
     const updated: Tenant = {
       ...tenant,
-
       updatedAt: new Date().toISOString(),
     };
 
-    localStorage.setItem(STORAGE_KEYS.TENANTS, JSON.stringify(tenants));
+    if (idx >= 0) {
+      tenants[idx] = updated;
+    } else {
+      tenants.push(updated);
+    }
 
+    localStorage.setItem(STORAGE_KEYS.TENANTS, JSON.stringify(tenants));
     notifyAdminStorageUpdated();
-    return tenants[idx];
+    return updated;
   }
 
   toggleTenantStatus(id: string, status: 'Active' | 'Inactive' | 'Suspended'): Tenant | undefined {
-this.toggleTenantStatusApi(id, status).catch(err => {
+    this.toggleTenantStatusApi(id, status).catch(err => {
       console.error('Async toggleTenantStatusApi error:', err);
     });
 
@@ -520,7 +386,6 @@ this.toggleTenantStatusApi(id, status).catch(err => {
     localStorage.setItem(STORAGE_KEYS.TENANTS, JSON.stringify(tenants));
     notifyAdminStorageUpdated();
     return tenant;
-
   }
 
   deleteTenant(id: string): boolean {
@@ -529,12 +394,11 @@ this.toggleTenantStatusApi(id, status).catch(err => {
     });
 
     const tenants = this.getTenants();
-    const target = tenants.find(t => t.id === id || t.slug === id);
+    const target = tenants.find(t => t.id === id);
     if (!target) return false;
 
-    const filtered = tenants.filter(t => t.id !== id && t.slug !== id);
+    const filtered = tenants.filter(t => t.id !== id);
     localStorage.setItem(STORAGE_KEYS.TENANTS, JSON.stringify(filtered));
-
     notifyAdminStorageUpdated();
     return true;
   }
@@ -813,7 +677,7 @@ this.toggleTenantStatusApi(id, status).catch(err => {
 
   // ── USERS ─────────────────────────────────────────────────────────────────
 
-async fetchUsersPagedFromApi(filters?: {
+  async fetchUsersPagedFromApi(filters?: {
     companyId?: string;
     roleCode?: string;
     status?: string;
@@ -826,7 +690,6 @@ async fetchUsersPagedFromApi(filters?: {
     const res = await apiClient.get<ApiResponse<any>>('/super-admin/users', filters);
     if (!res || !res.data) {
       throw new Error(res?.message || 'Failed to fetch users from database.');
-
     }
     const data = res.data;
     if (Array.isArray(data)) {
@@ -847,11 +710,10 @@ async fetchUsersPagedFromApi(filters?: {
     };
   }
 
-async fetchUsersFromApi(filters?: { companyId?: string; roleCode?: string; status?: string; search?: string }): Promise<User[]> {
+  async fetchUsersFromApi(filters?: { companyId?: string; roleCode?: string; status?: string; search?: string }): Promise<User[]> {
     const paged = await this.fetchUsersPagedFromApi({ ...filters, page: 1, pageSize: 200 });
     if (!filters || Object.keys(filters).length === 0) {
       localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(paged.items));
-
     }
     return paged.items;
   }
@@ -876,7 +738,7 @@ async fetchUsersFromApi(filters?: { companyId?: string; roleCode?: string; statu
   }
 
   async updateUserApi(id: string, updates: Partial<User>): Promise<User | undefined> {
-const res = await apiClient.put<ApiResponse<User>>(`/super-admin/users/${id}`, {
+    const res = await apiClient.put<ApiResponse<User>>(`/super-admin/users/${id}`, {
       name: updates.name,
       email: updates.email,
       phone: updates.phone,
@@ -887,7 +749,6 @@ const res = await apiClient.put<ApiResponse<User>>(`/super-admin/users/${id}`, {
     });
     if (!res || !res.data) {
       throw new Error(res?.message || 'Failed to update user profile in database.');
-
     }
     if (updates.status === 'Disabled') {
       const suspensionEvent = { userId: String(id), email: updates.email, timestamp: Date.now() };
@@ -909,22 +770,20 @@ const res = await apiClient.put<ApiResponse<User>>(`/super-admin/users/${id}`, {
   }
 
   async deleteUserApi(id: string): Promise<boolean> {
-const res = await apiClient.delete<ApiResponse<boolean>>(`/super-admin/users/${id}`);
+    const res = await apiClient.delete<ApiResponse<boolean>>(`/super-admin/users/${id}`);
     if (!res || !res.data) {
       throw new Error(res?.message || 'Failed to delete user from database.');
-
     }
     notifyAdminStorageUpdated();
     return true;
   }
 
-async resetUserPasswordApi(id: string, newPassword?: string): Promise<{ success: boolean; tempPassword?: string }> {
+  async resetUserPasswordApi(id: string, newPassword?: string): Promise<{ success: boolean; tempPassword?: string }> {
     const res = await apiClient.post<ApiResponse<{ tempPassword: string }>>(`/super-admin/users/${id}/reset-password`, {
       newPassword: newPassword || undefined,
     });
     if (!res || !res.data) {
       throw new Error(res?.message || 'Failed to generate temporary credentials.');
-
     }
     return { success: true, tempPassword: res.data.tempPassword };
   }
@@ -939,7 +798,7 @@ async resetUserPasswordApi(id: string, newPassword?: string): Promise<{ success:
 
       return users.filter(u => {
         if (filters.companyId && filters.companyId !== 'all') {
-if (filters.companyId === 'global') {
+          if (filters.companyId === 'global') {
             if (u.companyId) return false;
           } else {
             const isGhlTarget = filters.companyId === '1' || filters.companyId === 't-ghl-01' || filters.companyId.toLowerCase() === 'ghl';
@@ -956,15 +815,14 @@ if (filters.companyId === 'global') {
               if (u.companyId !== filters.companyId && u.companySlug !== filters.companyId) return false;
             }
           }
-
         }
-        if (filters.roleCode && filters.roleCode !== 'all' && u.role?.code !== filters.roleCode) return false;
+        if (filters.roleCode && filters.roleCode !== 'all' && u.role.code !== filters.roleCode) return false;
         if (filters.status && filters.status !== 'all' && u.status !== filters.status) return false;
         if (filters.search) {
           const s = filters.search.toLowerCase();
           const matchName = u.name.toLowerCase().includes(s);
           const matchEmail = u.email.toLowerCase().includes(s);
-          const matchPhone = (u.phone || '').toLowerCase().includes(s);
+          const matchPhone = u.phone.toLowerCase().includes(s);
           const matchCompany = (u.companyName || '').toLowerCase().includes(s);
           if (!matchName && !matchEmail && !matchPhone && !matchCompany) return false;
         }
@@ -975,26 +833,49 @@ if (filters.companyId === 'global') {
     }
   }
 
+  getUserById(id: string): User | undefined {
+    return this.getUsers().find(u => u.id === id);
+  }
+
   createUser(userData: Partial<User>, initialPassword?: string): User {
     const users = this.getUsers();
-    const newId = String(Date.now());
-    const role = userData.role || SYSTEM_ROLES.company_admin;
+    const newId = `usr-${Date.now().toString().slice(-6)}`;
+
+    // Resolve company name if companyId provided
+    let companyName = userData.companyName;
+    let companySlug = userData.companySlug;
+    if (userData.companyId && !companyName) {
+      const tenant = this.getTenantById(userData.companyId);
+      if (tenant) {
+        companyName = tenant.name;
+        companySlug = tenant.slug;
+      }
+    }
+
+    // Service-level rule: Super Admin can ONLY provision Company Admin for tenant organizations.
+    // Operational roles (Sales Executive and IRM) are reserved for Company Admin creation.
+    let resolvedRole = userData.role;
+    if (userData.companyId) {
+      resolvedRole = SYSTEM_ROLES.company_admin;
+    } else if (!resolvedRole) {
+      resolvedRole = SYSTEM_ROLES.super_admin;
+    }
 
     const newUser: User = {
       id: newId,
       name: userData.name || 'New User',
-      email: userData.email || `user${Date.now()}@nexusplatform.io`,
-      phone: userData.phone || '+91 98450 00000',
-      role,
+      email: (userData.email || '').toLowerCase().trim(),
+      phone: userData.phone || '+91 98000 00000',
       companyId: userData.companyId,
-      companySlug: userData.companySlug,
-      companyName: userData.companyName,
-      status: userData.status || 'Active',
-      lastLogin: 'Never',
-      avatar: userData.avatar,
-      employeeCode: userData.employeeCode,
-      designation: userData.designation,
+      companySlug,
+      companyName,
+      status: (userData.status as any) || 'Active',
+      lastLogin: 'Never (Invited)',
+      designation: userData.designation || (userData.companyId ? 'Company Administrator' : 'Platform Administrator'),
+      employeeCode: userData.employeeCode || `EMP-${Date.now().toString().slice(-4)}`,
       createdAt: new Date().toISOString(),
+      ...userData,
+      role: resolvedRole,
     };
 
     users.push(newUser);
@@ -1003,10 +884,10 @@ if (filters.companyId === 'global') {
     this.addAuditLog({
       action: 'PROVISION_USER',
       entityType: 'User',
-      entityId: newId,
+      entityId: newUser.id,
       companyId: newUser.companyId,
-      companyName: newUser.companyName,
-      details: `Super Admin provisioned user account: "${newUser.name}" (${newUser.email}) as [${newUser.role.name}].`,
+      companyName: newUser.companyName || 'Platform Console',
+      details: `Super Admin provisioned user account: "${newUser.name}" (${newUser.email}) with role [${newUser.role.name}].`,
       module: 'Users',
       status: 'success',
       afterValue: newUser,
@@ -1022,35 +903,65 @@ if (filters.companyId === 'global') {
     if (idx === -1) return undefined;
 
     const before = { ...users[idx] };
-    users[idx] = {
+    const updated: User = {
       ...users[idx],
       ...updates,
+      updatedAt: new Date().toISOString(),
     };
 
+    users[idx] = updated;
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
 
     this.addAuditLog({
       action: 'UPDATE_USER',
       entityType: 'User',
       entityId: id,
-      companyId: users[idx].companyId,
-      companyName: users[idx].companyName,
-      details: `Super Admin updated user "${users[idx].name}" (${users[idx].email}).`,
+      companyId: updated.companyId,
+      companyName: updated.companyName,
+      details: `Super Admin modified user profile for "${updated.name}" (${updated.email}).`,
       module: 'Users',
       status: 'success',
       beforeValue: before,
-      afterValue: users[idx],
+      afterValue: updated,
     });
 
     notifyAdminStorageUpdated();
-    return users[idx];
+    return updated;
   }
 
-  resetUserPassword(id: string): { success: boolean; tempPassword?: string } {
-    const user = this.getUsers().find(u => u.id === id);
+  toggleUserStatus(id: string, status: 'Active' | 'Invited' | 'Disabled'): User | undefined {
+    const users = this.getUsers();
+    const user = users.find(u => u.id === id);
+    if (!user) return undefined;
+
+    const prev = user.status;
+    user.status = status;
+    user.updatedAt = new Date().toISOString();
+
+    localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(users));
+
+    this.addAuditLog({
+      action: 'STATUS_CHANGE',
+      entityType: 'User',
+      entityId: id,
+      companyId: user.companyId,
+      companyName: user.companyName,
+      details: `User status for "${user.name}" changed from ${prev} to ${status}.`,
+      module: 'Users',
+      status: 'success',
+      beforeValue: { status: prev },
+      afterValue: { status },
+    });
+
+    notifyAdminStorageUpdated();
+    return user;
+  }
+
+  resetUserPassword(id: string, newPassword?: string): { success: boolean; tempPassword?: string } {
+    const user = this.getUserById(id);
     if (!user) return { success: false };
 
-    const tempPassword = `Nexus#${Math.floor(1000 + Math.random() * 9000)}!`;
+    const generatedPassword = newPassword || `Nexus#${Math.floor(100000 + Math.random() * 900000)}`;
 
     this.addAuditLog({
       action: 'RESET_PASSWORD',
@@ -1058,13 +969,13 @@ if (filters.companyId === 'global') {
       entityId: id,
       companyId: user.companyId,
       companyName: user.companyName,
-      details: `Super Admin forced credentials reset for "${user.name}" (${user.email}).`,
+      details: `Super Admin initiated credential reset for user "${user.name}" (${user.email}).`,
       module: 'Users',
       status: 'success',
     });
 
     notifyAdminStorageUpdated();
-    return { success: true, tempPassword };
+    return { success: true, tempPassword: generatedPassword };
   }
 
   deleteUser(id: string): boolean {
@@ -1072,9 +983,8 @@ if (filters.companyId === 'global') {
     const target = users.find(u => u.id === id);
     if (!target) return false;
 
-    if (target.email === 'yanosh@ghlindiaventures.com') {
-      return false; // Root Super Admin is protected
-    }
+    // Prevent deleting primary super admin
+    if (target.email === 'yanosh@ghlindiaventures.com') return false;
 
     const filtered = users.filter(u => u.id !== id);
     localStorage.setItem(STORAGE_KEYS.USERS, JSON.stringify(filtered));
@@ -1098,10 +1008,6 @@ if (filters.companyId === 'global') {
   // ── ROLES & PERMISSIONS ───────────────────────────────────────────────────
 
   async fetchRolesFromApi(): Promise<Record<string, Role>> {
-    if (isMockMode()) {
-      return this.getRoles();
-    }
-
     try {
       const res = await apiClient.get<ApiResponse<Role[]>>('/super-admin/roles');
       if (res && res.data && res.data.length > 0) {
@@ -1137,44 +1043,6 @@ if (filters.companyId === 'global') {
     return this.getRoles();
   }
 
-  async updateRolePermissionsApi(roleCodeOrId: string, permissions: string[]): Promise<boolean> {
-    if (!isMockMode()) {
-      try {
-        const res = await apiClient.put<ApiResponse<any>>(`/super-admin/roles/${roleCodeOrId}/permissions`, { permissions });
-        if (res && res.data) {
-          await this.fetchRolesFromApi();
-          return true;
-        }
-      } catch (err) {
-        console.warn('Could not update role permissions via API:', err);
-      }
-    }
-
-    const roles = this.getRoles();
-    if (roles[roleCodeOrId]) {
-      roles[roleCodeOrId].permissions = permissions;
-      this.saveRoles(roles);
-      return true;
-    }
-    return false;
-  }
-
-  async createCustomRoleApi(role: { name: string; code: string; baseTemplateRole?: string; permissions: string[] }): Promise<Role | undefined> {
-    if (!isMockMode()) {
-      try {
-        const res = await apiClient.post<ApiResponse<any>>('/super-admin/roles', role);
-        if (res && res.data) {
-          await this.fetchRolesFromApi();
-          return res.data;
-        }
-      } catch (err) {
-        console.warn('Could not create custom role via API:', err);
-      }
-    }
-
-    return this.createCustomRole(role.name, role.code, role.baseTemplateRole);
-  }
-
   getRoles(): Record<string, Role> {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.ROLES);
@@ -1182,7 +1050,7 @@ if (filters.companyId === 'global') {
         localStorage.setItem(STORAGE_KEYS.ROLES, JSON.stringify(SYSTEM_ROLES));
         return SYSTEM_ROLES;
       }
-const parsed = JSON.parse(raw);
+      const parsed = JSON.parse(raw);
       // Ensure all system roles exist, but PRESERVE all custom roles
       const allRoles: Record<string, Role> = { ...parsed };
       for (const key of Object.keys(SYSTEM_ROLES)) {
@@ -1192,13 +1060,12 @@ const parsed = JSON.parse(raw);
       }
       localStorage.setItem(STORAGE_KEYS.ROLES, JSON.stringify(allRoles));
       return allRoles;
-
     } catch {
       return SYSTEM_ROLES;
     }
   }
 
-getRolesList(): Role[] {
+  getRolesList(): Role[] {
     const roles = this.getRoles();
     const users = this.getUsers();
     return Object.values(roles).map(r => {
@@ -1394,128 +1261,57 @@ getRolesList(): Role[] {
     const before = [...roles[roleCode].permissions];
     roles[roleCode].permissions = permissions;
     roles[roleCode].updatedAt = new Date().toISOString();
-
     localStorage.setItem(STORAGE_KEYS.ROLES, JSON.stringify(roles));
 
     this.addAuditLog({
-      action: 'UPDATE_ROLES_PERMISSIONS',
-      entityType: 'RoleMatrix',
-      entityId: 'canonical_matrix',
-      details: 'Super Admin updated platform canonical roles and permissions matrix.',
+      action: 'UPDATE_ROLE_PERMISSIONS',
+      entityType: 'Role',
+      entityId: roleCode,
+      details: `Super Admin updated permission matrix for role [${roles[roleCode].name}]: ${permissions.length} privileges assigned.`,
       module: 'Roles',
       status: 'success',
-      beforeValue: before,
-      afterValue: roles,
+      beforeValue: { permissions: before },
+      afterValue: { permissions },
     });
 
     notifyAdminStorageUpdated();
+    return true;
   }
 
-  updateRolePermissions(roleCode: string, permissions: string[]): boolean {
+  createCustomRole(name: string, code: string, permissions: string[]): Role {
     const roles = this.getRoles();
-    if (roles[roleCode]) {
-      roles[roleCode] = {
-        ...roles[roleCode],
-        permissions,
-      };
-      this.saveRoles(roles);
-      return true;
-    }
-    return false;
-  }
-
-  createCustomRole(name: string, code: string, baseTemplateOrPerms?: string | string[]): Role {
-    const roles = this.getRoles();
-    const cleanCode = (code || name).toLowerCase().replace(/[^a-z0-9]/g, '_');
-
-    let basePermissions: string[] = [];
-    if (Array.isArray(baseTemplateOrPerms)) {
-      basePermissions = [...baseTemplateOrPerms];
-    } else if (typeof baseTemplateOrPerms === 'string' && roles[baseTemplateOrPerms]) {
-      basePermissions = [...roles[baseTemplateOrPerms].permissions];
-    }
+    const cleanCode = code.toLowerCase().replace(/[^a-z0-9_]/g, '');
 
     const newRole: Role = {
-      id: `r-${cleanCode}`,
+      id: `role-${Date.now().toString().slice(-4)}`,
       name,
-code: cleanCode,
+      code: cleanCode,
       permissions,
       isSystemRole: false,
       isActive: true,
       usersCount: 0,
       permissionsCount: permissions.length,
       createdAt: new Date().toISOString(),
-
     };
 
     roles[cleanCode] = newRole;
-    this.saveRoles(roles);
+    localStorage.setItem(STORAGE_KEYS.ROLES, JSON.stringify(roles));
+
+    this.addAuditLog({
+      action: 'CREATE_ROLE',
+      entityType: 'Role',
+      entityId: cleanCode,
+      details: `Super Admin created custom system role: "${name}" (${cleanCode}).`,
+      module: 'Roles',
+      status: 'success',
+      afterValue: newRole,
+    });
+
+    notifyAdminStorageUpdated();
     return newRole;
   }
 
-  // ── PACKAGES ──────────────────────────────────────────────────────────────
-
-  async fetchPackagesFromApi(): Promise<SubscriptionPackage[]> {
-    if (isMockMode()) {
-      return this.getPackages();
-    }
-
-    try {
-      const res = await apiClient.get<ApiResponse<SubscriptionPackage[]>>('/super-admin/packages');
-      if (res && res.data && Array.isArray(res.data)) {
-        localStorage.setItem(STORAGE_KEYS.PACKAGES, JSON.stringify(res.data));
-        return res.data;
-      }
-    } catch (err) {
-      console.warn('Could not fetch packages from API, falling back to local store:', err);
-    }
-    return this.getPackages();
-  }
-
-  async createPackageApi(pkg: Partial<SubscriptionPackage>): Promise<SubscriptionPackage> {
-    if (!isMockMode()) {
-      try {
-        const res = await apiClient.post<ApiResponse<SubscriptionPackage>>('/super-admin/packages', pkg);
-        if (res && res.data) {
-          await this.fetchPackagesFromApi();
-          return res.data;
-        }
-      } catch (err) {
-        console.warn('Could not create package via API:', err);
-      }
-    }
-    return this.savePackage(pkg);
-  }
-
-  async updatePackageApi(id: string, updates: Partial<SubscriptionPackage>): Promise<SubscriptionPackage> {
-    if (!isMockMode()) {
-      try {
-        const res = await apiClient.put<ApiResponse<SubscriptionPackage>>(`/super-admin/packages/${id}`, updates);
-        if (res && res.data) {
-          await this.fetchPackagesFromApi();
-          return res.data;
-        }
-      } catch (err) {
-        console.warn('Could not update package via API:', err);
-      }
-    }
-    return this.savePackage({ ...updates, id });
-  }
-
-  async deletePackageApi(id: string): Promise<boolean> {
-    if (!isMockMode()) {
-      try {
-        const res = await apiClient.delete<ApiResponse<boolean>>(`/super-admin/packages/${id}`);
-        if (res && res.data) {
-          await this.fetchPackagesFromApi();
-          return true;
-        }
-      } catch (err) {
-        console.warn('Could not delete package via API:', err);
-      }
-    }
-    return this.deletePackage(id);
-  }
+  // ── PACKAGES & ENTITLEMENTS ───────────────────────────────────────────────
 
   async fetchPackagesFromApi(): Promise<SubscriptionPackage[]> {
     const res = await apiClient.get<ApiResponse<SubscriptionPackage[]>>('/super-admin/packages');
@@ -1529,18 +1325,17 @@ code: cleanCode,
   getPackages(): SubscriptionPackage[] {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.PACKAGES);
-return raw ? JSON.parse(raw) : [];
+      return raw ? JSON.parse(raw) : [];
     } catch {
       return [];
-
     }
   }
 
-  createPackage(pkg: Partial<SubscriptionPackage>): SubscriptionPackage {
-    return this.savePackage(pkg);
+  getPackageById(id: string): SubscriptionPackage | undefined {
+    return this.getPackages().find(p => p.id === id || p.code === id);
   }
 
-async createPackageApi(pkgData: Partial<SubscriptionPackage>): Promise<SubscriptionPackage> {
+  async createPackageApi(pkgData: Partial<SubscriptionPackage>): Promise<SubscriptionPackage> {
     const payload = {
       name: pkgData.name,
       code: (pkgData.code || pkgData.name || 'custom_plan').toLowerCase().replace(/[^a-z0-9_]/g, '_'),
@@ -1638,60 +1433,15 @@ async createPackageApi(pkgData: Partial<SubscriptionPackage>): Promise<Subscript
       updatedAt: new Date().toISOString(),
     };
 
-
-      localStorage.setItem(STORAGE_KEYS.PACKAGES, JSON.stringify(packages));
-
-      this.addAuditLog({
-        action: 'UPDATE_PACKAGE',
-        entityType: 'SubscriptionPackage',
-        entityId: packages[existingIdx].id,
-        details: `Super Admin updated subscription package: "${packages[existingIdx].name}".`,
-        module: 'Features',
-        status: 'success',
-        beforeValue: before,
-        afterValue: packages[existingIdx],
-      });
-
-      notifyAdminStorageUpdated();
-      return packages[existingIdx];
+    if (idx >= 0) {
+      packages[idx] = updated;
     } else {
-      const newPkg: SubscriptionPackage = {
-        id: pkg.id || `pkg-${Date.now()}`,
-        name: pkg.name || 'New Package',
-        code: (pkg.code || pkg.name || 'pkg').toLowerCase().replace(/[^a-z0-9]/g, '_'),
-        description: pkg.description || '',
-        tier: pkg.tier || 'Growth',
-        priceMonthly: pkg.priceMonthly || 19999,
-        currency: pkg.currency || '₹',
-        maxUsers: pkg.maxUsers || 25,
-        maxStorageGb: pkg.maxStorageGb || 100,
-        features: pkg.features || [FEATURES.LEADS, FEATURES.CUSTOMERS, FEATURES.DEALS, FEATURES.CALLS],
-        isActive: pkg.isActive ?? true,
-        isPopular: pkg.isPopular ?? false,
-        enrolledTenantsCount: 0,
-        createdAt: new Date().toISOString(),
-      };
-
-      packages.push(newPkg);
-      localStorage.setItem(STORAGE_KEYS.PACKAGES, JSON.stringify(packages));
-
-      this.addAuditLog({
-        action: 'CREATE_PACKAGE',
-        entityType: 'SubscriptionPackage',
-        entityId: newPkg.id,
-        details: `Super Admin added new package: "${newPkg.name}" (${newPkg.tier}) at ₹${newPkg.priceMonthly}/mo.`,
-        module: 'Features',
-        status: 'success',
-        afterValue: newPkg,
-      });
-
-      notifyAdminStorageUpdated();
-      return newPkg;
+      packages.push(updated);
     }
-localStorage.setItem(STORAGE_KEYS.PACKAGES, JSON.stringify(packages));
+
+    localStorage.setItem(STORAGE_KEYS.PACKAGES, JSON.stringify(packages));
     notifyAdminStorageUpdated();
     return updated;
-
   }
 
   deletePackage(id: string): boolean {
@@ -1702,121 +1452,11 @@ localStorage.setItem(STORAGE_KEYS.PACKAGES, JSON.stringify(packages));
 
     const filtered = packages.filter(p => p.id !== id);
     localStorage.setItem(STORAGE_KEYS.PACKAGES, JSON.stringify(filtered));
-
     notifyAdminStorageUpdated();
     return true;
   }
 
-  // ── CALL CONFIGURATION & DIDS ─────────────────────────────────────────────
-
-  async fetchDidsFromApi(tenantId?: string, status?: string): Promise<TenantDidMapping[]> {
-    if (isMockMode()) {
-      return this.getDidMappings();
-    }
-
-    try {
-      const res = await apiClient.get<ApiResponse<TenantDidMapping[]>>('/super-admin/call-config/dids', { tenantId, status });
-      if (res && res.data) {
-        localStorage.setItem(STORAGE_KEYS.DIDS, JSON.stringify(res.data));
-        return res.data;
-      }
-    } catch (err) {
-      console.warn('Could not fetch DIDs from API, falling back to local store:', err);
-    }
-    return this.getDidMappings();
-  }
-
-  async createDidApi(did: Partial<TenantDidMapping>): Promise<TenantDidMapping> {
-    if (!isMockMode()) {
-      try {
-        const res = await apiClient.post<ApiResponse<TenantDidMapping>>('/super-admin/call-config/dids', did);
-        if (res && res.data) {
-          await this.fetchDidsFromApi();
-          return res.data;
-        }
-      } catch (err) {
-        console.warn('Could not create DID via API:', err);
-      }
-    }
-    return this.saveDidMapping(did);
-  }
-
-  async updateDidApi(id: string, updates: Partial<TenantDidMapping>): Promise<TenantDidMapping | undefined> {
-    if (!isMockMode()) {
-      try {
-        const res = await apiClient.put<ApiResponse<TenantDidMapping>>(`/super-admin/call-config/dids/${id}`, updates);
-        if (res && res.data) {
-          await this.fetchDidsFromApi();
-          return res.data;
-        }
-      } catch (err) {
-        console.warn('Could not update DID via API:', err);
-      }
-    }
-    return this.updateDidMapping(id, updates);
-  }
-
-  async deleteDidApi(id: string): Promise<boolean> {
-    if (!isMockMode()) {
-      try {
-        const res = await apiClient.delete<ApiResponse<boolean>>(`/super-admin/call-config/dids/${id}`);
-        if (res && res.data) {
-          await this.fetchDidsFromApi();
-          return true;
-        }
-      } catch (err) {
-        console.warn('Could not delete DID via API:', err);
-      }
-    }
-    return this.deleteDidMapping(id);
-  }
-
-  async fetchCarrierSettingsFromApi(): Promise<PlatformCarrierSettings> {
-    if (isMockMode()) {
-      return this.getCarrierSettings();
-    }
-
-    try {
-      const res = await apiClient.get<ApiResponse<PlatformCarrierSettings>>('/super-admin/call-config/carrier');
-      if (res && res.data) {
-        localStorage.setItem(STORAGE_KEYS.CARRIER_SETTINGS, JSON.stringify(res.data));
-        return res.data;
-      }
-    } catch (err) {
-      console.warn('Could not fetch carrier settings from API:', err);
-    }
-    return this.getCarrierSettings();
-  }
-
-  async updateCarrierSettingsApi(settings: PlatformCarrierSettings): Promise<PlatformCarrierSettings> {
-    if (!isMockMode()) {
-      try {
-        const res = await apiClient.put<ApiResponse<PlatformCarrierSettings>>('/super-admin/call-config/carrier', settings);
-        if (res && res.data) {
-          localStorage.setItem(STORAGE_KEYS.CARRIER_SETTINGS, JSON.stringify(res.data));
-          notifyAdminStorageUpdated();
-          return res.data;
-        }
-      } catch (err) {
-        console.warn('Could not update carrier settings via API:', err);
-      }
-    }
-    return this.updateCarrierSettings(settings);
-  }
-
-  async testCarrierConnectionApi(): Promise<{ success: boolean; latencyMs: number; message: string }> {
-    if (!isMockMode()) {
-      try {
-        const res = await apiClient.post<ApiResponse<any>>('/super-admin/call-config/test-carrier');
-        if (res && res.data) {
-          return res.data;
-        }
-      } catch (err) {
-        console.warn('Could not ping carrier via API:', err);
-      }
-    }
-    return this.testCarrierConnection();
-  }
+  // ── TELEPHONY & DID MAPPINGS ──────────────────────────────────────────────
 
   async fetchDidMappingsFromApi(): Promise<TenantDidMapping[]> {
     const res = await apiClient.get<ApiResponse<TenantDidMapping[]>>('/super-admin/call-config/dids');
@@ -1830,7 +1470,7 @@ localStorage.setItem(STORAGE_KEYS.PACKAGES, JSON.stringify(packages));
   getDidMappings(): TenantDidMapping[] {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.DIDS);
-return raw ? JSON.parse(raw) : [];
+      return raw ? JSON.parse(raw) : [];
     } catch {
       return [];
     }
@@ -1911,14 +1551,13 @@ return raw ? JSON.parse(raw) : [];
       enableAiWhisper: didData.enableAiWhisper ?? true,
       status: (didData.tenantId ? 'Online' : 'Reserved') as any,
       channelsCount: didData.channelsCount || 8,
-
       allocatedAt: new Date().toISOString(),
-      notes: did.notes || '',
+      notes: didData.notes || '',
+      ...didData,
     };
 
     dids.push(newDid);
     localStorage.setItem(STORAGE_KEYS.DIDS, JSON.stringify(dids));
-
     notifyAdminStorageUpdated();
     return newDid;
   }
@@ -1929,16 +1568,15 @@ return raw ? JSON.parse(raw) : [];
     const idx = dids.findIndex(d => d.id === id);
     if (idx === -1) return undefined;
 
-const updated: TenantDidMapping = {
-
+    const updated: TenantDidMapping = {
       ...dids[idx],
       ...updates,
     };
 
+    dids[idx] = updated;
     localStorage.setItem(STORAGE_KEYS.DIDS, JSON.stringify(dids));
-
     notifyAdminStorageUpdated();
-    return dids[idx];
+    return updated;
   }
 
   deleteDidMapping(id: string): boolean {
@@ -1967,7 +1605,7 @@ const updated: TenantDidMapping = {
   getCarrierSettings(): PlatformCarrierSettings {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.CARRIER_SETTINGS);
-if (raw) {
+      if (raw) {
         const parsed = JSON.parse(raw);
         if (parsed && parsed.primaryCarrier !== 'Twilio Elastic SIP Trunking') {
           return parsed;
@@ -2011,7 +1649,6 @@ if (raw) {
     const res = await apiClient.put<ApiResponse<PlatformCarrierSettings>>('/super-admin/call-config/carrier', payload);
     if (!res || !res.data) {
       throw new Error(res?.message || 'Failed to update carrier settings');
-
     }
 
     await this.fetchCarrierSettingsFromApi();
@@ -2037,7 +1674,7 @@ if (raw) {
         current.testStatus = res.data.status as any || (res.data.success ? 'Success' : 'Offline');
         localStorage.setItem(STORAGE_KEYS.CARRIER_SETTINGS, JSON.stringify(current));
         notifyAdminStorageUpdated();
-return {
+        return {
           success: res.data.success,
           latencyMs: res.data.latencyMs,
           message: res.data.message,
@@ -2133,7 +1770,6 @@ return {
     const res = await apiClient.post<ApiResponse<BackupSnapshot>>('/super-admin/system/backups/generate', {
       description: desc,
       includeAuditLogs: includeAudit,
-
     });
     if (!res || !res.data) {
       throw new Error(res?.message || 'Failed to generate database backup snapshot');
@@ -2307,7 +1943,7 @@ return {
     search?: string;
     from?: string;
     to?: string;
-pageNumber?: number;
+    pageNumber?: number;
     pageSize?: number;
   }): Promise<AuditLog[]> {
     try {
@@ -2379,7 +2015,6 @@ pageNumber?: number;
     } catch (err) {
       console.warn('Could not fetch audit logs from /api/audit-logs:', err);
       throw err;
-
     }
     return this.getAuditLogs(filters);
   }
@@ -2431,8 +2066,7 @@ pageNumber?: number;
         id: `aud-${Date.now()}-${logs.length + 1}`,
         timestamp: new Date().toISOString(),
         actorName: log.actorName || 'Super Admin',
-actorEmail: log.actorEmail || 'admin@platform.com',
-
+        actorEmail: log.actorEmail || 'admin@platform.com',
         action: log.action || 'PLATFORM_OPERATION',
         entityType: log.entityType || 'Platform',
         entityId: log.entityId || '0',
@@ -2440,8 +2074,7 @@ actorEmail: log.actorEmail || 'admin@platform.com',
         companyName: log.companyName || (log.companyId ? `Company #${log.companyId}` : 'PLATFORM CONSOLE'),
         details: log.details || 'Platform operation executed.',
         ipAddress: '127.0.0.1 (Platform Console)',
-userAgent: 'Nexus Platform Console (Internal)',
-
+        userAgent: 'Nexus Platform Console (Internal)',
         module: log.module || 'Platform',
         status: log.status || 'success',
         beforeValue: log.beforeValue,
@@ -2459,7 +2092,7 @@ userAgent: 'Nexus Platform Console (Internal)',
 
   exportAuditLogsCsv(filteredLogs?: AuditLog[]): string {
     const logs = filteredLogs || this.getAuditLogs();
-    const headers = ['Timestamp', 'Organization', 'Actor Name', 'Actor Email', 'Action', 'Module', 'EntityType', 'EntityId', 'Details', 'Status'];
+    const headers = ['Timestamp', 'Organization', 'Actor Name', 'Actor Email', 'Action', 'Module', 'Entity Type', 'Entity ID', 'Details', 'Status'];
     const rows = logs.map(l => [
       `"${l.timestamp}"`,
       `"${l.companyName || 'GLOBAL PLATFORM'}"`,
@@ -2479,7 +2112,7 @@ userAgent: 'Nexus Platform Console (Internal)',
   // ── SYSTEM DIAGNOSTICS & ANNOUNCEMENTS ─────────────────────────────────────
 
   async fetchSystemDiagnosticsFromApi(): Promise<SystemDiagnostics> {
-const start = performance.now();
+    const start = performance.now();
     const res = await apiClient.get<ApiResponse<SystemDiagnostics>>('/super-admin/system/diagnostics');
     const roundtripMs = Math.round(performance.now() - start);
     if (res && res.data) {
@@ -2489,12 +2122,11 @@ const start = performance.now();
       };
     }
     throw new Error(res?.message || 'Failed to fetch diagnostics from backend');
-
   }
 
   getSystemDiagnostics(): SystemDiagnostics {
     try {
-const raw = localStorage.getItem('nexus_system_diagnostics');
+      const raw = localStorage.getItem('nexus_system_diagnostics');
       if (raw) return JSON.parse(raw);
     } catch { }
 
@@ -2513,7 +2145,6 @@ const raw = localStorage.getItem('nexus_system_diagnostics');
       telephonyDropRate: 0.0,
       systemUptimePercentage: 100.0,
       lastBackupAt: '',
-
     };
   }
 
@@ -2591,7 +2222,7 @@ const raw = localStorage.getItem('nexus_system_diagnostics');
   getAnnouncements(): BroadcastAnnouncement[] {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.ANNOUNCEMENTS);
-if (raw) return JSON.parse(raw);
+      if (raw) return JSON.parse(raw);
     } catch { }
     return [];
   }
@@ -2610,7 +2241,6 @@ if (raw) return JSON.parse(raw);
     const res = await apiClient.post<ApiResponse<BroadcastAnnouncement>>('/super-admin/system/announcements', payload);
     if (!res || !res.data) {
       throw new Error(res?.message || 'Failed to create announcement');
-
     }
 
     await this.fetchAnnouncementsFromApi();
@@ -2644,7 +2274,7 @@ if (raw) return JSON.parse(raw);
       targetTenantId: ann.targetTenantId,
       isActive: true,
       createdAt: new Date().toISOString(),
-      createdBy: 'Super Admin',
+      createdBy: 'Yanosh',
       expiresAt: ann.expiresAt,
       ...ann,
     };
@@ -2690,10 +2320,9 @@ if (raw) return JSON.parse(raw);
   getMaintenanceMode(): { enabled: boolean; message: string; bypassSecret: string } {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.MAINTENANCE_MODE);
-return raw ? JSON.parse(raw) : { enabled: false, message: 'Platform under scheduled maintenance.', bypassSecret: '' };
+      return raw ? JSON.parse(raw) : { enabled: false, message: 'Platform under scheduled maintenance.', bypassSecret: '' };
     } catch {
       return { enabled: false, message: 'Platform under scheduled maintenance.', bypassSecret: '' };
-
     }
   }
 
@@ -2732,7 +2361,7 @@ return raw ? JSON.parse(raw) : { enabled: false, message: 'Platform under schedu
   // ── PLATFORM TELEMETRY METRICS ────────────────────────────────────────────
 
   async fetchPlatformMetricsFromApi(): Promise<PlatformMetrics> {
-try {
+    try {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const res = await apiClient.get<ApiResponse<PlatformMetrics>>('/super-admin/metrics', { timeZone: tz });
       if (res && res.data) {
@@ -2742,12 +2371,11 @@ try {
     } catch (err) {
       console.warn('Unable to fetch live platform metrics, returning cached data:', err);
       return this.getPlatformMetrics();
-
     }
     return this.getPlatformMetrics();
   }
 
-async fetchCallsTodayMetricsFromApi(): Promise<{ callsToday: number; callsConnected: number } | null> {
+  async fetchCallsTodayMetricsFromApi(): Promise<{ callsToday: number; callsConnected: number } | null> {
     try {
       const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
       const res = await apiClient.get<ApiResponse<{ callsToday: number; callsConnected: number }>>(
@@ -2770,12 +2398,11 @@ async fetchCallsTodayMetricsFromApi(): Promise<{ callsToday: number; callsConnec
       console.warn('Could not fetch calls today metrics from API:', err);
     }
     return null;
-
   }
 
   getPlatformMetrics(): PlatformMetrics {
     try {
-const cached = localStorage.getItem(STORAGE_KEYS.METRICS);
+      const cached = localStorage.getItem(STORAGE_KEYS.METRICS);
       if (cached) {
         const parsed = JSON.parse(cached);
         if (typeof parsed.totalTenants === 'number') {
@@ -2784,29 +2411,11 @@ const cached = localStorage.getItem(STORAGE_KEYS.METRICS);
       }
     } catch { }
 
-
     const tenants = this.getTenants();
     const users = this.getUsers();
     const activeTenants = tenants.filter(t => t.status === 'Active' || !t.status);
     const onboardingTenants = tenants.filter(t => t.status === 'Inactive');
     const suspendedTenants = tenants.filter(t => t.status === 'Suspended');
-
-    if (isMockMode()) {
-      return {
-        totalTenants: tenants.length > 0 ? tenants.length : SUPER_ADMIN_MOCK_METRICS.totalTenants,
-        activeTenants: activeTenants.length > 0 ? activeTenants.length : SUPER_ADMIN_MOCK_METRICS.activeTenants,
-        onboardingTenants: onboardingTenants.length,
-        suspendedTenants: suspendedTenants.length,
-        totalUsers: users.length > 0 ? users.length : SUPER_ADMIN_MOCK_METRICS.totalUsers,
-        activeUsers: users.filter(u => u.status === 'Active').length > 0 ? users.filter(u => u.status === 'Active').length : SUPER_ADMIN_MOCK_METRICS.activeUsers,
-        callsToday: 384,
-        callsConnected: 341,
-        totalLeads: 2480,
-        totalPipelineValue: 485000000,
-        totalCustomers: 864,
-        systemHealthScore: 99.98,
-      };
-    }
 
     return {
       totalTenants: tenants.length,
@@ -2815,7 +2424,7 @@ const cached = localStorage.getItem(STORAGE_KEYS.METRICS);
       suspendedTenants: suspendedTenants.length,
       totalUsers: users.length,
       activeUsers: users.filter(u => u.status === 'Active').length,
-superAdminCount: users.filter(u => u.role?.id === '1' || u.role?.code === 'super_admin').length,
+      superAdminCount: users.filter(u => u.role?.id === '1' || u.role?.code === 'super_admin').length,
       companyAdminCount: users.filter(u => u.role?.id === '2' || u.role?.code === 'company_admin').length,
       salesExecutiveCount: users.filter(u => u.role?.id === '3' || u.role?.code === 'sales_executive').length,
       irmCount: users.filter(u => u.role?.id === '4' || u.role?.code === 'irm').length,
@@ -2825,7 +2434,6 @@ superAdminCount: users.filter(u => u.role?.id === '1' || u.role?.code === 'super
       totalLeads: 0,
       currentMonthLeads: 0,
       previousMonthLeads: 0,
-
       totalPipelineValue: 0,
       totalCustomers: 0,
       systemHealthScore: 100,
@@ -2920,7 +2528,7 @@ superAdminCount: users.filter(u => u.role?.id === '1' || u.role?.code === 'super
   exportPlatformSnapshot(): string {
     const snapshot = {
       exportedAt: new Date().toISOString(),
-      platformVersion: 'GHL AURA Enterprise v2.4',
+      platformVersion: 'NexusSales Enterprise v2.4',
       tenants: this.getTenants(),
       users: this.getUsers(),
       roles: this.getRoles(),

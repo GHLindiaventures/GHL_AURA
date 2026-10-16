@@ -11,11 +11,9 @@ import { clearKycLocalData, clearAllKycLocalStorage } from '../utils/kycStorage'
 const getStoredTenants = (): Tenant[] => {
   try {
     const raw = localStorage.getItem('nexus_tenants');
-    if (raw) return JSON.parse(raw);
-    if (!isMockMode()) return [];
-    return [DEFAULT_TENANTS.ghl, DEFAULT_TENANTS.jamin];
+    return raw ? JSON.parse(raw) : [DEFAULT_TENANTS.ghl, DEFAULT_TENANTS.jamin];
   } catch {
-    return isMockMode() ? [DEFAULT_TENANTS.ghl, DEFAULT_TENANTS.jamin] : [];
+    return [DEFAULT_TENANTS.ghl, DEFAULT_TENANTS.jamin];
   }
 };
 

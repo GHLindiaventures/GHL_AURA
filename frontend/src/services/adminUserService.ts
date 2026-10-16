@@ -1,5 +1,5 @@
 import { apiClient } from './apiClient';
-import { User, RoleCode } from '../types';
+import { User } from '../types';
 
 interface ApiResponse<T> {
   data: T;
@@ -30,7 +30,7 @@ const mapDtoToUser = (dto: AdminUserDto, companyId?: string): User => {
   if (dto.status === 1) statusStr = 'Invited';
   if (dto.status === 2) statusStr = 'Disabled';
 
-// Strictly map to the 4 system roles: super_admin, company_admin, irm, sales_executive
+  // Strictly map to the 4 system roles: super_admin, company_admin, irm, sales_executive
   let roleCode: 'super_admin' | 'company_admin' | 'irm' | 'sales_executive' = 'sales_executive';
   let roleName = dto.roleName || 'Sales Executive';
   const rawCode = (dto.roleCode || '').toLowerCase();
@@ -40,7 +40,6 @@ const mapDtoToUser = (dto: AdminUserDto, companyId?: string): User => {
     roleCode = 'super_admin';
     roleName = 'Super Admin';
   } else if (rawCode === 'company_admin' || rawName.includes('admin')) {
-
     roleCode = 'company_admin';
     roleName = 'Company Admin';
   } else if (rawCode === 'irm' || rawName.includes('irm') || rawName.includes('institutional')) {
@@ -63,11 +62,10 @@ const mapDtoToUser = (dto: AdminUserDto, companyId?: string): User => {
     companyId: cId,
     companySlug: cSlug,
     role: {
-id: (dto.roleId || (roleCode === 'company_admin' ? 2 : roleCode === 'irm' ? 4 : roleCode === 'super_admin' ? 1 : 3)).toString(),
+      id: (dto.roleId || (roleCode === 'company_admin' ? 2 : roleCode === 'irm' ? 4 : roleCode === 'super_admin' ? 1 : 3)).toString(),
       permissions: [],
       code: roleCode,
       name: roleName
-
     },
     status: statusStr,
     lastLogin: dto.lastLoginAt,

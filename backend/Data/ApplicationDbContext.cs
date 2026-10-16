@@ -528,65 +528,6 @@ LegalName = "Jamin Bazaar Plotted Communities Private Limited",
             }
         );
 
-// 7. Subscription Packages (IDs 1, 2, 3)
-        modelBuilder.Entity<SubscriptionPackage>().HasData(
-            new SubscriptionPackage
-            {
-                Id = 1,
-                Name = "Starter CRM Tier",
-                Code = "starter_crm",
-                Description = "Essential inbound leads, customer directory, softphone calling, and follow-ups.",
-                Tier = "Starter",
-                PriceMonthly = 14999m,
-                Currency = "₹",
-                MaxUsers = 15,
-                MaxStorageGb = 50,
-                Features = new List<string> { "leads", "customers", "followups", "calls", "reports" },
-                IsActive = true,
-                IsPopular = false,
-                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
-            },
-            new SubscriptionPackage
-            {
-                Id = 2,
-                Name = "Plotted Land Operations Pro",
-                Code = "jamin_real_estate_pro",
-                Description = "Tailored for plotted development builders with interactive plot layouts, site visit logistics, and token bookings.",
-                Tier = "Growth",
-                PriceMonthly = 39999m,
-                Currency = "₹",
-                MaxUsers = 50,
-                MaxStorageGb = 250,
-                Features = new List<string>
-                {
-                    "leads", "customers", "deals", "followups", "calls", "call-recording",
-                    "call-transcription", "properties", "site-visits", "bookings", "reports"
-                },
-                IsActive = true,
-                IsPopular = true,
-                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
-            },
-            new SubscriptionPackage
-            {
-                Id = 3,
-                Name = "Wealth Advisory Enterprise Suite",
-                Code = "ghl_wealth_enterprise",
-                Description = "Engineered for institutional capital syndicates, private family offices, and CRE investment opportunities.",
-                Tier = "Enterprise",
-                PriceMonthly = 79999m,
-                Currency = "₹",
-                MaxUsers = 150,
-                MaxStorageGb = 1000,
-                Features = new List<string>
-                {
-                    "leads", "customers", "deals", "followups", "calls", "call-recording",
-                    "call-transcription", "investors", "consultations", "investment-opportunities", "reports"
-                },
-                IsActive = true,
-                IsPopular = false,
-                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
-            }
-        );
 
         // 8. Tenant Virtual DIDs (IDs 1, 2, 3)
         modelBuilder.Entity<TenantDidMapping>().HasData(
@@ -650,23 +591,6 @@ LegalName = "Jamin Bazaar Plotted Communities Private Limited",
                 LastTestedAt = new DateTime(2026, 9, 26, 10, 0, 0, DateTimeKind.Utc),
                 TestStatus = "Success",
                 UpdatedAt = new DateTime(2026, 9, 26, 10, 0, 0, DateTimeKind.Utc)
-            }
-        );
-
-        // 10. Broadcast Announcement (ID 1)
-        modelBuilder.Entity<BroadcastAnnouncement>().HasData(
-            new BroadcastAnnouncement
-            {
-                Id = 1,
-                Title = "Platform Infrastructure Upgrade",
-                Message = "Scheduled zero-downtime database optimization today at 11:30 PM IST. Telephony routing will not be interrupted.",
-                Priority = "info",
-                TargetAudience = "all",
-                TargetTenantId = null,
-                IsActive = true,
-                CreatedAt = new DateTime(2026, 9, 26, 8, 0, 0, DateTimeKind.Utc),
-                CreatedBy = "Yanosh",
-                ExpiresAt = new DateTime(2026, 9, 27, 6, 0, 0, DateTimeKind.Utc)
             }
         );
 

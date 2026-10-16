@@ -32,7 +32,6 @@ import { DEFAULT_TENANTS } from '../constants/defaultTenants';
 import { isMockMode } from '../config/environment';
 import { DEFAULT_CUSTOM_FIELD_DEFINITIONS } from '../constants/customFields';
 
-
 export type PopupPosition = 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
 
 class StorageService {
@@ -652,8 +651,7 @@ class StorageService {
     window.dispatchEvent(new Event('nexus_storage_updated'));
   }
 
-// Calls
-
+  // Calls
   getCalls(companyId?: string): CallRecord[] {
     const stored = this.get<CallRecord[]>('calls', []);
     return companyId ? stored.filter(c => c.companyId === companyId) : stored;
@@ -857,8 +855,7 @@ class StorageService {
     this.set('bookings', bookings);
   }
 
-// Investors (Defaults to empty [] - real-time data only)
-
+  // Investors (Defaults to empty [] - real-time data only)
   getInvestors(companyId?: string): Investor[] {
     const investors = this.get<Investor[]>('investors', []);
     return companyId ? investors.filter(i => i.companyId === companyId) : investors;
@@ -880,8 +877,7 @@ class StorageService {
     this.set('investors', investors);
   }
 
-// Consultations (Defaults to empty [] - real-time data only)
-
+  // Consultations (Defaults to empty [] - real-time data only)
   getConsultations(companyId?: string): Consultation[] {
     const consultations = this.get<Consultation[]>('consultations', []);
     return companyId ? consultations.filter(c => c.companyId === companyId) : consultations;
@@ -903,8 +899,7 @@ class StorageService {
     this.set('consultations', consultations);
   }
 
-// Opportunities (Defaults to empty [] - real-time data only)
-
+  // Opportunities (Defaults to empty [] - real-time data only)
   getOpportunities(companyId?: string): InvestmentOpportunity[] {
     const opps = this.get<InvestmentOpportunity[]>('opportunities', []);
     return companyId ? opps.filter(o => o.companyId === companyId) : opps;
@@ -941,8 +936,7 @@ class StorageService {
 
   // Notifications (Multi-tenant scoped with strict cross-tenant isolation)
   getNotifications(companyId?: string, userId?: string, userRoleCode?: string): NotificationItem[] {
-const raw = this.get<NotificationItem[]>('notifications', []);
-
+    const raw = this.get<NotificationItem[]>('notifications', []);
 
     // Auto-migrate any legacy items lacking tenant information (default to GHL)
     let migrated = false;
@@ -1205,8 +1199,7 @@ const raw = this.get<NotificationItem[]>('notifications', []);
 
   // Custom Field Definitions
   getCustomFieldDefinitions(companyId?: string): CustomFieldDefinition[] {
-const definitions = this.get<CustomFieldDefinition[]>('custom_field_definitions', DEFAULT_CUSTOM_FIELD_DEFINITIONS);
-
+    const definitions = this.get<CustomFieldDefinition[]>('custom_field_definitions', DEFAULT_CUSTOM_FIELD_DEFINITIONS);
     if (!companyId) return definitions;
     return definitions.filter(d =>
       d.companyId === companyId ||
@@ -1245,7 +1238,7 @@ const definitions = this.get<CustomFieldDefinition[]>('custom_field_definitions'
     this.set('products_services', items);
   }
 
-getMockAgents() {
+  getMockAgents() {
     return this.getAgents();
   }
 
@@ -1297,7 +1290,6 @@ getMockAgents() {
       { id: '5', name: 'Dhinakaran', email: 'dhinakaran@ghlindiaventures.com', phone: '+91 98110 77889', experience: '5 Years', experienceYears: 5, experienceLevel: 'Experienced' as const, performance: 95, status: 'Available' as const },
       { id: '43', name: 'Sample_IRM', email: 'vishnunagaraj808@gmail.com', phone: '+91 98450 74125', experience: '3 Years', experienceYears: 3, experienceLevel: 'Mid-Level' as const, performance: 90, status: 'Available' as const },
     ];
-
   }
 
   getInitialCustomers(): Customer[] {
@@ -1399,16 +1391,3 @@ getMockAgents() {
 }
 
 export const storageService = new StorageService();
-
-export function registerMockStorageAdapter(adapter: any): void {
-  // Configures mock storage adapter when in mock mode
-  if (typeof window !== 'undefined' && adapter) {
-    (window as any).__nexus_mock_storage_adapter = adapter;
-  }
-}
-
-export function registerMockBootstrapRunner(runner: () => void): void {
-  if (typeof window !== 'undefined' && runner) {
-    (window as any).__nexus_mock_bootstrap_runner = runner;
-  }
-}

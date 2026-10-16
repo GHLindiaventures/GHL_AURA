@@ -517,14 +517,13 @@ export const App: React.FC = () => {
   };
 
   useEffect(() => {
-    const handleNavigate = (e: any) => {
-      const target = typeof e.detail === 'string' ? e.detail : e.detail?.route;
-      if (target) {
-        navigate(target);
+    const handleCustomNav = (e: any) => {
+      if (e.detail) {
+        navigate(e.detail);
       }
     };
-    window.addEventListener('nexus_navigate', handleNavigate);
-    return () => window.removeEventListener('nexus_navigate', handleNavigate);
+    window.addEventListener('nexus_navigate', handleCustomNav);
+    return () => window.removeEventListener('nexus_navigate', handleCustomNav);
   }, []);
 
   const [isSavingQuickCreate, setIsSavingQuickCreate] = useState(false);
@@ -536,6 +535,7 @@ export const App: React.FC = () => {
     quickNotes.trim().length > 0
   );
   useUnsavedChanges(isQuickCreateDirty, 'You have unsaved changes in Quick Create. Are you sure you want to discard them?', 'app-quick-create');
+
   const handleOpenQuickCreate = (type: 'lead' | 'followup' | 'deal' | 'visit' | 'consultation') => {
     setQuickCreateType(type);
     setQuickCreateError(null);
@@ -571,8 +571,10 @@ export const App: React.FC = () => {
     setQuickCreateError(null);
     setIsSavingQuickCreate(true);
 
-try {
+    try {
       if (quickCreateType === 'lead') {
+        const newLead = {
+          id: `lead-${Date.now()}`,
           companyId: tenant?.id || 't-ghl-01',
           name: quickName.trim(),
           phone: quickPhone.trim(),

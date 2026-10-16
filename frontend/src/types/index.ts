@@ -41,7 +41,7 @@ export interface Tenant {
   companies?: Array<string | Tenant | { id: string; name?: string; slug?: string }>;
 }
 
-export type RoleCode = 'super_admin' | 'company_admin' | 'sales_manager' | 'sales_executive' | 'irm' | string;
+export type RoleCode = 'super_admin' | 'company_admin' | 'sales_executive' | 'irm' | string;
 
 export interface Role {
   id: string;
@@ -143,9 +143,6 @@ export interface Lead {
   createdAt: string;
   notes: string;
   customFields: Record<string, any>;
-  assignedIrmId?: string;
-  assignedIrmName?: string;
-  assignedIrmAt?: string;
   departmentId?: string;
   teamId?: string;
   queueId?: string;
