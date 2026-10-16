@@ -760,7 +760,7 @@ public class PlatformSystemController : ControllerBase
 
         // 6. Telephony drop rate: calculate from CallRecords if any failed calls
         var totalCalls = await _context.CallRecords.CountAsync(ct);
-        var failedCalls = await _context.CallRecords.CountAsync(c => c.Duration == 0 && c.Disposition == "No Response", ct);
+        var failedCalls = await _context.CallRecords.CountAsync(c => c.DurationSeconds == 0 && c.Disposition == "No Response", ct);
         double telephonyDropRate = totalCalls > 0 ? Math.Round((double)failedCalls / totalCalls * 100, 2) : 0.0;
 
         // 7. Telephony Carrier Trunk Status

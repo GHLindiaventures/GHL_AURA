@@ -39,12 +39,13 @@ public static class AuthenticationExtensions
             {
                 ValidateIssuerSigningKey = true,
                 IssuerSigningKey = new SymmetricSecurityKey(key),
-                ValidateIssuer = true,
+                ValidateIssuer = !string.IsNullOrWhiteSpace(jwtSettings.Issuer),
                 ValidIssuer = jwtSettings.Issuer,
-                ValidateAudience = true,
+                ValidateAudience = !string.IsNullOrWhiteSpace(jwtSettings.Audience),
                 ValidAudience = jwtSettings.Audience,
                 ValidateLifetime = true,
-                ClockSkew = TimeSpan.Zero
+                ClockSkew = TimeSpan.Zero,
+                RoleClaimType = System.Security.Claims.ClaimTypes.Role
             };
             options.Events = new JwtBearerEvents
             {

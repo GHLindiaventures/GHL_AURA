@@ -1225,13 +1225,13 @@ public class WorkHandoverService : IWorkHandoverService
         // 1. Calls made by covering user
         var calls = await _db.CallRecords
             .Where(c => c.CompanyId == handover.CompanyId && c.AgentId == handover.CoveringUserId &&
-                        c.Timestamp >= startTime && c.Timestamp <= endTime)
-            .OrderByDescending(c => c.Timestamp)
+                        c.StartedAt >= startTime && c.StartedAt <= endTime)
+            .OrderByDescending(c => c.StartedAt)
             .Take(50)
             .ToListAsync(ct);
         var callsCount = await _db.CallRecords
             .CountAsync(c => c.CompanyId == handover.CompanyId && c.AgentId == handover.CoveringUserId &&
-                             c.Timestamp >= startTime && c.Timestamp <= endTime, ct);
+                             c.StartedAt >= startTime && c.StartedAt <= endTime, ct);
 
         foreach (var call in calls)
         {

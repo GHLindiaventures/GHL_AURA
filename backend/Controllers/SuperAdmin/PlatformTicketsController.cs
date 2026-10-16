@@ -12,6 +12,7 @@ namespace backend.Controllers.SuperAdmin;
 [ApiController]
 [Authorize(Roles = "super_admin")]
 [Route("api/super-admin/tickets")]
+    [Route("api/platform/tickets")]
 public class PlatformTicketsController : ControllerBase
 {
     private readonly ApplicationDbContext _context;

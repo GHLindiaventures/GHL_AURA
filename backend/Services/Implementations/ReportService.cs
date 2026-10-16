@@ -240,7 +240,7 @@ public class ReportService : IReportService
         if (string.IsNullOrEmpty(module) || module.Equals("CallHistory", StringComparison.OrdinalIgnoreCase) || module.Equals("All", StringComparison.OrdinalIgnoreCase))
         {
             var ws = workbook.Worksheets.Add("Call History");
-            var calls = await _db.CallRecords.Where(c => c.CompanyId == companyId).OrderByDescending(c => c.Timestamp).Take(1000).ToListAsync(ct);
+            var calls = await _db.CallRecords.Where(c => c.CompanyId == companyId).OrderByDescending(c => c.StartedAt).Take(1000).ToListAsync(ct);
             ws.Cell(1, 1).Value = "ID";
             ws.Cell(1, 2).Value = "Agent ID";
             ws.Cell(1, 3).Value = "Direction";

@@ -444,6 +444,52 @@ IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'consultat
                         ALTER TABLE leads ALTER COLUMN ""AssignedAgentId"" DROP NOT NULL;
                     END IF;
 
+                    -- Ensure leads columns exist
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'leads') THEN
+                        ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""AssetClass"" text;
+                        ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""Horizon"" text;
+                        ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""InvestmentCapacity"" text;
+                        ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""Location"" text;
+                        ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""Notes"" text;
+                        ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""PreferredAssetClass"" text;
+                        ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""Source"" text;
+                        ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""CustomFieldsJson"" text;
+                        ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""NextFollowupDate"" timestamp with time zone;
+                    END IF;
+                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Leads') THEN
+                        ALTER TABLE ""Leads"" ADD COLUMN IF NOT EXISTS ""AssetClass"" text;
+                        ALTER TABLE ""Leads"" ADD COLUMN IF NOT EXISTS ""Horizon"" text;
+                        ALTER TABLE ""Leads"" ADD COLUMN IF NOT EXISTS ""InvestmentCapacity"" text;
+                        ALTER TABLE ""Leads"" ADD COLUMN IF NOT EXISTS ""Location"" text;
+                        ALTER TABLE ""Leads"" ADD COLUMN IF NOT EXISTS ""Notes"" text;
+                        ALTER TABLE ""Leads"" ADD COLUMN IF NOT EXISTS ""PreferredAssetClass"" text;
+                        ALTER TABLE ""Leads"" ADD COLUMN IF NOT EXISTS ""Source"" text;
+                        ALTER TABLE ""Leads"" ADD COLUMN IF NOT EXISTS ""CustomFieldsJson"" text;
+                        ALTER TABLE ""Leads"" ADD COLUMN IF NOT EXISTS ""NextFollowupDate"" timestamp with time zone;
+                    END IF;
+
+                    -- Ensure ghl_deals table exists
+                    CREATE TABLE IF NOT EXISTS ghl_deals (
+                        ""Id"" SERIAL PRIMARY KEY,
+                        ""CompanyId"" INTEGER NOT NULL,
+                        ""AssignedAgentId"" INTEGER NOT NULL DEFAULT 1,
+                        ""CustomerId"" INTEGER NOT NULL DEFAULT 0,
+                        ""Title"" VARCHAR(200) NOT NULL DEFAULT '',
+                        ""CustomerName"" VARCHAR(150) NOT NULL DEFAULT '',
+                        ""Stage"" VARCHAR(100) NOT NULL DEFAULT 'new',
+                        ""Value"" NUMERIC(18,2) NOT NULL DEFAULT 0,
+                        ""ExpectedCloseDate"" VARCHAR(100) NOT NULL DEFAULT '',
+                        ""Notes"" TEXT NOT NULL DEFAULT '',
+                        ""LostReason"" TEXT,
+                        ""InvestorType"" VARCHAR(50),
+                        ""InvestmentRange"" VARCHAR(100),
+                        ""PreferredAssetClass"" VARCHAR(100),
+                        ""Priority"" VARCHAR(50) NOT NULL DEFAULT 'Medium',
+                        ""StageEnteredAt"" TIMESTAMPTZ,
+                        ""CreatedAt"" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+                        ""UpdatedAt"" TIMESTAMPTZ
+                    );
+
                     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'call_records') THEN
                         ALTER TABLE call_records ADD COLUMN IF NOT EXISTS ""TwilioCallSid"" character varying(64) NULL;
                         ALTER TABLE call_records ADD COLUMN IF NOT EXISTS ""RecordingUrl"" character varying(256) NULL;

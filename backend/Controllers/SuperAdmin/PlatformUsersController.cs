@@ -734,22 +734,22 @@ public class PlatformUsersController : ControllerBase
         var (utcStart, utcEnd) = GetTodayUtcRange(timeZone);
 
         var callsToday = await _context.CallRecords
-            .CountAsync(c => c.Timestamp >= utcStart && c.Timestamp < utcEnd, ct);
+            .CountAsync(c => c.StartedAt >= utcStart && c.StartedAt < utcEnd, ct);
 
         var nonConnectedDispositions = new[] { "Failed", "No Answer", "No Response", "Missed", "Busy" };
 
         var callsFailed = await _context.CallRecords
-            .CountAsync(c => c.Timestamp >= utcStart && c.Timestamp < utcEnd
+            .CountAsync(c => c.StartedAt >= utcStart && c.StartedAt < utcEnd
                 && nonConnectedDispositions.Contains(c.Disposition), ct);
 
         var callsConnected = await _context.CallRecords
-            .CountAsync(c => c.Timestamp >= utcStart && c.Timestamp < utcEnd
+            .CountAsync(c => c.StartedAt >= utcStart && c.StartedAt < utcEnd
                 && !nonConnectedDispositions.Contains(c.Disposition)
-                && (c.Duration > 0 || (c.Disposition != null && c.Disposition != "")), ct);
+                && (c.DurationSeconds > 0 || (c.Disposition != null && c.Disposition != "")), ct);
 
         var totalDuration = await _context.CallRecords
-            .Where(c => c.Timestamp >= utcStart && c.Timestamp < utcEnd)
-            .SumAsync(c => c.Duration, ct);
+            .Where(c => c.StartedAt >= utcStart && c.StartedAt < utcEnd)
+            .SumAsync(c => c.DurationSeconds, ct);
 
         var successRate = callsToday > 0 ? Math.Round(((double)callsConnected / callsToday) * 100.0, 1) : 100.0;
 

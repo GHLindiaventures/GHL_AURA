@@ -12,6 +12,7 @@ namespace backend.Controllers.SuperAdmin
     [ApiController]
     [Authorize(Roles = "super_admin")]
     [Route("api/super-admin/documents")]
+    [Route("api/platform/documents")]
     public class PlatformDocumentsController : ControllerBase
     {
         private readonly ApplicationDbContext _context;

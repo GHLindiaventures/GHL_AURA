@@ -37,7 +37,6 @@ public class PlatformTenantsController : ControllerBase
     }
 
     [HttpGet]
-    [HttpGet("~/api/platform/tenants")]
     public async Task<ActionResult<ApiResponse<List<TenantResponseDto>>>> GetAllTenants(CancellationToken ct = default)
     {
         var tenants = await _context.Tenants
