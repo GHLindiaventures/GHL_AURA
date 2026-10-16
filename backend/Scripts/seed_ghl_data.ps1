@@ -1,7 +1,15 @@
 $ErrorActionPreference = "Stop"
 
-# Log in as GHL Company Admin (Vishnu)
-$login = Invoke-RestMethod -Uri "http://localhost:5106/api/auth/login" -Method Post -ContentType "application/json" -Body '{"email":"vishnu@ghlindiaventures.com","password":"Password@123"}'
+param (
+    [string]$Email = $env:SEED_EMAIL,
+    [string]$Password = $env:SEED_PASSWORD
+)
+if (-not $Email -or -not $Password) {
+    Write-Error "SEED_EMAIL and SEED_PASSWORD parameters/env vars are required."
+    exit 1
+}
+$bodyObj = @{ email = $Email; password = $Password } | ConvertTo-Json
+$login = Invoke-RestMethod -Uri "http://localhost:5106/api/auth/login" -Method Post -ContentType "application/json" -Body $bodyObj
 $token = $login.data.token
 $headers = @{
     "Authorization" = "Bearer $token"

@@ -58,7 +58,13 @@ function get(path, token) {
 }
 
 async function testCrud() {
-  const loginRes = await post('/api/auth/login', { email: 'vishnu@ghlindiaventures.com', password: 'Password@123' });
+  const email = process.env.TEST_EMAIL;
+  const password = process.env.TEST_PASSWORD;
+  if (!email || !password) {
+    console.error('Error: TEST_EMAIL and TEST_PASSWORD environment variables are required.');
+    process.exit(1);
+  }
+  const loginRes = await post('/api/auth/login', { email, password });
   const token = loginRes.data?.data?.token;
 
   console.log('1. Testing POST /api/ghl/investors...');
