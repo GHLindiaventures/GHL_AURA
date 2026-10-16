@@ -38,7 +38,7 @@ const saveStoredUser = (targetUser: User) => {
       users.push(targetUser);
     }
     localStorage.setItem('nexus_users', JSON.stringify(users));
-  } catch {}
+  } catch { }
 };
 
 export function isJwtExpired(token: string | null | undefined): boolean {
@@ -137,13 +137,13 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
           return null;
         }
-      } catch {}
+      } catch { }
     }
     const saved = sessionStorage.getItem('nexus_current_tenant') || localStorage.getItem('nexus_current_tenant');
     if (saved) {
       try {
         return JSON.parse(saved);
-      } catch {}
+      } catch { }
     }
     return null;
   });
@@ -316,14 +316,19 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     localStorage.removeItem('nexus_auth_token');
     localStorage.removeItem('nexus_current_user');
     localStorage.removeItem('nexus_current_tenant');
+<<<<<<< HEAD
     clearAllKycLocalStorage();
     setMfaChallenge(null);
+=======
+    setMfaChallenge(null);
+    clearAllKycLocalStorage();
+>>>>>>> yanosh/Yanosh-P
     setLoginError(reason || null);
     setUser(null);
     setTenant(null);
     try {
       window.history.replaceState({ unauth: true }, '', '/login');
-    } catch {}
+    } catch { }
   };
 
   const userRef = useRef<User | null>(user);
@@ -428,7 +433,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
           }
         };
       }
-    } catch {}
+    } catch { }
 
     const handleStorageEvent = (e: StorageEvent) => {
       // Multi-tab synchronization
@@ -452,20 +457,20 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
                 }
                 setUser(u);
               }
-            } catch {}
+            } catch { }
           }
           const rawTenant = localStorage.getItem('nexus_current_tenant');
           if (rawTenant) {
             try {
               setTenant(JSON.parse(rawTenant));
-            } catch {}
+            } catch { }
           }
         }
       } else if (e.key === 'nexus_account_suspended' && e.newValue) {
         try {
           const payload = JSON.parse(e.newValue);
           checkSuspensionAndLogout(payload);
-        } catch {}
+        } catch { }
       }
     };
 
@@ -508,7 +513,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       clearInterval(intervalId);
       try {
         bc?.close();
-      } catch {}
+      } catch { }
       window.removeEventListener('storage', handleStorageEvent);
       window.removeEventListener('nexus_auth_unauthorized', handleUnauthorized);
       window.removeEventListener('focus', handleRevalidate);
