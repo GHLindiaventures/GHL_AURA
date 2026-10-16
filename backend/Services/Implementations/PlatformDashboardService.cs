@@ -70,7 +70,7 @@ public class PlatformDashboardService : IPlatformDashboardService
             CallsToday = callsToday,
             CallsConnected = (int)(callsToday * 0.88),
             TotalLeads = totalLeads > 0 ? totalLeads : 2480,
-            TotalPipelineValue = totalPipeline,
+            TotalPipelineValue = (long)totalPipeline,
             TotalCustomers = totalCustomers > 0 ? totalCustomers : 864,
             SystemHealthScore = 99.98
         };

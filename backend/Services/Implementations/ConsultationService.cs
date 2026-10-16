@@ -41,12 +41,16 @@ public class ConsultationService : IConsultationService
         var consultantId = _currentUser.UserId;
         var companyId = _currentUser.CompanyId;
 
-        var query = _context.Consultations.AsNoTracking().Include(c => c.Consultant).AsQueryable();
+        var query = _context.Consultations.AsNoTracking()
+            .Include(c => c.Consultant)
+            .Include(c => c.OriginalOwner)
+            .Include(c => c.Handover)
+            .AsQueryable();
 
         if (role == "super_admin")
         {
             if (companyId.HasValue)
-                query = query.Where(c => c.CompanyId == companyId.Value);
+                query = query.Where(c => c.CompanyId == companyId);
             return query;
         }
 
@@ -57,17 +61,10 @@ public class ConsultationService : IConsultationService
 
         if (role == "sales_executive")
         {
-            var agentName = _currentUser.Name;
-            query = query.Where(c => (consultantId.HasValue && c.ConsultantId == consultantId.Value) || 
-                                     (!string.IsNullOrEmpty(agentName) && c.ReferredByAgentName == agentName) ||
-                                     c.CompanyId == (companyId ?? 1));
-        }
-        else if (role == "irm")
-        {
-            var agentName = _currentUser.Name;
-            query = query.Where(c => (consultantId.HasValue && c.ConsultantId == consultantId.Value) ||
-                                     (!string.IsNullOrEmpty(agentName) && c.ConsultantName == agentName) ||
-                                     c.CompanyId == (companyId ?? 1));
+var agentUser = _context.Users.FirstOrDefault(u => u.Id == consultantId.Value);
+            var agentName = agentUser?.Name;
+            query = query.Where(c => c.ConsultantId == consultantId.Value || (agentName != null && c.ReferredByAgentName != null && EF.Functions.ILike(c.ReferredByAgentName, agentName)));
+
         }
 
         return query;
@@ -93,17 +90,10 @@ public class ConsultationService : IConsultationService
 
         if (role == "sales_executive")
         {
-            var agentName = _currentUser.Name;
-            query = query.Where(c => (consultantId.HasValue && c.ConsultantId == consultantId.Value) || 
-                                     (!string.IsNullOrEmpty(agentName) && c.ReferredByAgentName == agentName) ||
-                                     c.CompanyId == (companyId ?? 1));
-        }
-        else if (role == "irm")
-        {
-            var agentName = _currentUser.Name;
-            query = query.Where(c => (consultantId.HasValue && c.ConsultantId == consultantId.Value) ||
-                                     (!string.IsNullOrEmpty(agentName) && c.ConsultantName == agentName) ||
-                                     c.CompanyId == (companyId ?? 1));
+var agentUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == consultantId.Value, ct);
+            var agentName = agentUser?.Name;
+            query = query.Where(c => c.ConsultantId == consultantId.Value || (agentName != null && c.ReferredByAgentName != null && EF.Functions.ILike(c.ReferredByAgentName, agentName)));
+
         }
 
         return await query.FirstOrDefaultAsync(ct);
@@ -161,10 +151,60 @@ public class ConsultationService : IConsultationService
         var currentUserId = _currentUser.UserId ?? 1;
         var currentUserName = _currentUser.Name ?? "Sales Executive";
         var companyId = _currentUser.CompanyId ?? 1;
+        int consultantId = dto.ConsultantId ?? currentUserId;
+        string consultantName = dto.ConsultantName ?? currentUserName;
 
-        // 1. Resolve Consultant (IRM)
-        int consultantId = 0;
-        string consultantName = dto.ConsultantName?.Trim() ?? string.Empty;
+        int? finalInvestorId = null;
+        if (int.TryParse(dto.InvestorId, out var parsedInvId) && parsedInvId > 0)
+        {
+            var invExists = await _context.Investors.AnyAsync(i => i.Id == parsedInvId && i.CompanyId == companyId, ct);
+            if (invExists) finalInvestorId = parsedInvId;
+        }
+
+        if (!finalInvestorId.HasValue && !string.IsNullOrWhiteSpace(dto.InvestorPhone))
+        {
+            var cleanPhone = dto.InvestorPhone.Trim();
+            var existingInv = await _context.Investors.FirstOrDefaultAsync(i => i.CompanyId == companyId && i.Phone == cleanPhone, ct);
+            if (existingInv != null)
+            {
+                finalInvestorId = existingInv.Id;
+            }
+        }
+
+        var callerUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == consultantId, ct);
+        var targetConsultantId = dto.ConsultantId.HasValue && dto.ConsultantId.Value > 0
+            ? dto.ConsultantId.Value
+            : consultantId;
+
+        var consultantUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == targetConsultantId && u.CompanyId == companyId, ct);
+
+        var schedUtc = dto.ScheduledAt.Kind switch
+        {
+            DateTimeKind.Utc => dto.ScheduledAt,
+            DateTimeKind.Local => dto.ScheduledAt.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(dto.ScheduledAt, DateTimeKind.Utc)
+        };
+
+        // Check for time slot conflict: no consultant can have two scheduled consultations within 25 minutes
+        var slotStart = schedUtc.AddMinutes(-24.9);
+        var slotEnd = schedUtc.AddMinutes(24.9);
+
+        var conflictConsultation = await _context.Consultations.AsNoTracking()
+            .Where(c => c.CompanyId == companyId &&
+                        c.ConsultantId == targetConsultantId &&
+                        c.Status == ConsultationStatus.Scheduled &&
+                        c.ScheduledAt >= slotStart &&
+                        c.ScheduledAt <= slotEnd)
+            .FirstOrDefaultAsync(ct);
+
+        if (conflictConsultation != null)
+        {
+            var conflictTime = conflictConsultation.ScheduledAt.ToString("g");
+            var suggestedTime = conflictConsultation.ScheduledAt.AddMinutes(30).ToString("t");
+            return ApiResponse<ConsultationResponseDto>.FailureResult(
+                $"This time slot is already booked for another consultation with {conflictConsultation.InvestorName} (at {conflictTime}). Please allow at least 20 to 30 minutes between sessions and schedule after {suggestedTime}.");
+        }
+
 
         if (dto.ConsultantId.HasValue && dto.ConsultantId.Value > 0)
         {
@@ -303,10 +343,11 @@ public class ConsultationService : IConsultationService
         // 3. Create Consultation
         var consultation = new Consultation
         {
-            CompanyId = companyId,
-            ConsultantId = consultantId,
-            ConsultantName = consultantName,
-            InvestorId = investorId,
+CompanyId = companyId,
+            ConsultantId = targetConsultantId,
+            ConsultantName = consultantUser?.Name ?? (!string.IsNullOrWhiteSpace(dto.ConsultantName) ? dto.ConsultantName.Trim() : (callerUser?.Name ?? string.Empty)),
+            InvestorId = finalInvestorId,
+
             InvestorName = dto.InvestorName.Trim(),
             InvestorPhone = dto.InvestorPhone.Trim(),
             ScheduledAt = dto.ScheduledAt != default 
@@ -315,7 +356,10 @@ public class ConsultationService : IConsultationService
             Status = ConsultationStatus.Scheduled,
             Agenda = dto.Agenda?.Trim() ?? string.Empty,
             OutcomeNotes = dto.Notes?.Trim() ?? string.Empty,
-            ReferredByAgentName = referredBy,
+ReferredByAgentName = !string.IsNullOrWhiteSpace(dto.ReferredByAgentName)
+                ? dto.ReferredByAgentName.Trim()
+                : (_currentUser.Role == "sales_executive" ? callerUser?.Name : null),
+
             CreatedAt = DateTime.UtcNow
         };
 
@@ -336,8 +380,35 @@ public class ConsultationService : IConsultationService
 
         if (dto.ScheduledAt.HasValue)
         {
-            var dt = dto.ScheduledAt.Value;
-            consultation.ScheduledAt = dt.Kind == DateTimeKind.Utc ? dt : DateTime.SpecifyKind(dt, DateTimeKind.Utc);
+var schedUtc = dto.ScheduledAt.Value.Kind switch
+            {
+                DateTimeKind.Utc => dto.ScheduledAt.Value,
+                DateTimeKind.Local => dto.ScheduledAt.Value.ToUniversalTime(),
+                _ => DateTime.SpecifyKind(dto.ScheduledAt.Value, DateTimeKind.Utc)
+            };
+
+            var slotStart = schedUtc.AddMinutes(-24.9);
+            var slotEnd = schedUtc.AddMinutes(24.9);
+
+            var conflictConsultation = await _context.Consultations.AsNoTracking()
+                .Where(c => c.CompanyId == consultation.CompanyId &&
+                            c.Id != consultation.Id &&
+                            c.ConsultantId == consultation.ConsultantId &&
+                            c.Status == ConsultationStatus.Scheduled &&
+                            c.ScheduledAt >= slotStart &&
+                            c.ScheduledAt <= slotEnd)
+                .FirstOrDefaultAsync(ct);
+
+            if (conflictConsultation != null)
+            {
+                var conflictTime = conflictConsultation.ScheduledAt.ToString("g");
+                var suggestedTime = conflictConsultation.ScheduledAt.AddMinutes(30).ToString("t");
+                return ApiResponse<ConsultationResponseDto>.FailureResult(
+                    $"This time slot is already booked for another consultation with {conflictConsultation.InvestorName} (at {conflictTime}). Please allow at least 20 to 30 minutes between sessions and schedule after {suggestedTime}.");
+            }
+
+            consultation.ScheduledAt = schedUtc;
+
         }
         if (!string.IsNullOrWhiteSpace(dto.Status) && Enum.TryParse<ConsultationStatus>(dto.Status, true, out var st))
         {
@@ -377,6 +448,32 @@ public class ConsultationService : IConsultationService
         var user = await _userRepo.GetByIdAsync(consultantId, ct);
         var investor = await _investorRepo.GetByIdAsync(dto.InvestorId, companyId, ct);
 
+        var schedUtc = dto.ScheduledAt.Kind switch
+        {
+            DateTimeKind.Utc => dto.ScheduledAt,
+            DateTimeKind.Local => dto.ScheduledAt.ToUniversalTime(),
+            _ => DateTime.SpecifyKind(dto.ScheduledAt, DateTimeKind.Utc)
+        };
+
+        var slotStart = schedUtc.AddMinutes(-24.9);
+        var slotEnd = schedUtc.AddMinutes(24.9);
+
+        var conflictConsultation = await _context.Consultations.AsNoTracking()
+            .Where(c => c.CompanyId == companyId &&
+                        c.ConsultantId == consultantId &&
+                        c.Status == ConsultationStatus.Scheduled &&
+                        c.ScheduledAt >= slotStart &&
+                        c.ScheduledAt <= slotEnd)
+            .FirstOrDefaultAsync(ct);
+
+        if (conflictConsultation != null)
+        {
+            var conflictTime = conflictConsultation.ScheduledAt.ToString("g");
+            var suggestedTime = conflictConsultation.ScheduledAt.AddMinutes(30).ToString("t");
+            return ApiResponse<ConsultationDto>.ErrorResponse(
+                $"This time slot is already booked for another consultation with {conflictConsultation.InvestorName} (at {conflictTime}). Please allow at least 20 to 30 minutes between sessions and schedule after {suggestedTime}.");
+        }
+
         var consultation = new Consultation
         {
             InvestorId = dto.InvestorId,
@@ -389,10 +486,26 @@ public class ConsultationService : IConsultationService
             Status = ConsultationStatus.Scheduled,
             Agenda = dto.Agenda,
             ReferredByAgentName = dto.ReferredByAgentName,
-            CreatedAt = DateTime.UtcNow
+            CreatedAt = DateTime.UtcNow,
+            HandoverId = investor?.HandoverId,
+            OriginalOwnerId = investor?.OriginalOwnerId
         };
 
         var created = await _consultationRepo.CreateAsync(consultation, ct);
+
+        if (investor?.HandoverId != null)
+        {
+            _context.WorkHandoverItems.Add(new WorkHandoverItem
+            {
+                HandoverId = investor.HandoverId.Value,
+                EntityType = "Consultation",
+                EntityId = created.Id,
+                Origin = "created_during_coverage",
+                CreatedAt = DateTime.UtcNow
+            });
+            await _context.SaveChangesAsync(ct);
+        }
+
         return ApiResponse<ConsultationDto>.SuccessResponse(MapToIrmDto(created), "Consultation scheduled successfully");
     }
 
@@ -512,7 +625,11 @@ public class ConsultationService : IConsultationService
             OutcomeNotes = c.OutcomeNotes ?? string.Empty,
             ReferredByAgentName = c.ReferredByAgentName,
             CreatedAt = c.CreatedAt,
-            UpdatedAt = c.UpdatedAt
+            UpdatedAt = c.UpdatedAt,
+            HandoverId = c.HandoverId,
+            HandedOverFromName = c.OriginalOwner?.Name,
+            HandoverPlannedEnd = c.Handover?.PlannedEndAt,
+            OriginalOwnerId = c.OriginalOwnerId
         };
     }
 
@@ -531,6 +648,10 @@ public class ConsultationService : IConsultationService
         OutcomeNotes = c.OutcomeNotes,
         ReferredByAgentName = c.ReferredByAgentName,
         CreatedAt = c.CreatedAt,
-        UpdatedAt = c.UpdatedAt
+        UpdatedAt = c.UpdatedAt,
+        HandoverId = c.HandoverId,
+        HandedOverFromName = c.OriginalOwner?.Name,
+        HandoverPlannedEnd = c.Handover?.PlannedEndAt,
+        OriginalOwnerId = c.OriginalOwnerId
     };
 }

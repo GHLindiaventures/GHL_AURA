@@ -10,7 +10,8 @@ public class BroadcastAnnouncement
     public int? TargetTenantId { get; set; }
     public Tenant? TargetTenant { get; set; }
     public bool IsActive { get; set; } = true;
-    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
-    public DateTime? ExpiresAt { get; set; }
     public string CreatedBy { get; set; } = "Super Admin";
+    public DateTime? ExpiresAt { get; set; }
+    public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
+    public DateTime? UpdatedAt { get; set; }
 }

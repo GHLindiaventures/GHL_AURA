@@ -12,18 +12,27 @@ public class PlatformSettingConfiguration : IEntityTypeConfiguration<PlatformSet
 
         builder.HasKey(s => s.Id);
 
-        builder.Property(s => s.MaintenanceModeEnabled)
-            .HasDefaultValue(false);
-
-        builder.Property(s => s.MaintenanceMessage)
-            .HasMaxLength(512)
-            .HasDefaultValue("Platform under scheduled maintenance.");
-
-        builder.Property(s => s.BypassSecret)
+        builder.Property(s => s.Key)
             .HasMaxLength(128)
-            .HasDefaultValue("nexus-admin-2026");
+            .IsRequired();
+
+        builder.HasIndex(s => s.Key)
+            .IsUnique();
+
+        builder.Property(s => s.Value)
+            .IsRequired();
+
+        builder.Property(s => s.Description)
+            .HasMaxLength(500);
+
+        builder.Property(s => s.UpdatedBy)
+            .HasMaxLength(100);
 
         builder.Property(s => s.UpdatedAt)
             .HasDefaultValueSql("NOW()");
+
+        builder.Ignore(s => s.MaintenanceModeEnabled);
+        builder.Ignore(s => s.MaintenanceMessage);
+        builder.Ignore(s => s.BypassSecret);
     }
 }

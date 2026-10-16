@@ -13,11 +13,10 @@ public class BroadcastAnnouncementConfiguration : IEntityTypeConfiguration<Broad
         builder.HasKey(a => a.Id);
 
         builder.Property(a => a.Title)
-            .HasMaxLength(255)
+            .HasMaxLength(256)
             .IsRequired();
 
         builder.Property(a => a.Message)
-            .HasMaxLength(2000)
             .IsRequired();
 
         builder.Property(a => a.Priority)
@@ -32,15 +31,13 @@ public class BroadcastAnnouncementConfiguration : IEntityTypeConfiguration<Broad
             .HasMaxLength(128)
             .HasDefaultValue("Super Admin");
 
-        builder.Property(a => a.IsActive)
-            .HasDefaultValue(true);
-
         builder.Property(a => a.CreatedAt)
             .HasDefaultValueSql("NOW()");
 
         builder.HasOne(a => a.TargetTenant)
             .WithMany()
             .HasForeignKey(a => a.TargetTenantId)
-            .OnDelete(DeleteBehavior.Cascade);
+            .OnDelete(DeleteBehavior.Cascade)
+            .IsRequired(false);
     }
 }

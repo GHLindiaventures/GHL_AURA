@@ -12,48 +12,53 @@ public class LeadConfiguration : IEntityTypeConfiguration<Lead>
 
         builder.HasKey(l => l.Id);
 
-        builder.Property(l => l.AssignedAgentId);
-
         builder.Property(l => l.Name)
             .HasMaxLength(150)
             .IsRequired();
+
+        builder.Property(l => l.Email)
+            .HasMaxLength(256);
 
         builder.Property(l => l.Phone)
             .HasMaxLength(50)
             .IsRequired();
 
-        builder.Property(l => l.Email)
-            .HasMaxLength(255);
-
-        builder.Property(l => l.Location)
-            .HasMaxLength(255);
+        builder.Property(l => l.Status)
+            .HasMaxLength(50)
+            .HasDefaultValue("New")
+            .IsRequired();
 
         builder.Property(l => l.Source)
             .HasMaxLength(100)
-            .HasDefaultValue("Website Inbound");
-
-        builder.Property(l => l.Status)
-            .HasMaxLength(50)
-            .HasDefaultValue("New");
+            .HasDefaultValue("Website Inbound")
+            .IsRequired();
 
         builder.Property(l => l.Priority)
             .HasMaxLength(50)
-            .HasDefaultValue("Medium");
-
-        builder.Property(l => l.AssetClass)
-            .HasMaxLength(150);
-
-        builder.Property(l => l.Horizon)
-            .HasMaxLength(150);
-
-        builder.Property(l => l.InvestmentCapacity)
-            .HasMaxLength(150);
-
-        builder.Property(l => l.PreferredAssetClass)
-            .HasMaxLength(150);
+            .HasDefaultValue("Medium")
+            .IsRequired();
 
         builder.Property(l => l.CreatedAt)
             .HasDefaultValueSql("NOW()");
+
+        builder.Property(l => l.Location)
+            .HasMaxLength(150);
+
+        builder.Property(l => l.InvestmentCapacity)
+            .HasMaxLength(50);
+
+        builder.Property(l => l.Notes)
+            .HasColumnType("text");
+
+        builder.Property(l => l.CustomFieldsJson)
+            .HasColumnType("jsonb");
+
+        // Indexes for performance
+        builder.HasIndex(l => l.CompanyId);
+        builder.HasIndex(l => l.Status);
+        builder.HasIndex(l => l.CreatedAt);
+        builder.HasIndex(l => new { l.CompanyId, l.Status });
+        builder.HasIndex(l => new { l.CompanyId, l.Phone });
 
         // Relationships
         builder.HasOne(l => l.Company)
@@ -69,5 +74,14 @@ public class LeadConfiguration : IEntityTypeConfiguration<Lead>
             .HasForeignKey(l => l.AssignedAgentId)
             .IsRequired(false)
             .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasOne(l => l.AssignedBy)
+            .WithMany()
+            .HasForeignKey(l => l.AssignedById)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        builder.HasIndex(l => new { l.CompanyId, l.AssignedAgentId });
+        
+        builder.Property<uint>("xmin").IsRowVersion();
     }
 }

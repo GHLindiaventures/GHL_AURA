@@ -1,7 +1,6 @@
 using backend.DTOs.Common;
 using backend.DTOs.Customers;
 using backend.Services.Interfaces;
-using FluentValidation;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
@@ -9,18 +8,15 @@ namespace backend.Controllers.SalesExecutive;
 
 [ApiController]
 [Route("api/sales-executive/customers")]
-[Authorize(Roles = "sales_executive,company_admin,sales_manager,super_admin,irm")]
+[Authorize(Roles = "sales_executive,company_admin,super_admin,irm")]
 public class SalesExecutiveCustomersController : ControllerBase
 {
     private readonly ICustomerService _customerService;
-    private readonly IValidator<CreateCustomerDto> _createValidator;
 
     public SalesExecutiveCustomersController(
-        ICustomerService customerService,
-        IValidator<CreateCustomerDto> createValidator)
+        ICustomerService customerService)
     {
         _customerService = customerService;
-        _createValidator = createValidator;
     }
 
     /// <summary>
@@ -56,28 +52,6 @@ public class SalesExecutiveCustomersController : ControllerBase
             return NotFound(result);
 
         return Ok(result);
-    }
-
-    /// <summary>
-    /// Create a new customer profile assigned to the authenticated Sales Executive.
-    /// </summary>
-    [HttpPost]
-    public async Task<ActionResult<ApiResponse<CustomerResponseDto>>> CreateCustomer(
-        [FromBody] CreateCustomerDto dto,
-        CancellationToken ct)
-    {
-        var validation = await _createValidator.ValidateAsync(dto, ct);
-        if (!validation.IsValid)
-        {
-            var errors = validation.Errors.Select(e => e.ErrorMessage).ToList();
-            return BadRequest(ApiResponse<CustomerResponseDto>.FailureResult("Validation failed.", errors));
-        }
-
-        var result = await _customerService.CreateCustomerAsync(dto, ct);
-        if (!result.Success)
-            return BadRequest(result);
-
-        return CreatedAtAction(nameof(GetCustomer360), new { id = result.Data!.Id }, result);
     }
 
     /// <summary>

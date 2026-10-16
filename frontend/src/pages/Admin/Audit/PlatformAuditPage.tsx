@@ -37,48 +37,42 @@ export const PlatformAuditPage: React.FC = () => {
   // Selected Log for Inspection
   const [inspectedLog, setInspectedLog] = useState<AuditLog | null>(null);
   const [isInspectDrawerOpen, setIsInspectDrawerOpen] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+
+const [loadError, setLoadError] = useState<string | null>(null);
 
   const loadData = async () => {
-    if (!isMockMode()) {
-      try {
-        const allTenants = await superAdminService.fetchTenantsFromApi();
-        setTenants(allTenants);
-      } catch (err) {
-        console.warn('Could not load tenants in audit page:', err);
-        setTenants(superAdminService.getTenants());
-      }
-    } else {
-      setTenants(superAdminService.getTenants());
+    try {
+      const allTenants = await superAdminService.fetchTenantsFromApi();
+      setTenants(allTenants);
+    } catch (err: any) {
+      console.warn('Could not load tenants for audit filters:', err);
+
     }
     await applyFilters();
   };
 
   const applyFilters = async () => {
-    if (!isMockMode()) {
-      try {
-        const list = await superAdminService.fetchAuditLogsFromApi({
-          companyId: selectedCompanyFilter === 'all' ? undefined : selectedCompanyFilter,
-          action: selectedActionFilter === 'all' ? undefined : selectedActionFilter,
-          module: selectedModuleFilter === 'all' ? undefined : selectedModuleFilter,
-          search: searchQuery || undefined,
-          from: fromDate ? new Date(fromDate).toISOString() : undefined,
-          to: toDate ? new Date(toDate + 'T23:59:59').toISOString() : undefined,
-        });
-        setLogs(list);
-        return;
-      } catch (err) {
-        console.warn('Could not fetch audit logs from API:', err);
-      }
+setIsLoading(true);
+    setLoadError(null);
+    try {
+      const list = await superAdminService.fetchAuditLogsFromApi({
+        companyId: selectedCompanyFilter,
+        action: selectedActionFilter,
+        module: selectedModuleFilter,
+        search: searchQuery,
+        from: fromDate ? new Date(fromDate).toISOString() : undefined,
+        to: toDate ? new Date(toDate + 'T23:59:59').toISOString() : undefined,
+      });
+      setLogs(list);
+    } catch (err: any) {
+      console.error('Failed to load audit logs from API:', err);
+      setLoadError(err?.message || 'Failed to load audit logs from backend server.');
+      setLogs([]);
+    } finally {
+      setIsLoading(false);
     }
-    const list = superAdminService.getAuditLogs({
-      companyId: selectedCompanyFilter,
-      action: selectedActionFilter,
-      module: selectedModuleFilter,
-      search: searchQuery,
-      from: fromDate ? new Date(fromDate).toISOString() : undefined,
-      to: toDate ? new Date(toDate + 'T23:59:59').toISOString() : undefined,
-    });
-    setLogs(list);
+
   };
 
   useEffect(() => {
@@ -173,8 +167,11 @@ export const PlatformAuditPage: React.FC = () => {
         <div className="audit-search-box">
           <Search size={16} className="search-icon" />
           <input
+            id="audit-search-query"
+            name="searchQuery"
             type="text"
             className="audit-search-input"
+            aria-label="Search audit trail"
             placeholder="Search audit trail by actor, email, entity ID, or description..."
             value={searchQuery}
             onChange={e => setSearchQuery(e.target.value)}
@@ -184,7 +181,10 @@ export const PlatformAuditPage: React.FC = () => {
         <div className="audit-dropdown-filters">
           {/* Organization Filter */}
           <select
+            id="audit-filter-company"
+            name="companyFilter"
             className="filter-select"
+            aria-label="Filter by organization"
             value={selectedCompanyFilter}
             onChange={e => setSelectedCompanyFilter(e.target.value)}
           >
@@ -199,7 +199,10 @@ export const PlatformAuditPage: React.FC = () => {
 
           {/* Action Filter */}
           <select
+            id="audit-filter-action"
+            name="actionFilter"
             className="filter-select"
+            aria-label="Filter by action"
             value={selectedActionFilter}
             onChange={e => setSelectedActionFilter(e.target.value)}
           >
@@ -213,7 +216,10 @@ export const PlatformAuditPage: React.FC = () => {
 
           {/* Module Filter */}
           <select
+            id="audit-filter-module"
+            name="moduleFilter"
             className="filter-select"
+            aria-label="Filter by system module"
             value={selectedModuleFilter}
             onChange={e => setSelectedModuleFilter(e.target.value)}
           >
@@ -228,19 +234,25 @@ export const PlatformAuditPage: React.FC = () => {
           {/* Date Range Inputs */}
           <div className="date-filter-group">
             <input
+              id="audit-filter-from-date"
+              name="fromDate"
               type="date"
               className="date-input"
               value={fromDate}
               onChange={e => setFromDate(e.target.value)}
               title="From Date"
+              aria-label="From Date"
             />
             <span className="date-sep">&rarr;</span>
             <input
+              id="audit-filter-to-date"
+              name="toDate"
               type="date"
               className="date-input"
               value={toDate}
               onChange={e => setToDate(e.target.value)}
               title="To Date"
+              aria-label="To Date"
             />
           </div>
         </div>
@@ -284,8 +296,14 @@ export const PlatformAuditPage: React.FC = () => {
 
                     <td>
                       <div className="actor-cell">
-                        <div className="actor-name-text">{l.actorName}</div>
-                        <div className="actor-email-text">{l.actorEmail}</div>
+                        <div className="actor-name-text">
+                          {l.actorName && !l.actorName.includes('(ID:') && l.actorName.toLowerCase() !== (l.actorEmail || '').toLowerCase()
+                            ? l.actorName
+                            : (l.actorEmail || (l.actorName && !l.actorName.includes('(ID:') ? l.actorName : 'System User'))}
+                        </div>
+                        {l.actorEmail && l.actorName && !l.actorName.includes('(ID:') && l.actorName.toLowerCase() !== l.actorEmail.toLowerCase() && (
+                          <div className="actor-email-text">{l.actorEmail}</div>
+                        )}
                       </div>
                     </td>
 
@@ -350,7 +368,9 @@ export const PlatformAuditPage: React.FC = () => {
               <div className="meta-row">
                 <span className="meta-key">Actor Name & Email:</span>
                 <span className="meta-val font-bold">
-                  {inspectedLog.actorName} &lt;{inspectedLog.actorEmail}&gt;
+                  {inspectedLog.actorName && !inspectedLog.actorName.includes('(ID:') && inspectedLog.actorName.toLowerCase() !== (inspectedLog.actorEmail || '').toLowerCase()
+                    ? `${inspectedLog.actorName}${inspectedLog.actorEmail ? ` <${inspectedLog.actorEmail}>` : ''}`
+                    : (inspectedLog.actorEmail || (inspectedLog.actorName && !inspectedLog.actorName.includes('(ID:') ? inspectedLog.actorName : 'System User'))}
                 </span>
               </div>
               <div className="meta-row">
@@ -374,41 +394,6 @@ export const PlatformAuditPage: React.FC = () => {
                 <span className="meta-val">{inspectedLog.details}</span>
               </div>
             </div>
-
-            {/* Visual JSON Before / After Diff */}
-            <div className="diff-section">
-              <h4 className="diff-heading">Payload State Diff (Before vs After)</h4>
-              <div className="diff-grid">
-                <div className="diff-pane before-pane">
-                  <div className="pane-header">STATE BEFORE ACTION</div>
-                  <pre className="pane-body font-mono">
-                    {inspectedLog.beforeValue
-                      ? JSON.stringify(inspectedLog.beforeValue, null, 2)
-                      : '// No preceding state recorded (initial creation or read event)'}
-                  </pre>
-                </div>
-
-                <div className="diff-pane after-pane">
-                  <div className="pane-header">STATE AFTER ACTION (COMMITTED)</div>
-                  <pre className="pane-body font-mono">
-                    {inspectedLog.afterValue
-                      ? JSON.stringify(inspectedLog.afterValue, null, 2)
-                      : JSON.stringify(
-                          {
-                            action: inspectedLog.action,
-                            entity: inspectedLog.entityType,
-                            entityId: inspectedLog.entityId,
-                            status: inspectedLog.status || 'success',
-                            details: inspectedLog.details,
-                          },
-                          null,
-                          2
-                        )}
-                  </pre>
-                </div>
-              </div>
-            </div>
-
             <div className="drawer-footer-actions">
               <button className="btn btn-primary" onClick={() => setIsInspectDrawerOpen(false)}>
                 Close Inspector

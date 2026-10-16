@@ -21,7 +21,7 @@ public class ConsultationConfiguration : IEntityTypeConfiguration<Consultation>
             .HasMaxLength(50)
             .IsRequired();
 
-        builder.Property(c => c.Status);
+builder.Property(c => c.Status).IsRequired();
 
         builder.Property(c => c.CreatedAt)
             .HasDefaultValueSql("NOW()");

@@ -2,9 +2,9 @@ export type KanbanRole = 'sales_executive' | 'irm';
 
 export type PriorityLevel = 'High' | 'Medium' | 'Low';
 
-export type DateRangePreset = 'today' | 'this_week' | 'this_month' | 'custom';
+export type DateRangePreset = 'all' | 'today' | 'this_week' | 'this_month' | 'custom';
 
-export type FollowupRoleFilter = 'sales_executive' | 'irm';
+export type FollowupRoleFilter = 'all' | 'sales_executive' | 'irm';
 
 export interface ActivityLogItem {
   id: string;

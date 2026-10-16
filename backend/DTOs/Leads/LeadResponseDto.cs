@@ -22,6 +22,28 @@ public class LeadResponseDto
     public string? DispositionReason => CustomFields != null && CustomFields.TryGetValue("dispositionReason", out var reason) ? reason : null;
 
     public DateTime? NextFollowupDate { get; set; }
+    public DateTime? AssignedAt { get; set; }
+    public int? AssignedById { get; set; }
+    public string? AssignedByName { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
+
+    public int? AssignedSalesExecutiveId { get; set; }
+    public string? AssignedSalesExecutiveName { get; set; }
+    public DateTime? AssignedSalesExecutiveAt { get; set; }
+    public string? AssignedAgentRole { get; set; }
+    public string? TransferredBySalesExecutiveName { get; set; }
+    public string? ActiveOwnerName { get; set; }
+    public string? ActiveOwnerRole { get; set; }
+    public bool IsCovered { get; set; }
+    public string? CoveredByName { get; set; }
+
+    public int? HandoverId { get; set; }
+    public string? HandedOverFromName { get; set; }
+    public DateTime? HandoverPlannedEnd { get; set; }
+    public int? OriginalOwnerId { get; set; }
+
+    public bool IsReturnedFromHandover { get; set; }
+    public string? ReturnedFromCoveringUserName { get; set; }
+    public DateTime? ReturnedAt { get; set; }
 }

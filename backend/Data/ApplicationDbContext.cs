@@ -14,7 +14,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<Tenant> Tenants => Set<Tenant>();
     public DbSet<Role> Roles => Set<Role>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<Document> Documents => Set<Document>();
     public DbSet<Lead> Leads => Set<Lead>();
+    public DbSet<LeadAssignmentHistory> LeadAssignmentHistories => Set<LeadAssignmentHistory>();
     public DbSet<Customer> Customers => Set<Customer>();
     public DbSet<Followup> Followups => Set<Followup>();
     public DbSet<Consultation> Consultations => Set<Consultation>();
@@ -30,9 +32,6 @@ public class ApplicationDbContext : DbContext
     /// <summary>Activity log entries for each GHL deal (notes, calls, stage changes).</summary>
     public DbSet<GhlDealActivity> GhlDealActivities => Set<GhlDealActivity>();
 
-    /// <summary>HNW investor profiles managed by GHL India Ventures.</summary>
-    public DbSet<GhlInvestor> GhlInvestors => Set<GhlInvestor>();
-
     /// <summary>Investment opportunity pipeline linked to GHL investors.</summary>
     public DbSet<GhlInvestmentOpportunity> GhlInvestmentOpportunities => Set<GhlInvestmentOpportunity>();
 
@@ -40,40 +39,189 @@ public class ApplicationDbContext : DbContext
     /// <summary>Immutable audit log of every create/update/delete action across all tenants.</summary>
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
+    // ── Super Admin Platform Management Entities ─────────────────────────────
+    public DbSet<SubscriptionPackage> SubscriptionPackages => Set<SubscriptionPackage>();
+    public DbSet<CarrierSettings> CarrierSettings => Set<CarrierSettings>();
+    public DbSet<PlatformCarrierSettings> PlatformCarrierSettings => Set<PlatformCarrierSettings>();
+    public DbSet<TenantDidMapping> TenantDidMappings => Set<TenantDidMapping>();
+    public DbSet<BroadcastAnnouncement> BroadcastAnnouncements => Set<BroadcastAnnouncement>();
+    public DbSet<PlatformSetting> PlatformSettings => Set<PlatformSetting>();
+    public DbSet<UserSession> UserSessions => Set<UserSession>();
+    public DbSet<SecurityEvent> SecurityEvents => Set<SecurityEvent>();
+    public DbSet<UserMfaSetting> UserMfaSettings => Set<UserMfaSetting>();
+    public DbSet<MfaRecoveryCode> MfaRecoveryCodes => Set<MfaRecoveryCode>();
+    public DbSet<MfaChallenge> MfaChallenges => Set<MfaChallenge>();
+    public DbSet<PlatformTicket> PlatformTickets => Set<PlatformTicket>();
+    public DbSet<PlatformTicketEvent> PlatformTicketEvents => Set<PlatformTicketEvent>();
+
     // IRM Entities
     public DbSet<Investor> Investors => Set<Investor>();
     public DbSet<InvestorKyc> InvestorKycs => Set<InvestorKyc>();
     public DbSet<InvestmentOpportunity> InvestmentOpportunities => Set<InvestmentOpportunity>();
-    public DbSet<OpportunityPitch> OpportunityPitches => Set<OpportunityPitch>();
-    public DbSet<InvestorCall> InvestorCalls => Set<InvestorCall>();
+    public DbSet<KycOtpVerification> KycOtpVerifications => Set<KycOtpVerification>();
+    public DbSet<IrmCoverageAssignment> IrmCoverageAssignments => Set<IrmCoverageAssignment>();
     public DbSet<IrmPipelineCard> IrmPipelineCards => Set<IrmPipelineCard>();
+    public DbSet<WorkHandover> WorkHandovers => Set<WorkHandover>();
+    public DbSet<WorkHandoverItem> WorkHandoverItems => Set<WorkHandoverItem>();
+    public DbSet<LeaveRequest> LeaveRequests => Set<LeaveRequest>();
+    public DbSet<LeavePolicy> LeavePolicies => Set<LeavePolicy>();
+    public DbSet<LeaveRequestEvent> LeaveRequestEvents => Set<LeaveRequestEvent>();
+    public DbSet<AiChatLog> AiChatLogs => Set<AiChatLog>();
 
-    // ── Super Admin Platform Management Tables ──────────────────────────────
-    public DbSet<SubscriptionPackage> SubscriptionPackages => Set<SubscriptionPackage>();
-    public DbSet<TenantDidMapping> TenantDidMappings => Set<TenantDidMapping>();
-    public DbSet<PlatformCarrierSettings> PlatformCarrierSettings => Set<PlatformCarrierSettings>();
-    public DbSet<BroadcastAnnouncement> BroadcastAnnouncements => Set<BroadcastAnnouncement>();
-    public DbSet<PlatformSetting> PlatformSettings => Set<PlatformSetting>();
+    // Team Chat Entities
+    public DbSet<ChatConversation> ChatConversations => Set<ChatConversation>();
+    public DbSet<ChatParticipant> ChatParticipants => Set<ChatParticipant>();
+    public DbSet<ChatMessage> ChatMessages => Set<ChatMessage>();
+    public DbSet<ChatAttachment> ChatAttachments => Set<ChatAttachment>();
+
+    public override int SaveChanges()
+    {
+        NormalizeContacts();
+        return base.SaveChanges();
+    }
+
+    public override Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        NormalizeContacts();
+        return base.SaveChangesAsync(cancellationToken);
+    }
+
+    private void NormalizeContacts()
+    {
+        foreach (var entry in ChangeTracker.Entries<Lead>())
+        {
+            if (entry.State == EntityState.Added || entry.State == EntityState.Modified)
+            {
+                entry.Entity.NormalizedPhone = ContactNormalizer.NormalizePhone(entry.Entity.Phone);
+                entry.Entity.NormalizedEmail = ContactNormalizer.NormalizeEmail(entry.Entity.Email);
+            }
+        }
+
+        foreach (var entry in ChangeTracker.Entries<Customer>())
+        {
+            if (entry.State == EntityState.Added || entry.State == EntityState.Modified)
+            {
+                entry.Entity.NormalizedPhone = ContactNormalizer.NormalizePhone(entry.Entity.Phone);
+                entry.Entity.NormalizedEmail = ContactNormalizer.NormalizeEmail(entry.Entity.Email);
+            }
+        }
+    }
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
 
+        modelBuilder.Entity<AiChatLog>()
+            .HasIndex(a => new { a.CompanyId, a.AskedAt });
+        modelBuilder.Entity<AiChatLog>()
+            .Property(a => a.Question)
+            .HasMaxLength(500);
+
         // Apply entity configurations
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
 
+        // Handover relationships on entities
+        modelBuilder.Entity<Lead>(b =>
+        {
+            b.HasOne(x => x.Handover).WithMany().HasForeignKey(x => x.HandoverId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(x => x.OriginalOwner).WithMany().HasForeignKey(x => x.OriginalOwnerId).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<Customer>(b =>
+        {
+            b.HasOne(x => x.Handover).WithMany().HasForeignKey(x => x.HandoverId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(x => x.OriginalOwner).WithMany().HasForeignKey(x => x.OriginalOwnerId).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<Followup>(b =>
+        {
+            b.HasOne(x => x.Handover).WithMany().HasForeignKey(x => x.HandoverId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(x => x.OriginalOwner).WithMany().HasForeignKey(x => x.OriginalOwnerId).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<GhlDeal>(b =>
+        {
+            b.HasOne(x => x.Handover).WithMany().HasForeignKey(x => x.HandoverId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(x => x.OriginalOwner).WithMany().HasForeignKey(x => x.OriginalOwnerId).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<GhlInvestmentOpportunity>(b =>
+        {
+            b.HasOne(x => x.Handover).WithMany().HasForeignKey(x => x.HandoverId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(x => x.OriginalOwner).WithMany().HasForeignKey(x => x.OriginalOwnerId).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<Consultation>(b =>
+        {
+            b.HasOne(x => x.Handover).WithMany().HasForeignKey(x => x.HandoverId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(x => x.OriginalOwner).WithMany().HasForeignKey(x => x.OriginalOwnerId).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<Investor>(b =>
+        {
+            b.HasOne(x => x.Handover).WithMany().HasForeignKey(x => x.HandoverId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(x => x.OriginalOwner).WithMany().HasForeignKey(x => x.OriginalOwnerId).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<InvestorKyc>(b =>
+        {
+            b.HasOne(x => x.Handover).WithMany().HasForeignKey(x => x.HandoverId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(x => x.OriginalOwner).WithMany().HasForeignKey(x => x.OriginalOwnerId).OnDelete(DeleteBehavior.Restrict);
+        });
+        modelBuilder.Entity<IrmPipelineCard>(b =>
+        {
+            b.HasOne(x => x.Handover).WithMany().HasForeignKey(x => x.HandoverId).OnDelete(DeleteBehavior.SetNull);
+            b.HasOne(x => x.OriginalOwner).WithMany().HasForeignKey(x => x.OriginalOwnerId).OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<WorkHandover>(b =>
+        {
+            b.HasOne(x => x.LeaveRequest)
+             .WithMany()
+             .HasForeignKey(x => x.LeaveRequestId)
+             .OnDelete(DeleteBehavior.SetNull);
+        });
+
+        modelBuilder.Entity<LeaveRequest>(b =>
+        {
+            b.HasOne(x => x.WorkHandover)
+             .WithMany()
+             .HasForeignKey(x => x.WorkHandoverId)
+             .OnDelete(DeleteBehavior.SetNull);
+
+            b.HasOne(x => x.DecidedBy)
+             .WithMany()
+             .HasForeignKey(x => x.DecidedById)
+             .OnDelete(DeleteBehavior.SetNull);
+
+            b.HasOne(x => x.CancelledBy)
+             .WithMany()
+             .HasForeignKey(x => x.CancelledById)
+             .OnDelete(DeleteBehavior.SetNull);
+
+            b.HasMany(x => x.Events)
+             .WithOne(e => e.LeaveRequest)
+             .HasForeignKey(e => e.LeaveRequestId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<LeaveRequestEvent>(b =>
+        {
+            b.HasOne(e => e.Actor)
+             .WithMany()
+             .HasForeignKey(e => e.ActorId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
         // Seed initial roles, tenants, and demo users
         SeedData(modelBuilder);
+
+        // Ignore dropped legacy tables so EF Core never queries or maps them
+        modelBuilder.Ignore<GhlInvestor>();
+        modelBuilder.Ignore<InvestorCall>();
+        modelBuilder.Ignore<OpportunityPitch>();
     }
 
     private static void SeedData(ModelBuilder modelBuilder)
     {
-        // 1. Roles (Integer IDs 1, 2, 3, 4, 5)
+        // 1. Roles (Integer IDs 1, 2, 3, 4 - Strictly 4 Roles)
         var superAdminRoleId = 1;
         var companyAdminRoleId = 2;
-        var salesManagerRoleId = 3;
-        var salesExecutiveRoleId = 4;
-        var irmRoleId = 5;
+        var salesExecutiveRoleId = 3;
+        var irmRoleId = 4;
 
         modelBuilder.Entity<Role>().HasData(
             new Role
@@ -81,6 +229,9 @@ public class ApplicationDbContext : DbContext
                 Id = superAdminRoleId,
                 Name = "Super Admin",
                 Code = "super_admin",
+                Description = "Platform operator with unrestricted access across all tenants.",
+                IsSystemRole = true,
+                IsActive = true,
                 Permissions = new List<string>
                 {
                     "leads.view", "leads.create", "leads.update", "leads.delete", "leads.assign", "leads.export", "leads.import", "leads.convert",
@@ -92,7 +243,8 @@ public class ApplicationDbContext : DbContext
                     "investors.view", "investors.create", "consultations.view", "consultations.create", "opportunities.view", "opportunities.create",
                     "reports.view", "reports.export",
                     "users.view", "users.manage", "roles.view", "roles.manage", "settings.view", "settings.update", "audit.view",
-                    "platform.companies.manage", "platform.packages.manage", "platform.call_config.manage"
+                    "platform.companies.manage", "platform.packages.manage", "platform.call_config.manage",
+                    "kyc.verify"
                 },
                 CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             },
@@ -101,6 +253,9 @@ public class ApplicationDbContext : DbContext
                 Id = companyAdminRoleId,
                 Name = "Company Admin",
                 Code = "company_admin",
+                Description = "Tenant root administrator managing team users and company setup.",
+                IsSystemRole = true,
+                IsActive = true,
                 Permissions = new List<string>
                 {
                     "leads.view", "leads.create", "leads.update", "leads.delete", "leads.assign", "leads.export", "leads.import", "leads.convert",
@@ -111,25 +266,8 @@ public class ApplicationDbContext : DbContext
                     "properties.view", "properties.update", "site_visits.view", "site_visits.create", "bookings.view", "bookings.create",
                     "investors.view", "investors.create", "consultations.view", "consultations.create", "opportunities.view", "opportunities.create",
                     "reports.view", "reports.export",
-                    "users.view", "users.manage", "roles.view", "settings.view", "settings.update", "audit.view"
-                },
-                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
-            },
-            new Role
-            {
-                Id = salesManagerRoleId,
-                Name = "Sales Manager",
-                Code = "sales_manager",
-                Permissions = new List<string>
-                {
-                    "leads.view", "leads.create", "leads.update", "leads.assign", "leads.export", "leads.convert",
-                    "customers.view", "customers.create", "customers.update",
-                    "deals.view", "deals.create", "deals.update",
-                    "calls.make", "calls.receive", "calls.view", "calls.recordings.play",
-                    "followups.view", "followups.create", "followups.update",
-                    "properties.view", "properties.update", "site_visits.view", "site_visits.create", "bookings.view", "bookings.create",
-                    "investors.view", "investors.create", "consultations.view", "consultations.create", "opportunities.view", "opportunities.create",
-                    "reports.view", "reports.export", "users.view"
+                    "users.view", "users.manage", "roles.view", "settings.view", "settings.update", "audit.view",
+                    "kyc.verify"
                 },
                 CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             },
@@ -138,6 +276,9 @@ public class ApplicationDbContext : DbContext
                 Id = salesExecutiveRoleId,
                 Name = "Sales Executive",
                 Code = "sales_executive",
+                Description = "Frontline sales representative executing dialer outreach.",
+                IsSystemRole = true,
+                IsActive = true,
                 Permissions = new List<string>
                 {
                     "leads.view", "leads.create", "leads.update", "leads.convert",
@@ -156,6 +297,9 @@ public class ApplicationDbContext : DbContext
                 Id = irmRoleId,
                 Name = "IRM",
                 Code = "irm",
+                Description = "Institutional Relationship Manager for HNW wealth & CRE.",
+                IsSystemRole = true,
+                IsActive = true,
                 Permissions = new List<string>
                 {
                     "leads.view", "leads.create", "followups.view", "followups.create", "followups.update",
@@ -164,7 +308,8 @@ public class ApplicationDbContext : DbContext
                     "consultations.view", "consultations.create", "consultations.update",
                     "opportunities.view", "opportunities.create", "opportunities.update",
                     "calls.make", "calls.receive", "calls.view",
-                    "reports.view", "chat.view", "chat.send"
+                    "reports.view", "chat.view", "chat.send",
+                    "kyc.verify"
                 },
                 CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             }
@@ -188,7 +333,7 @@ public class ApplicationDbContext : DbContext
                 Timezone = "Asia/Kolkata (IST)",
                 Currency = "₹ INR",
                 BusinessHours = "10:00 AM - 06:30 PM IST",
-                LegalName = "GHL India Advisory Trust Private Limited",
+LegalName = "GHL India Advisory Trust Private Limited",
                 Industry = "Commercial Real Estate & AIF",
                 Status = "Active",
                 SubscriptionPlan = "Wealth Advisory Enterprise Suite",
@@ -197,6 +342,7 @@ public class ApplicationDbContext : DbContext
                 RecordingEnabled = true,
                 TranscriptionEnabled = true,
                 IsActive = true,
+                IsProtected = true,
                 CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             },
             new Tenant
@@ -215,7 +361,7 @@ public class ApplicationDbContext : DbContext
                 Timezone = "Asia/Kolkata (IST)",
                 Currency = "₹ INR",
                 BusinessHours = "10:00 AM - 06:30 PM IST",
-                LegalName = "Jamin Bazaar Plotted Communities Private Limited",
+LegalName = "Jamin Bazaar Plotted Communities Private Limited",
                 Industry = "Plotted Real Estate & Farmland",
                 Status = "Active",
                 SubscriptionPlan = "Plotted Land Operations Pro",
@@ -224,6 +370,7 @@ public class ApplicationDbContext : DbContext
                 RecordingEnabled = true,
                 TranscriptionEnabled = true,
                 IsActive = true,
+                IsProtected = true,
                 CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             }
         );
@@ -243,6 +390,7 @@ public class ApplicationDbContext : DbContext
                 RoleId = superAdminRoleId,
                 CompanyId = null,
                 Status = UserStatus.Active,
+                IsProtected = true,
                 CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             },
             // 2. GHL Company Admin (Vishnu)
@@ -312,108 +460,75 @@ public class ApplicationDbContext : DbContext
             }
         );
 
-        // 4. Sample Investors (GHL Company 1)
-        modelBuilder.Entity<Investor>().HasData(
-            new Investor
+        // ── Super Admin Initial Seed Data ─────────────────────────────────────
+        modelBuilder.Entity<SubscriptionPackage>().HasData(
+            new SubscriptionPackage
             {
                 Id = 1,
-                CompanyId = 1,
-                Name = "Rajesh Singhania",
-                Phone = "+91 98200 44556",
-                Email = "rajesh.singhania@apexcapital.in",
-                Status = InvestorStatus.ActiveInvestor,
-                InvestmentCapacity = "₹5 Cr – ₹10 Cr",
-                PreferredAssetClass = "AIF",
-                RiskTolerance = "Moderate",
-                InvestmentMandate = "Growth focused Category II AIF with commercial allocation",
-                CommittedAum = "₹5.0 Cr",
-                ReferralSource = "Wealth Partner Direct",
-                AssignedIrmId = 5,
-                AssignedIrmName = "Dhinakaran",
-                Notes = "Senior HNI investor with portfolio in Bangalore",
-                CreatedAt = new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc)
-            },
-            new Investor
-            {
-                Id = 2,
-                CompanyId = 1,
-                Name = "Meera Nambiar",
-                Phone = "+91 98450 99881",
-                Email = "meera.nambiar@nambiarholdings.com",
-                Status = InvestorStatus.Lead,
-                InvestmentCapacity = "₹10 Cr – ₹25 Cr",
-                PreferredAssetClass = "Commercial AIF",
-                RiskTolerance = "Aggressive",
-                InvestmentMandate = "High-yield commercial development tranches",
-                AssignedIrmId = 5,
-                AssignedIrmName = "Dhinakaran",
-                Notes = "Family office lead referred via CFO network",
-                CreatedAt = new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc)
-            }
-        );
-
-        // 5. Sample Investment Opportunity
-        modelBuilder.Entity<InvestmentOpportunity>().HasData(
-            new InvestmentOpportunity
-            {
-                Id = 1,
-                CompanyId = 1,
-                CreatedByIrmId = 5,
-                Title = "Prime Bengaluru Commercial Yield Fund II",
-                AssetClass = "Commercial AIF",
-                Description = "Grade-A office park pre-leased to Fortune 500 GCCs with 8.5% entry cap rate",
-                TargetIrr = 16.5m,
-                MinTicketSize = 10000000m,
-                Tenure = "5 Years",
-                RiskLevel = "Moderate",
-                TotalTargetCorpus = 1000000000m,
-                CommittedAmount = 50000000m,
+                Name = "Starter CRM Tier",
+                Code = "starter_crm",
+                Description = "Essential inbound leads, customer directory, softphone calling, and follow-ups.",
+                Tier = "Starter",
+                PriceMonthly = 14999m,
+                Currency = "₹",
+                MaxUsers = 15,
+                MaxStorageGb = 50,
+                Features = new List<string> { "leads", "customers", "followups", "calls", "reports" },
+                IsPopular = false,
                 IsActive = true,
-                CreatedAt = new DateTime(2026, 1, 10, 0, 0, 0, DateTimeKind.Utc)
-            }
-        );
-
-        // 6. Sample IRM Pipeline Cards
-        modelBuilder.Entity<IrmPipelineCard>().HasData(
-            new IrmPipelineCard
-            {
-                Id = 1,
-                CompanyId = 1,
-                InvestorId = 1,
-                AssignedIrmId = 5,
-                AssignedIrmName = "Dhinakaran",
-                InvestorName = "Rajesh Singhania",
-                InvestorPhone = "+91 98200 44556",
-                InvestorEmail = "rajesh.singhania@apexcapital.in",
-                StageId = "qualified_investor",
-                StageEnteredAt = new DateTime(2026, 2, 10, 0, 0, 0, DateTimeKind.Utc),
-                Priority = "High",
-                Value = 50000000m,
-                InvestmentAmount = "₹5 Cr",
-                PreferredAssetClass = "AIF",
-                CreatedAt = new DateTime(2026, 1, 15, 0, 0, 0, DateTimeKind.Utc)
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             },
-            new IrmPipelineCard
+            new SubscriptionPackage
             {
                 Id = 2,
-                CompanyId = 1,
-                InvestorId = 2,
-                AssignedIrmId = 5,
-                AssignedIrmName = "Dhinakaran",
-                InvestorName = "Meera Nambiar",
-                InvestorPhone = "+91 98450 99881",
-                InvestorEmail = "meera.nambiar@nambiarholdings.com",
-                StageId = "leads",
-                StageEnteredAt = new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc),
-                Priority = "High",
-                Value = 100000000m,
-                InvestmentAmount = "₹10 Cr",
-                PreferredAssetClass = "Commercial AIF",
-                CreatedAt = new DateTime(2026, 2, 1, 0, 0, 0, DateTimeKind.Utc)
+                Name = "Plotted Land Operations Pro",
+                Code = "jamin_real_estate_pro",
+                Description = "Tailored for plotted development builders with interactive plot layouts, site visit logistics, and token bookings.",
+                Tier = "Growth",
+                PriceMonthly = 39999m,
+                Currency = "₹",
+                MaxUsers = 50,
+                MaxStorageGb = 250,
+                Features = new List<string> { "leads", "customers", "deals", "followups", "calls", "call-recording", "call-transcription", "properties", "site-visits", "bookings", "reports" },
+                IsPopular = true,
+                IsActive = true,
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
+            },
+            new SubscriptionPackage
+            {
+                Id = 3,
+                Name = "Wealth Advisory Enterprise Suite",
+                Code = "ghl_wealth_enterprise",
+                Description = "Engineered for institutional capital syndicates, private family offices, and CRE investment opportunities.",
+                Tier = "Enterprise",
+                PriceMonthly = 79999m,
+                Currency = "₹",
+                MaxUsers = 150,
+                MaxStorageGb = 1000,
+                Features = new List<string> { "leads", "customers", "deals", "followups", "calls", "call-recording", "call-transcription", "investors", "consultations", "investment-opportunities", "reports" },
+                IsPopular = false,
+                IsActive = true,
+                CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             }
         );
 
-        // 7. Subscription Packages (IDs 1, 2, 3)
+        modelBuilder.Entity<BroadcastAnnouncement>().HasData(
+            new BroadcastAnnouncement
+            {
+                Id = 1,
+                Title = "Platform Infrastructure Upgrade",
+                Message = "Scheduled zero-downtime database optimization today at 11:30 PM IST. Telephony routing will not be interrupted.",
+                Priority = "info",
+                TargetAudience = "all",
+                TargetTenantId = null,
+                IsActive = true,
+                CreatedBy = "Yanosh",
+                CreatedAt = new DateTime(2026, 9, 26, 8, 0, 0, DateTimeKind.Utc),
+                ExpiresAt = new DateTime(2026, 12, 31, 23, 59, 59, DateTimeKind.Utc)
+            }
+        );
+
+// 7. Subscription Packages (IDs 1, 2, 3)
         modelBuilder.Entity<SubscriptionPackage>().HasData(
             new SubscriptionPackage
             {
@@ -560,11 +675,75 @@ public class ApplicationDbContext : DbContext
             new PlatformSetting
             {
                 Id = 1,
-                MaintenanceModeEnabled = false,
-                MaintenanceMessage = "Platform under scheduled maintenance.",
-                BypassSecret = "nexus-admin-2026",
-                UpdatedAt = new DateTime(2026, 9, 26, 0, 0, 0, DateTimeKind.Utc)
+Key = "maintenance_mode",
+                Value = "{\"enabled\":false,\"message\":\"Platform under scheduled maintenance.\",\"bypassSecret\":\"nexus-admin-2026\"}",
+                Description = "Global platform maintenance mode switch",
+                UpdatedBy = "Super Admin",
+                UpdatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
             }
         );
+
+        // ── Team Chat Relationships & Indices ──────────────────────────────────
+        modelBuilder.Entity<ChatConversation>(b =>
+        {
+            b.HasKey(c => c.Id);
+            b.HasIndex(c => new { c.CompanyId, c.Type });
+        });
+
+        modelBuilder.Entity<ChatParticipant>(b =>
+        {
+            b.HasKey(p => p.Id);
+            b.HasIndex(p => new { p.ConversationId, p.UserId }).IsUnique();
+            b.HasOne(p => p.Conversation)
+             .WithMany(c => c.Participants)
+             .HasForeignKey(p => p.ConversationId)
+             .OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(p => p.User)
+             .WithMany()
+             .HasForeignKey(p => p.UserId)
+             .OnDelete(DeleteBehavior.Restrict);
+        });
+
+        modelBuilder.Entity<ChatMessage>(b =>
+        {
+            b.HasKey(m => m.Id);
+            b.HasIndex(m => new { m.ConversationId, m.CreatedAt });
+            b.HasOne(m => m.Conversation)
+             .WithMany(c => c.Messages)
+             .HasForeignKey(m => m.ConversationId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ChatAttachment>(b =>
+        {
+            b.HasKey(a => a.Id);
+            b.HasIndex(a => a.MessageId);
+            b.HasOne(a => a.Message)
+             .WithMany(m => m.Attachments)
+             .HasForeignKey(a => a.MessageId)
+             .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PlatformTicket>(b =>
+        {
+            b.ToTable("platform_tickets");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => x.TicketNumber).IsUnique();
+            b.HasIndex(x => x.Status);
+            b.HasIndex(x => x.Priority);
+            b.HasIndex(x => x.TenantId);
+            b.HasIndex(x => x.CreatedAt);
+            b.HasOne(x => x.Tenant).WithMany().HasForeignKey(x => x.TenantId).OnDelete(DeleteBehavior.SetNull);
+            b.HasMany(x => x.Timeline).WithOne(x => x.Ticket).HasForeignKey(x => x.TicketId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<PlatformTicketEvent>(b =>
+        {
+            b.ToTable("platform_ticket_events");
+            b.HasKey(x => x.Id);
+            b.HasIndex(x => x.TicketId);
+            b.HasIndex(x => x.CreatedAt);
+        });
+
     }
 }

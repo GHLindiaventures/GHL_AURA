@@ -9,7 +9,9 @@ namespace backend.Controllers.SalesExecutive;
 
 [ApiController]
 [Route("api/sales-executive/leads")]
+
 [Authorize(Roles = "sales_executive,company_admin,super_admin,irm,sales_manager")]
+
 public class SalesExecutiveLeadsController : ControllerBase
 {
     private readonly ILeadService _leadService;
@@ -75,7 +77,11 @@ public class SalesExecutiveLeadsController : ControllerBase
 
         var result = await _leadService.CreateLeadAsync(dto, ct);
         if (!result.Success)
+        {
+            if (result.Message.StartsWith("Unauthorized"))
+                return Unauthorized(result);
             return BadRequest(result);
+        }
 
         return CreatedAtAction(nameof(GetLeadById), new { id = result.Data!.Id }, result);
     }
@@ -152,7 +158,7 @@ public class SalesExecutiveLeadsController : ControllerBase
     }
 
     /// <summary>
-    /// Re-engage a Not-Interested or Junk lead back to 'Contacted', clearing stale tasks and scheduling next followup.
+    /// Re-engage a Not-Interested or Junk lead back to 'Follow-up Required', clearing stale tasks and scheduling next followup.
     /// </summary>
     [HttpPost("{id:int}/reengage")]
     public async Task<ActionResult<ApiResponse<LeadResponseDto>>> ReengageLead(
@@ -167,6 +173,7 @@ public class SalesExecutiveLeadsController : ControllerBase
     }
 
     [HttpDelete("{id:int}")]
+    [Authorize(Roles = "company_admin,super_admin")]
     public async Task<ActionResult<ApiResponse<object>>> DeleteLead([FromRoute] int id, CancellationToken ct)
     {
         var result = await _leadService.DeleteLeadAsync(id, ct);

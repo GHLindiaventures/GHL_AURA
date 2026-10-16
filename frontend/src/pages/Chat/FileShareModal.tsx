@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { Modal } from '../../components/common/Modal';
 import { FileCategory, FilePermission, ChatAttachment } from '../../types';
-import { FileText, Image as ImageIcon, FileSpreadsheet, File, Shield, Eye, Download, Edit3, UploadCloud, RefreshCw } from 'lucide-react';
+import { FileText, Image as ImageIcon, FileSpreadsheet, File, Shield, Eye, Download, Edit3, UploadCloud, RefreshCw, Loader2 } from 'lucide-react';
+import { chatApiService } from '../../services/chatApiService';
 
 interface Props {
   isOpen: boolean;
@@ -38,14 +39,17 @@ export const FileShareModal: React.FC<Props> = ({
   const [selectedFile, setSelectedFile] = useState<{ file: globalThis.File; dataUrl: string } | null>(null);
   const [isDragging, setIsDragging] = useState(false);
   const [permission, setPermission] = useState<FilePermission>('view_download');
+  const [isUploading, setIsUploading] = useState(false);
 
   useEffect(() => {
     if (isOpen) {
       setSelectedFile(initialFile || null);
       setPermission('view_download');
       setIsDragging(false);
+      setIsUploading(false);
     } else {
       setSelectedFile(null);
+      setIsUploading(false);
     }
   }, [isOpen, initialFile]);
 
@@ -90,19 +94,38 @@ export const FileShareModal: React.FC<Props> = ({
     }
   };
 
-  const handleConfirm = () => {
-    if (!selectedFile) return;
-    const attachment: ChatAttachment = {
-      id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
-      name: selectedFile.file.name,
-      size: selectedFile.file.size,
-      type: selectedFile.file.type || 'application/octet-stream',
-      category: detectCategory(selectedFile.file.name, selectedFile.file.type),
-      permission,
-      dataUrl: selectedFile.dataUrl,
-    };
-    onConfirm(attachment);
-    onClose();
+  const handleConfirm = async () => {
+    if (!selectedFile || isUploading) return;
+    setIsUploading(true);
+    try {
+      const uploaded = await chatApiService.uploadFile(selectedFile.file);
+      const attachment: ChatAttachment = {
+        id: uploaded.id || `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: uploaded.name || selectedFile.file.name,
+        size: uploaded.size || selectedFile.file.size,
+        type: uploaded.type || selectedFile.file.type || 'application/octet-stream',
+        category: (uploaded.category as FileCategory) || detectCategory(selectedFile.file.name, selectedFile.file.type),
+        permission,
+        dataUrl: uploaded.dataUrl || selectedFile.dataUrl,
+      };
+      onConfirm(attachment);
+      onClose();
+    } catch (err) {
+      console.warn('[FileShareModal] Server upload failed, using local inline dataUrl fallback:', err);
+      const fallbackAttachment: ChatAttachment = {
+        id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        name: selectedFile.file.name,
+        size: selectedFile.file.size,
+        type: selectedFile.file.type || 'application/octet-stream',
+        category: detectCategory(selectedFile.file.name, selectedFile.file.type),
+        permission,
+        dataUrl: selectedFile.dataUrl,
+      };
+      onConfirm(fallbackAttachment);
+      onClose();
+    } finally {
+      setIsUploading(false);
+    }
   };
 
   const permissions: { id: FilePermission; label: string; desc: string; badge: string; icon: React.ReactNode }[] = [
@@ -157,16 +180,23 @@ export const FileShareModal: React.FC<Props> = ({
             )}
           </span>
           <div className="file-share-actions">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>
+            <button type="button" className="btn btn-ghost btn-sm" disabled={isUploading} onClick={onClose}>
               Cancel
             </button>
             <button
               type="button"
               className="btn btn-primary btn-sm"
-              disabled={!selectedFile}
+              disabled={!selectedFile || isUploading}
               onClick={handleConfirm}
             >
-              Attach to Message
+              {isUploading ? (
+                <>
+                  <Loader2 size={14} className="animate-spin" />
+                  <span>Uploading...</span>
+                </>
+              ) : (
+                'Attach to Message'
+              )}
             </button>
           </div>
         </div>
@@ -175,6 +205,9 @@ export const FileShareModal: React.FC<Props> = ({
       <div className="file-share-dialog-content">
         {/* Hidden native file input inside the modal */}
         <input
+          id="chat-file-share-input"
+          name="chatFile"
+          aria-label="Upload file to share"
           type="file"
           ref={fileInputRef}
           style={{ display: 'none' }}
@@ -239,7 +272,8 @@ export const FileShareModal: React.FC<Props> = ({
           </div>
           <div className="file-share-permissions-grid">
             {permissions.map(p => (
-              <div
+              <label
+                htmlFor={`file-perm-${p.id}`}
                 key={p.id}
                 className={`file-perm-card-col ${permission === p.id ? 'active' : ''}`}
                 onClick={() => setPermission(p.id)}
@@ -248,6 +282,7 @@ export const FileShareModal: React.FC<Props> = ({
                   <span className="file-perm-icon">{p.icon}</span>
                   <span className={`file-perm-badge badge-${p.id}`}>{p.badge}</span>
                   <input
+                    id={`file-perm-${p.id}`}
                     type="radio"
                     name="file_permission"
                     checked={permission === p.id}
@@ -257,7 +292,7 @@ export const FileShareModal: React.FC<Props> = ({
                 </div>
                 <div className="file-perm-col-title">{p.label}</div>
                 <div className="file-perm-col-desc">{p.desc}</div>
-              </div>
+              </label>
             ))}
           </div>
         </div>

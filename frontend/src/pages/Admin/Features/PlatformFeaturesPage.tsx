@@ -13,6 +13,7 @@ import {
   HardDrive,
   IndianRupee,
   Search,
+  RefreshCw,
 } from 'lucide-react';
 import { SubscriptionPackage, Tenant } from '../../../types';
 import { superAdminService } from '../../../services/superAdminService';
@@ -43,22 +44,26 @@ export const PlatformFeaturesPage: React.FC = () => {
   // Success Feedback
   const [successMsg, setSuccessMsg] = useState('');
 
+const [isLoading, setIsLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+
   const loadData = async () => {
-    if (!isMockMode()) {
-      try {
-        const [pkgs, allTenants] = await Promise.all([
-          superAdminService.fetchPackagesFromApi(),
-          superAdminService.fetchTenantsFromApi(),
-        ]);
-        setPackages(pkgs);
-        setTenants(allTenants);
-        return;
-      } catch (err) {
-        console.warn('Could not load packages from API:', err);
-      }
+    setIsLoading(true);
+    setLoadError(null);
+    try {
+      const [allPackages, allTenants] = await Promise.all([
+        superAdminService.fetchPackagesFromApi(),
+        superAdminService.fetchTenantsFromApi(),
+      ]);
+      setPackages(allPackages);
+      setTenants(allTenants);
+    } catch (err: any) {
+      console.error('Error fetching packages from API:', err);
+      setLoadError(err?.message || 'Unable to connect to packages server.');
+    } finally {
+      setIsLoading(false);
     }
-    setPackages(superAdminService.getPackages());
-    setTenants(superAdminService.getTenants());
+
   };
 
   useEffect(() => {
@@ -127,13 +132,29 @@ export const PlatformFeaturesPage: React.FC = () => {
   const handleSavePackage = async () => {
     if (!pkgName.trim()) return;
 
-    if (editingPkgId) {
-      const existing = packages.find(p => p.id === editingPkgId);
-      if (existing) {
-        superAdminService.updatePackage({
-          ...existing,
+    try {
+      if (editingPkgId) {
+        const existing = packages.find(p => p.id === editingPkgId);
+        if (existing) {
+          const updated = await superAdminService.updatePackageApi({
+            ...existing,
+            name: pkgName,
+            code: pkgCode || existing.code,
+            tier: pkgTier,
+            priceMonthly: pkgPrice,
+            maxUsers: pkgMaxUsers,
+            maxStorageGb: pkgMaxStorage,
+            description: pkgDesc,
+            features: pkgSelectedFeatures,
+            isPopular: pkgIsPopular,
+          });
+          setPackages(prev => prev.map(p => p.id === updated.id ? updated : p));
+          showSuccess(`Subscription tier "${pkgName}" updated.`);
+        }
+      } else {
+        const created = await superAdminService.createPackageApi({
           name: pkgName,
-          code: pkgCode || existing.code,
+          code: pkgCode || pkgName.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
           tier: pkgTier,
           priceMonthly: pkgPrice,
           maxUsers: pkgMaxUsers,
@@ -142,32 +163,26 @@ export const PlatformFeaturesPage: React.FC = () => {
           features: pkgSelectedFeatures,
           isPopular: pkgIsPopular,
         });
-        showSuccess(`Subscription tier "${pkgName}" updated.`);
+        setPackages(prev => [...prev, created]);
+        showSuccess(`Subscription package "${pkgName}" created.`);
       }
-    } else {
-      await superAdminService.createPackageApi({
-        name: pkgName,
-        code: pkgCode || pkgName.toLowerCase().replace(/[^a-z0-9_]/g, '_'),
-        tier: pkgTier,
-        priceMonthly: pkgPrice,
-        maxUsers: pkgMaxUsers,
-        maxStorageGb: pkgMaxStorage,
-        description: pkgDesc,
-        features: pkgSelectedFeatures,
-        isPopular: pkgIsPopular,
-      });
-      showSuccess(`Subscription package "${pkgName}" created.`);
+setIsPackageModalOpen(false);
+    } catch (err: any) {
+      alert(err.message || 'Failed to save subscription package');
     }
 
-    setIsPackageModalOpen(false);
-    await loadData();
   };
 
   const handleDeletePackage = async (pkg: SubscriptionPackage) => {
     if (confirm(`Are you sure you want to delete package "${pkg.name}"?`)) {
-      await superAdminService.deletePackageApi(pkg.id);
-      showSuccess(`Package "${pkg.name}" removed.`);
-      await loadData();
+try {
+        await superAdminService.deletePackageApi(pkg.id);
+        setPackages(prev => prev.filter(p => p.id !== pkg.id));
+        showSuccess(`Package "${pkg.name}" removed.`);
+      } catch (err: any) {
+        alert(err.message || 'Failed to delete package');
+      }
+
     }
   };
 
@@ -223,14 +238,32 @@ export const PlatformFeaturesPage: React.FC = () => {
         </div>
       )}
 
+      {loadError && (
+        <div className="alert-banner error" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '12px 16px', marginBottom: '16px', borderRadius: '8px', background: 'rgba(239, 68, 68, 0.1)', border: '1px solid rgba(239, 68, 68, 0.3)', color: '#ef4444' }}>
+          <span><strong>Failed to load packages:</strong> {loadError}</span>
+          <button className="btn btn-secondary btn-xs" onClick={loadData}>Retry</button>
+        </div>
+      )}
+
+      {isLoading && (
+        <div className="platform-loading-state" style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: '60px 20px', gap: '12px' }}>
+          <RefreshCw size={28} className="animate-spin text-primary" />
+          <span style={{ color: 'var(--text-muted, #94a3b8)', fontSize: '13px' }}>Loading subscription packages & entitlement tiers...</span>
+        </div>
+      )}
+
       {/* ========================================================================= */}
       {/* TAB 1: SUBSCRIPTION PACKAGES */}
       {/* ========================================================================= */}
-      {activeTab === 'packages' && (
+      {!isLoading && activeTab === 'packages' && (
         <div className="packages-tab-container animate-fade-in">
           <div className="packages-grid">
             {packages.map(pkg => {
-              const enrolledTenants = tenants.filter(t => t.subscriptionPlan === pkg.name);
+              const enrolledTenants = tenants.filter(
+                t =>
+                  t.subscriptionPlan?.trim().toLowerCase() === pkg.name.trim().toLowerCase() ||
+                  t.subscriptionPlan?.trim().toLowerCase() === pkg.code.trim().toLowerCase()
+              );
               return (
                 <div key={pkg.id} className={`card package-card ${pkg.isPopular ? 'popular-glow' : ''}`}>
                   {pkg.isPopular && <div className="popular-badge">MOST POPULAR</div>}
@@ -323,8 +356,11 @@ export const PlatformFeaturesPage: React.FC = () => {
           <div className="card catalog-search-card">
             <Search size={16} className="search-icon" />
             <input
+              id="feature-catalog-search"
+              name="catalogSearch"
               type="text"
               className="catalog-search-input"
+              aria-label="Search feature catalog"
               placeholder="Search feature catalog by keyword or operational category..."
               value={searchCatalogQuery}
               onChange={e => setSearchCatalogQuery(e.target.value)}
@@ -367,8 +403,10 @@ export const PlatformFeaturesPage: React.FC = () => {
           <div className="pkg-modal-content">
             <div className="form-grid-two">
               <div className="form-group">
-                <label className="form-label required">Package Name</label>
+                <label htmlFor="package-name" className="form-label required">Package Name</label>
                 <input
+                  id="package-name"
+                  name="packageName"
                   type="text"
                   className="form-control"
                   placeholder="e.g. Commercial Brokerage Pro"
@@ -383,8 +421,10 @@ export const PlatformFeaturesPage: React.FC = () => {
               </div>
 
               <div className="form-group">
-                <label className="form-label required">Unique Package Code</label>
+                <label htmlFor="package-code" className="form-label required">Unique Package Code</label>
                 <input
+                  id="package-code"
+                  name="packageCode"
                   type="text"
                   className="form-control font-mono"
                   placeholder="commercial_brokerage_pro"
@@ -394,8 +434,10 @@ export const PlatformFeaturesPage: React.FC = () => {
               </div>
 
               <div className="form-group">
-                <label className="form-label">Commercial Tier</label>
+                <label htmlFor="package-tier" className="form-label">Commercial Tier</label>
                 <select
+                  id="package-tier"
+                  name="packageTier"
                   className="form-control"
                   value={pkgTier}
                   onChange={e => setPkgTier(e.target.value as any)}
@@ -407,8 +449,10 @@ export const PlatformFeaturesPage: React.FC = () => {
               </div>
 
               <div className="form-group">
-                <label className="form-label required">Monthly Price (₹ INR)</label>
+                <label htmlFor="package-price" className="form-label required">Monthly Price (₹ INR)</label>
                 <input
+                  id="package-price"
+                  name="packagePrice"
                   type="number"
                   className="form-control"
                   value={pkgPrice}
@@ -417,8 +461,10 @@ export const PlatformFeaturesPage: React.FC = () => {
               </div>
 
               <div className="form-group">
-                <label className="form-label">Maximum Users Cap</label>
+                <label htmlFor="package-max-users" className="form-label">Maximum Users Cap</label>
                 <input
+                  id="package-max-users"
+                  name="maxUsers"
                   type="number"
                   className="form-control"
                   value={pkgMaxUsers}
@@ -427,8 +473,10 @@ export const PlatformFeaturesPage: React.FC = () => {
               </div>
 
               <div className="form-group">
-                <label className="form-label">Max Cloud Storage (GB)</label>
+                <label htmlFor="package-max-storage" className="form-label">Max Cloud Storage (GB)</label>
                 <input
+                  id="package-max-storage"
+                  name="maxStorage"
                   type="number"
                   className="form-control"
                   value={pkgMaxStorage}
@@ -437,8 +485,10 @@ export const PlatformFeaturesPage: React.FC = () => {
               </div>
 
               <div className="form-group span-2">
-                <label className="form-label">Package Description</label>
+                <label htmlFor="package-description" className="form-label">Package Description</label>
                 <textarea
+                  id="package-description"
+                  name="packageDescription"
                   className="form-control"
                   rows={2}
                   value={pkgDesc}
@@ -449,13 +499,15 @@ export const PlatformFeaturesPage: React.FC = () => {
 
             {/* Feature Checklist */}
             <div className="modal-feature-checklist-section">
-              <label className="form-label required">Bundle Modules Included in this Package</label>
+              <div className="form-label required">Bundle Modules Included in this Package</div>
               <div className="modal-checklist-grid">
                 {featureCatalog.map(f => {
                   const isChecked = pkgSelectedFeatures.includes(f.key);
                   return (
-                    <label key={f.key} className="modal-check-item">
+                    <label key={f.key} htmlFor={`pkg-feature-${f.key}`} className="modal-check-item">
                       <input
+                        id={`pkg-feature-${f.key}`}
+                        name={`feature_${f.key}`}
                         type="checkbox"
                         checked={isChecked}
                         onChange={() => {

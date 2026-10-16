@@ -28,25 +28,24 @@ public class SubscriptionPackageConfiguration : IEntityTypeConfiguration<Subscri
 
         builder.Property(p => p.Tier)
             .HasMaxLength(32)
-            .HasDefaultValue("Starter");
+            .HasDefaultValue("Growth");
 
         builder.Property(p => p.PriceMonthly)
             .HasColumnType("numeric(12,2)")
-            .HasDefaultValue(0);
+            .HasDefaultValue(0m);
 
         builder.Property(p => p.Currency)
-            .HasMaxLength(16)
+            .HasMaxLength(8)
             .HasDefaultValue("₹");
 
         builder.Property(p => p.MaxUsers)
-            .HasDefaultValue(15);
+            .HasDefaultValue(25);
 
         builder.Property(p => p.MaxStorageGb)
-            .HasDefaultValue(50);
+            .HasDefaultValue(100);
 
         builder.Property(p => p.Features)
-            .HasColumnType("text[]")
-            .IsRequired();
+            .HasColumnType("jsonb");
 
         builder.Property(p => p.IsActive)
             .HasDefaultValue(true);

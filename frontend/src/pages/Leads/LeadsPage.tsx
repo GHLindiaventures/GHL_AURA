@@ -9,110 +9,288 @@ import {
   Trash2,
   Edit,
   ExternalLink,
+CalendarCheck,
+  AlertTriangle,
+  Clock,
+  ArrowRight,
   UserCheck,
 } from 'lucide-react';
-import { Lead, Customer, Deal, IrmProfile } from '../../types';
+import { Lead, Customer, Deal, Followup, IrmProfile } from '../../types';
+
 import { useAuth } from '../../context/AuthContext';
 import { useCall } from '../../context/CallContext';
 import { apiClient } from '../../services/apiClient';
 import { storageService } from '../../services/storageService';
-import { getLeads, saveLead as apiSaveLead, deleteLead as apiDeleteLead, getCompanyIrms } from '../../services/ghlApiService';
+import {
+  AssignableAgent,
+  loadAgentDirectory,
+  isLeadAssigned,
+  persistLeadAssignment,
+} from '../../services/agentDirectory';
+import {
+  getLeads,
+  getDeals,
+  saveLead as apiSaveLead,
+  saveCustomer as apiSaveCustomer,
+  saveOpportunity as apiSaveOpportunity,
+  getFollowups,
+  getCustomers,
+  saveFollowup as apiSaveFollowup,
+  isTenantMatch,
+  getCompanyIrms,
+} from '../../services/ghlApiService';
+
 import { DataTable, Column, RowAction } from '../../components/common/DataTable';
 import { FilterBar } from '../../components/common/FilterBar';
 import { StatusChip } from '../../components/common/StatusChip';
 import { Drawer } from '../../components/common/Drawer';
 import { Modal } from '../../components/common/Modal';
+import { getAgentRoleInfo, getAssigningSalesAgentInfo } from '../../utils/agentRoleUtils';
 import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawerContent';
 import { isMockMode } from '../../config/environment';
 import { adminUserService } from '../../services/adminUserService';
 import './LeadsPage.css';
+
+export const normalizePhone = (phone?: string): string | null => {
+  if (!phone) return null;
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length >= 10) return digits.slice(-10);
+  if (digits.length >= 7) return digits;
+  return null;
+};
+
+export const normalizeEmail = (email?: string): string | null => {
+  if (!email) return null;
+  const clean = email.trim().toLowerCase();
+  return clean.length > 0 ? clean : null;
+};
+
+export const isLeadReturned = (l: Lead): boolean => {
+  if (l.isReturnedFromHandover) return true;
+  const cf = l.customFields;
+  return cf?.returnedFromHandover === 'true' || cf?.returnedFromHandover === true || Boolean(cf?.returnedFromCoveringUserName);
+};
+
+export const getReturnedCoveringName = (l: Lead): string => {
+  return l.returnedFromCoveringUserName || l.customFields?.returnedFromCoveringUserName || 'Covering Agent';
+};
+
+export const getReturnedDate = (l: Lead): string | undefined => {
+  return l.returnedAt || l.customFields?.returnedAt;
+};
 
 const CAPACITY_OPTIONS = [
   'Contact for Co-Invest Details',
   '₹1 Cr – ₹5 Cr',
   '₹5 Cr – ₹10 Cr',
   '₹10 Cr – ₹25 Cr',
-  '₹25 Cr+',
-  'Not sure yet — help me decide'
+  '₹25 Cr+'
 ];
 
 const MOCK_AGENTS = storageService.getMockAgents();
 export { MOCK_AGENTS };
 
-export const LeadsPage: React.FC = () => {
+interface LeadsPageProps {
+  onNavigate?: (route: string) => void;
+}
+
+export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
+  const handleNavigate = (route: string) => {
+    if (onNavigate) {
+      onNavigate(route);
+    } else {
+      sessionStorage.setItem('nexus_current_route', route);
+      window.dispatchEvent(new CustomEvent('nexus_navigate', { detail: route }));
+    }
+  };
   const { tenant, user } = useAuth();
   const { initiateCall } = useCall();
 
   const [leads, setLeads] = useState<Lead[]>([]);
+  const [customers, setCustomers] = useState<Customer[]>([]);
+  const [allFollowups, setAllFollowups] = useState<any[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
-  const INACTIVE_LEAD_STATUSES = ['Converted', 'Not Interested', 'Junk'];
+  // Duplicate in Follow-up & Customer Resolution States
+  interface DuplicateFollowupModalData {
+    contactId: string;
+    contactType: 'lead' | 'customer';
+    contactName: string;
+    contactPhone: string;
+    contactEmail?: string;
+    assignedAgentName: string;
+    assignedAgentId?: string;
+    existingStatus?: string;
+  }
+  const [duplicateFollowupModal, setDuplicateFollowupModal] = useState<DuplicateFollowupModalData | null>(null);
 
-  // Role-based scoping: Sales Executives and IRMs see only their own leads.
-  // Managers / Admins / Super Admins see the full company lead list (no filter).
-  // Inactive leads (Converted, Not Interested, Junk) are excluded from active Leads list.
-  const roleCode = user?.role?.code;
-  const isExec = roleCode === 'sales_executive';
-  const isLeadScopedUser = roleCode === 'sales_executive' || roleCode === 'irm';
-  const isIrm = roleCode === 'irm';
+  interface DuplicateKycModalData {
+    contactId: string;
+    contactType: 'lead' | 'customer' | 'kyc';
+    contactName: string;
+    contactPhone: string;
+    contactEmail?: string;
+    assignedAgentName: string;
+    assignedAgentId?: string;
+    kycId?: string;
+    dealId?: string;
+  }
+  const [duplicateKycModal, setDuplicateKycModal] = useState<DuplicateKycModalData | null>(null);
+  const [deals, setDeals] = useState<Deal[]>([]);
+  const [isSchedulingActivity, setIsSchedulingActivity] = useState<boolean>(false);
+  const [followupDate, setFollowupDate] = useState<string>(() => {
+    const d = new Date();
+    d.setDate(d.getDate() + 1);
+    d.setHours(10, 0, 0, 0);
+    return d.toISOString().slice(0, 16);
+  });
+  const [followupPriority, setFollowupPriority] = useState<string>('Medium');
+  const [followupNotes, setFollowupNotes] = useState<string>('');
+  const [isSavingFollowupActivity, setIsSavingFollowupActivity] = useState<boolean>(false);
+
+  interface DuplicateCustomerModalData {
+    contactId: string;
+    contactName: string;
+    contactPhone: string;
+    contactEmail?: string;
+    assignedAgentName: string;
+  }
+  const [duplicateCustomerModal, setDuplicateCustomerModal] = useState<DuplicateCustomerModalData | null>(null);
+  const [slotConflictModal, setSlotConflictModal] = useState<{
+    conflictTime: string;
+    contactName: string;
+    suggestedTime?: string;
+    suggestedDateIso?: string;
+  } | null>(null);
+  const [formErrorMessage, setFormErrorMessage] = useState<string | null>(null);
 
   const [companyIrms, setCompanyIrms] = useState<IrmProfile[]>([]);
   const [isAssignIrmModalOpen, setIsAssignIrmModalOpen] = useState(false);
   const [leadToAssignIrm, setLeadToAssignIrm] = useState<Lead | null>(null);
   const [selectedIrmForLead, setSelectedIrmForLead] = useState<string>('');
 
-  useEffect(() => {
-    (async () => {
-      try {
-        const list = await getCompanyIrms(tenant?.id);
-        setCompanyIrms(list || []);
-      } catch (err) {
-        console.warn('[LeadsPage] Failed to fetch company IRMs:', err);
-      }
-    })();
-  }, [tenant?.id]);
+  const agentsList = useMemo(() => storageService.getAgents(tenant?.id), [tenant?.id]);
 
-  const isAgentMatch = (l: Lead) => {
-    if (!isLeadScopedUser) return true;
+  const INACTIVE_LEAD_STATUSES = ['Converted', 'Not Interested', 'Junk'];
 
-    // IRM Scoping: IRMs MUST ONLY see leads assigned to them
-    if (isIrm) {
-      const uId = String(user?.id || '');
-      const uName = (user?.name || '').trim().toLowerCase();
-      if (l.assignedIrmId && String(l.assignedIrmId) === uId) return true;
-      if (l.assignedIrmName && l.assignedIrmName.trim().toLowerCase() === uName) return true;
-      if (l.customFields?.assignedIrmId && String(l.customFields.assignedIrmId) === uId) return true;
-      if (l.customFields?.assignedIrmName && String(l.customFields.assignedIrmName).trim().toLowerCase() === uName) return true;
-      if (l.assignedAgentId && String(l.assignedAgentId) === uId) return true;
-      if (l.assignedAgentName && l.assignedAgentName.trim().toLowerCase() === uName) return true;
+  const pendingFollowupContactIds = useMemo(() => {
+    return new Set(
+      (allFollowups || [])
+        .filter((f: any) => f.status === 'Pending')
+        .map((f: any) => String(f.contactId || ''))
+        .filter(Boolean)
+    );
+  }, [allFollowups]);
+
+  const pendingFollowupPhones = useMemo(() => {
+    return new Set(
+      (allFollowups || [])
+        .filter((f: any) => f.status === 'Pending')
+        .map((f: any) => (f.contactPhone || '').replace(/\D/g, '').slice(-10))
+        .filter(Boolean)
+    );
+  }, [allFollowups]);
+
+  const isLeadInFollowupOrMoved = (l: Lead) => {
+    // Leads with status 'Callback', 'No Response', 'New', or 'Contacted' strictly belong in My Leads!
+    if (l.status === 'Callback' || l.status === 'No Response' || l.status === 'New' || l.status === 'Contacted') {
       return false;
     }
-
-    // Sales Executive Scoping: Once assigned to an IRM, the lead is handed off and NOT shown to Sales Executive
-    if (isExec) {
-      const hasIrm = Boolean(
-        l.assignedIrmId ||
-        l.assignedIrmName ||
-        l.customFields?.assignedIrmId ||
-        l.customFields?.assignedIrmName
-      );
-      if (hasIrm) return false;
-
-      if (l.assignedAgentId && user?.id) {
-        if (String(l.assignedAgentId) === String(user.id)) return true;
-        if (String(user.id).includes(String(l.assignedAgentId)) || String(l.assignedAgentId).includes(String(user.id))) return true;
-      }
-      if (l.assignedAgentName && user?.name) {
-        if (l.assignedAgentName.trim().toLowerCase() === user.name.trim().toLowerCase()) return true;
-      }
-      // Any backend lead fetched from the API is already scoped to the authenticated sales executive
-      if (l.id && !isNaN(Number(l.id))) return true;
-      return !l.assignedAgentId && !l.assignedAgentName;
-    }
+    if (MOVED_LEAD_STATUSES.includes(l.status)) return true;
+    if (pendingFollowupContactIds.has(String(l.id))) return true;
+    const phoneDigits = (l.phone || '').replace(/\D/g, '').slice(-10);
+    if (phoneDigits && pendingFollowupPhones.has(phoneDigits)) return true;
+    return false;
   };
 
-  const scopedLeads = leads
-    .filter(isAgentMatch)
-    .filter(l => !INACTIVE_LEAD_STATUSES.includes(l.status));
+  // Role-based scoping: Sales Executives and IRMs see only their own leads.
+  // Managers / Admins / Super Admins see the full company lead list (no filter).
+// Inactive / moved leads (Interested, Follow-up Required, Not Interested, Junk, Converted, and those in follow-up stage) are excluded from active Leads.
+
+  const roleCode = user?.role?.code;
+  const isExec = roleCode === 'sales_executive';
+  const isLeadScopedUser = roleCode === 'sales_executive' || roleCode === 'irm';
+  const isIrm = roleCode === 'irm';
+const currentTenantId = tenant?.id || tenant?.slug;
+  const tenantLeads = leads.filter(l => !l.companyId || isTenantMatch(l.companyId, currentTenantId));
+
+  const scopedLeads = useMemo(() => {
+    if (isExec) {
+      return tenantLeads
+        .filter(l => {
+          const hasIrm = Boolean(
+            l.assignedIrmId ||
+            l.assignedIrmName ||
+            l.customFields?.assignedIrmId ||
+            l.customFields?.assignedIrmName
+          );
+          if (hasIrm) return false;
+          return (
+            (l.assignedAgentId && String(l.assignedAgentId) === String(user?.id)) ||
+            (l.assignedAgentName && l.assignedAgentName === user?.name)
+          );
+        })
+        .filter(l => !isLeadInFollowupOrMoved(l));
+    }
+
+    if (isIrm) {
+      // IRM My Leads: ONLY leads that are 'Interested' AND assigned to THIS IRM
+      // (e.g. Sales Exec Naveen hands a lead to IRM Dhinakaran -> only Dhinakaran sees it).
+      // Leads of other IRMs, or still owned by a Sales Executive, are never shown.
+      // Also exclude any lead that already has a real, persisted pending follow-up record —
+      // those contacts belong in the Follow-ups screen only, not here.
+      const uId = String(user?.id);
+      const uName = (user?.name || '').trim().toLowerCase();
+
+      const pendingFollowupContactIds = new Set<string>(
+        (allFollowups || [])
+          .filter(f => f.status === 'Pending')
+          .map(f => String(f.contactId || ''))
+          .filter(Boolean)
+      );
+      const pendingFollowupPhones = new Set<string>(
+        (allFollowups || [])
+          .filter(f => f.status === 'Pending')
+          .map(f => (f.contactPhone || '').replace(/\D/g, '').slice(-10))
+          .filter(Boolean)
+      );
+
+      const raw = tenantLeads.filter(l => {
+        const sNorm = (l.status || '').trim().toLowerCase();
+        const allowedIrmStatuses = ['interested', 'no response', 'callback', 'new', 'contacted'];
+        if (!allowedIrmStatuses.includes(sNorm)) return false;
+
+        const isAssignedToThisIrm =
+          (l.assignedIrmId && String(l.assignedIrmId) === uId) ||
+          (l.assignedIrmName && l.assignedIrmName.trim().toLowerCase() === uName) ||
+          (l.customFields?.assignedIrmId && String(l.customFields.assignedIrmId) === uId) ||
+          (l.customFields?.assignedIrmName && String(l.customFields.assignedIrmName).trim().toLowerCase() === uName) ||
+          (l.assignedAgentId && String(l.assignedAgentId) === uId) ||
+          (!!l.assignedAgentName && l.assignedAgentName.trim().toLowerCase() === uName);
+
+        if (!isAssignedToThisIrm) return false;
+
+        // Exclude if a real pending followup already exists for this contact
+        if (pendingFollowupContactIds.has(String(l.id))) return false;
+        const lPhone = (l.phone || '').replace(/\D/g, '').slice(-10);
+        if (lPhone && pendingFollowupPhones.has(lPhone)) return false;
+        return true;
+      });
+
+      // Deduplicate by phone to prevent double-entries from different IDs
+      const seen = new Set<string>();
+      return raw.filter(l => {
+        const phone = (l.phone || '').replace(/\D/g, '').slice(-10);
+        const key = phone || l.id;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+      });
+    }
+
+    return tenantLeads.filter(l => !isLeadInFollowupOrMoved(l));
+  }, [tenantLeads, isExec, isIrm, user?.id, user?.name, pendingFollowupContactIds, pendingFollowupPhones, allFollowups]);
+
   const [selectedLead, setSelectedLead] = useState<Lead | null>(null);
   const [isDetailDrawerOpen, setIsDetailDrawerOpen] = useState(false);
   const [isEditDrawerOpen, setIsEditDrawerOpen] = useState(false);
@@ -132,9 +310,26 @@ export const LeadsPage: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState('All');
   const [capacityFilter, setCapacityFilter] = useState('All');
   const [agentFilter, setAgentFilter] = useState('All');
+  const [handoverFilter, setHandoverFilter] = useState('Mine');
   const [datePreset, setDatePreset] = useState<string>('all');
   const [dateFrom, setDateFrom] = useState<string>('');
   const [dateTo, setDateTo] = useState<string>('');
+
+  const handoverOptions = useMemo(() => {
+    const coveringNames = Array.from(new Set(scopedLeads.map(l => l.handedOverFromName).filter(Boolean)));
+    const returnedLeads = scopedLeads.filter(l => isLeadReturned(l));
+    const returnedNames = Array.from(new Set(returnedLeads.map(l => getReturnedCoveringName(l)).filter(Boolean)));
+
+    if (coveringNames.length === 0 && returnedNames.length === 0) return [];
+
+    return [
+      { value: 'All', label: 'All Leads' },
+      { value: 'Mine', label: 'Mine (Regular)' },
+      ...coveringNames.map(name => ({ value: `Handover_${name}`, label: `Covering for ${name}` })),
+      ...(returnedNames.length > 0 ? [{ value: 'Returned', label: 'Returned from Handover' }] : []),
+      ...returnedNames.map(name => ({ value: `Returned_${name}`, label: `Returned from ${name}` }))
+    ];
+  }, [scopedLeads]);
 
   const agentOptions = useMemo(() => {
     return Array.from(
@@ -207,21 +402,16 @@ export const LeadsPage: React.FC = () => {
 
   // GHL Admin assign-mode state
   const isGhlAdmin =
-    (tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01') &&
+    (tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01' || tenant?.id === '1' || tenant?.slug === '1' || tenant?.name?.toLowerCase().includes('ghl') || user?.companySlug === 'ghl') &&
     (roleCode === 'company_admin' || (roleCode as string) === 'admin' || roleCode === 'super_admin');
   const [assignMode, setAssignMode] = useState<'manual' | 'auto'>('manual');
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
   const [assignStep, setAssignStep] = useState<'pick-agent' | 'confirm'>('pick-agent');
-  const [agentsList, setAgentsList] = useState<Array<{ id: number; name: string }>>(() => {
-    return storageService.getMockAgents();
-  });
-  const availableAgents = useMemo(() => {
-    return agentsList.length > 0 ? agentsList : MOCK_AGENTS;
-  }, [agentsList]);
-  const [assignSelectedAgent, setAssignSelectedAgent] = useState<{ id: number; name: string } | null>(null);
+const [assignSelectedAgent, setAssignSelectedAgent] = useState<AssignableAgent | null>(null);
+
   const [isAiModalOpen, setIsAiModalOpen] = useState(false);
-  const [aiDistribution, setAiDistribution] = useState<Record<number, Lead[]>>({});
+  const [aiDistribution, setAiDistribution] = useState<Record<string, Lead[]>>({});
   const [isAiEditMode, setIsAiEditMode] = useState(false);
   const [assignedLeadIds, setAssignedLeadIds] = useState<Set<string>>(new Set());
   const [agentAssignments, setAgentAssignments] = useState<
@@ -236,6 +426,25 @@ export const LeadsPage: React.FC = () => {
   });
   const [toast, setToast] = useState<string | null>(null);
 
+  // Real sales agents (from DB) + admin ids. A lead still owned by an admin = UNASSIGNED.
+  const [agents, setAgents] = useState<AssignableAgent[]>([]);
+  const [agentsFromApi, setAgentsFromApi] = useState(true);
+  const [adminIds, setAdminIds] = useState<Set<string>>(
+    new Set(user?.id ? [String(user.id)] : [])
+  );
+
+  useEffect(() => {
+    if (isLeadScopedUser) return;
+    let cancelled = false;
+    loadAgentDirectory(tenant?.id, user?.id).then(dir => {
+      if (cancelled) return;
+      setAgents(dir.agents);
+      setAdminIds(dir.adminIds);
+      setAgentsFromApi(dir.fromApi);
+    });
+    return () => { cancelled = true; };
+  }, [tenant?.id, user?.id, isLeadScopedUser]);
+
   // Form state
   const [formData, setFormData] = useState<Partial<Lead>>({});
   const [convertDealTitle, setConvertDealTitle] = useState('');
@@ -244,7 +453,7 @@ export const LeadsPage: React.FC = () => {
   const currentAssetClass =
     formData.customFields?.assetClass ||
     formData.customFields?.preferredAssetClass ||
-    'AIF';
+    '';
 
   const handleAssetClassChange = (newAssetClass: string) => {
     setFormData(prev => ({
@@ -258,36 +467,73 @@ export const LeadsPage: React.FC = () => {
   };
 
   const loadData = async () => {
-    try {
-      const updated = await getLeads(tenant?.id);
+if (apiClient.isMockMode()) {
+      const updated = storageService.getLeads(tenant?.id);
       setLeads(updated);
+      const allFus = storageService.getFollowups ? storageService.getFollowups(tenant?.id) : [];
+      const pendingFus = (allFus || []).filter((f: any) => f.status === 'Pending');
+      setAllFollowups(pendingFus);
+      setCustomers(storageService.getCustomers ? storageService.getCustomers(tenant?.id) : []);
       setSelectedLead(prev => {
         if (!prev) return null;
         const found = updated.find(l => l.id === prev.id);
-        if (!found || INACTIVE_LEAD_STATUSES.includes(found.status)) {
+        if (!found || MOVED_LEAD_STATUSES.includes(found.status) || isLeadInFollowupOrMoved(found) || found.status === 'Junk') {
+
           setIsDetailDrawerOpen(false);
           setIsEditDrawerOpen(false);
           return null;
         }
         return found;
       });
-    } catch {
-      const updated = storageService.getLeads(tenant?.id);
-      setLeads(updated);
+return;
     }
 
-    if (!isMockMode()) {
-      try {
-        const users = await adminUserService.getUsers(tenant?.id || '1');
-        const agentUsers = users
-          .filter(u => u.role?.code === 'sales_executive' || u.role?.code === 'irm' || u.role?.name?.toLowerCase().includes('executive') || u.role?.name?.toLowerCase().includes('agent'))
-          .map(u => ({ id: Number(u.id), name: u.name }));
-        if (agentUsers.length > 0) {
-          setAgentsList(agentUsers);
+    try {
+      setLoadError(null);
+      const [updatedFollowups, updatedCustomers, updatedDeals, irmsList] = await Promise.all([
+        getFollowups(tenant?.id).catch(() => []),
+        getCustomers(tenant?.id).catch(() => []),
+        getDeals(tenant?.id).catch(() => []),
+        getCompanyIrms(tenant?.id).catch(() => []),
+      ]);
+      const pendingFus = (updatedFollowups || []).filter((f: any) => f.status === 'Pending');
+      setAllFollowups(pendingFus);
+      setCustomers(updatedCustomers || []);
+      setDeals(updatedDeals || []);
+      setCompanyIrms(irmsList || []);
+
+      let loadedLeads: Lead[] = [];
+      if (isGhlAdmin) {
+        const res = await apiClient.get<any>('/sales-executive/leads?page=1&pageSize=200&assignment=unassigned');
+        if (res.success && res.data && res.data.items) {
+          loadedLeads = res.data.items.map((item: any) => ({
+            ...item,
+            id: String(item.id),
+            assignedAgentId: item.assignedAgentId ? String(item.assignedAgentId) : undefined,
+            customFields: item.customFields || {}
+          }));
+        } else {
+          throw new Error(res.message || 'Failed to load unassigned leads from server.');
         }
-      } catch (err) {
-        console.warn('[LeadsPage] Could not load live agents from API:', err);
+      } else {
+        loadedLeads = await getLeads(tenant?.id);
       }
+      setLeads(loadedLeads);
+      setSelectedLead(prev => {
+        if (!prev) return null;
+        const found = loadedLeads.find((l: any) => l.id === prev.id);
+        if (!found || MOVED_LEAD_STATUSES.includes(found.status) || isLeadInFollowupOrMoved(found) || found.status === 'Junk') {
+          setIsDetailDrawerOpen(false);
+          setIsEditDrawerOpen(false);
+          return null;
+        }
+        return found;
+      });
+    } catch (err: any) {
+      console.error('Failed to load leads from API', err);
+      setLeads([]);
+      setLoadError(err?.message || 'Failed to load leads from server.');
+
     }
   };
 
@@ -296,12 +542,35 @@ export const LeadsPage: React.FC = () => {
     loadData();
     const handleUpdate = () => loadData();
     window.addEventListener('nexus_storage_updated', handleUpdate);
-    return () => window.removeEventListener('nexus_storage_updated', handleUpdate);
-  }, [tenant?.id]);
+    window.addEventListener('nexus_handover_updated', handleUpdate);
 
-  const isGhlSalesExec = tenant?.slug === 'ghl' && user?.role?.code === 'sales_executive';
+    // Polling every 15 seconds while visible
+    const interval = setInterval(() => {
+      if (document.visibilityState === 'visible' && !apiClient.isMockMode()) {
+        loadData();
+      }
+    }, 15000);
+
+    const handleFocus = () => {
+      if (!apiClient.isMockMode()) loadData();
+    };
+    window.addEventListener('focus', handleFocus);
+
+    return () => {
+      window.removeEventListener('nexus_storage_updated', handleUpdate);
+      window.removeEventListener('nexus_handover_updated', handleUpdate);
+      window.removeEventListener('focus', handleFocus);
+      clearInterval(interval);
+    };
+  }, [tenant?.id, isGhlAdmin]);
+
+  const isGhlSalesExec =
+    (tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01' || tenant?.id === '1' || tenant?.slug === '1' || tenant?.name?.toLowerCase().includes('ghl') || user?.companySlug === 'ghl') &&
+    user?.role?.code === 'sales_executive';
   const ghlPendingFollowups = isGhlSalesExec
-    ? (storageService.getFollowups(tenant?.id) || []).filter(f => f.status === 'Pending')
+    ? (!apiClient.isMockMode()
+      ? (allFollowups || []).filter((f: any) => f.status === 'Pending')
+      : (storageService.getFollowups(tenant?.id) || []).filter(f => f.status === 'Pending'))
     : [];
 
   const matchCapacity = (lead: Lead, filterRange: string): boolean => {
@@ -361,9 +630,6 @@ export const LeadsPage: React.FC = () => {
     if (filterRange === 'Contact for Co-Invest Details') {
       return nCap.includes('co-invest') || nCap.includes('contact');
     }
-    if (filterRange === 'Not sure yet — help me decide') {
-      return nCap.includes('not sure') || nCap.includes('help');
-    }
 
     return false;
   };
@@ -387,6 +653,19 @@ export const LeadsPage: React.FC = () => {
       if (dateTo && dateStr > dateTo) return false;
     }
 
+    if (handoverOptions.length > 0) {
+      if (handoverFilter === 'Mine' && (lead.handoverId || isLeadReturned(lead))) return false;
+      if (handoverFilter === 'Returned') {
+        if (!isLeadReturned(lead)) return false;
+      } else if (handoverFilter.startsWith('Returned_')) {
+        const name = handoverFilter.replace('Returned_', '');
+        if (!isLeadReturned(lead) || getReturnedCoveringName(lead) !== name) return false;
+      } else if (handoverFilter.startsWith('Handover_')) {
+        const name = handoverFilter.replace('Handover_', '');
+        if (lead.handedOverFromName !== name) return false;
+      }
+    }
+
     return true;
   });
 
@@ -394,6 +673,18 @@ export const LeadsPage: React.FC = () => {
     setToast(msg);
     setTimeout(() => setToast(null), 3500);
   };
+
+// Saves assignments to the backend (real agents) and mirrors them locally.
+  const assignLeads = async (pairs: Array<{ lead: Lead; agent: AssignableAgent }>): Promise<number> => {
+    const results = await Promise.allSettled(pairs.map(p => persistLeadAssignment(p.lead, p.agent)));
+    const failed = results.filter(r => r.status === 'rejected') as PromiseRejectedResult[];
+    if (failed.length > 0) {
+      console.error('[Lead assignment] failed', failed.map(f => f.reason));
+      showToast(`⚠️ ${failed.length} lead(s) could not be assigned: ${failed[0].reason?.message || 'Unknown error'}`);
+    }
+    return results.length - failed.length;
+  };
+
 
   const handleOpenAssignIrm = (lead: Lead) => {
     setLeadToAssignIrm(lead);
@@ -407,17 +698,28 @@ export const LeadsPage: React.FC = () => {
     if (!chosenIrm) return;
 
     const nowIso = new Date().toISOString();
+const assigningSalesPerson = user?.name || leadToAssignIrm.assignedByName || leadToAssignIrm.assignedAgentName || 'Naveen';
+    const assigningSalesId = user?.id || leadToAssignIrm.assignedById || leadToAssignIrm.assignedAgentId || '3';
+
+
     const updatedLead: Lead = {
       ...leadToAssignIrm,
       assignedIrmId: String(chosenIrm.id),
       assignedIrmName: chosenIrm.name,
       assignedIrmAt: nowIso,
-      notes: `${leadToAssignIrm.notes ? leadToAssignIrm.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] Assigned to IRM: ${chosenIrm.name} by ${user?.name || 'Sales Executive'}`,
+assignedById: assigningSalesId,
+      assignedByName: assigningSalesPerson,
+      notes: `${leadToAssignIrm.notes ? leadToAssignIrm.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] Assigned to IRM: ${chosenIrm.name} by ${assigningSalesPerson}`,
+
       customFields: {
         ...leadToAssignIrm.customFields,
         assignedIrmId: String(chosenIrm.id),
         assignedIrmName: chosenIrm.name,
         assignedIrmAt: nowIso,
+qualifiedByAgentName: assigningSalesPerson,
+        assignedByAgentName: assigningSalesPerson,
+        salesAgentName: assigningSalesPerson,
+
       }
     };
 
@@ -434,66 +736,62 @@ export const LeadsPage: React.FC = () => {
       setSelectedLead(updatedLead);
     }
     await loadData();
-    showToast(`✓ Lead "${updatedLead.name}" successfully assigned to IRM ${chosenIrm.name}!`);
+const toast = document.createElement('div');
+    toast.className = 'nexus-toast success';
+    toast.textContent = `✓ Lead "${updatedLead.name}" successfully assigned to IRM ${chosenIrm.name}!`;
+    document.body.appendChild(toast);
+    setTimeout(() => toast.remove(), 3000);
+
   };
 
   const handleManualAssignConfirm = async () => {
     if (!assignSelectedAgent) return;
-    const newAssigned = new Set(assignedLeadIds);
-    const newRecords: Array<{ leadId: string; leadName: string; agentId: number; agentName: string; assignedAt: string }> = [];
-    const leadUpdates: Promise<any>[] = [];
+const agent = assignSelectedAgent;
+    const leadIds = Array.from(selectedLeadIds).map(id => id.replace('db-', ''));
+    let realAssigned = 0;
 
-    selectedLeadIds.forEach(id => {
-      newAssigned.add(id);
-      const lead = leads.find(l => l.id === id);
-      newRecords.push({
-        leadId: id,
-        leadName: lead?.name || 'Unknown Lead',
-        agentId: assignSelectedAgent.id,
-        agentName: assignSelectedAgent.name,
-        assignedAt: new Date().toISOString(),
-      });
-
-      if (lead) {
-        const updatedLead: Lead = {
-          ...lead,
-          assignedAgentId: String(assignSelectedAgent.id),
-          assignedAgentName: assignSelectedAgent.name,
-        };
-        leadUpdates.push(
-          apiSaveLead(updatedLead).catch(err => {
-            console.warn('[LeadsPage] Failed to save assigned agent to API:', err);
-            storageService.saveLead(updatedLead);
-          })
-        );
+    if (apiClient.isMockMode()) {
+      const pairs = leadIds.map(id => leads.find(l => l.id === id)).filter((l): l is Lead => !!l).map(lead => ({ lead, agent }));
+      await assignLeads(pairs);
+    } else {
+      try {
+        const res = await apiClient.post<any>('/ghl/leads/assign', {
+          leadIds: leadIds.map(id => parseInt(id, 10)),
+          agentId: agent.dbId
+        });
+        realAssigned = res?.data?.assigned ?? 0;
+        const skipped = res?.data?.skipped || [];
+        if (skipped.length > 0) showToast(`⚠️ ${skipped.length} lead(s) skipped: ${skipped[0].reason}`);
+      } catch (err: any) {
+        console.error('Manual assign failed', err);
+        showToast(`❌ Manual assign failed: ${err.message || 'Unknown error'}`);
+        return;
       }
-    });
+    }
 
-    setAssignedLeadIds(newAssigned);
-    setAgentAssignments(prev => {
-      const updated = [...prev, ...newRecords];
-      try { sessionStorage.setItem('ghl_mock_agent_assignments', JSON.stringify(updated)); } catch { }
-      (window as any).__ghlAssignments = updated;
-      return updated;
-    });
+    const okCount = apiClient.isMockMode() ? leadIds.length : realAssigned;
 
-    await Promise.allSettled(leadUpdates);
-    await loadData();
-
-    const count = selectedLeadIds.size;
     setSelectedLeadIds(new Set());
     setIsAssignModalOpen(false);
     setAssignStep('pick-agent');
     setAssignSelectedAgent(null);
-    showToast(`✓ ${count} lead${count !== 1 ? 's' : ''} assigned to ${assignSelectedAgent.name}`);
+    loadData();
+    if (okCount > 0) {
+      showToast(`✓ ${okCount} lead${okCount !== 1 ? 's' : ''} assigned to ${agent.name}${agentsFromApi ? '' : ' (local only – no real agents found)'}`);
+    }
   };
 
   const handleOpenAiSuggestion = () => {
+    if (agents.length === 0) {
+      showToast('No sales agents available to assign to.');
+      return;
+    }
     const pool = filteredLeads;
-    const dist: Record<number, Lead[]> = {};
-    availableAgents.forEach(a => { dist[a.id] = []; });
+const dist: Record<string, Lead[]> = {};
+    agents.forEach(a => { dist[a.id] = []; });
     pool.forEach((lead, i) => {
-      const agent = availableAgents[i % availableAgents.length];
+      const agent = agents[i % agents.length];
+
       dist[agent.id].push(lead);
     });
     setAiDistribution(dist);
@@ -501,8 +799,9 @@ export const LeadsPage: React.FC = () => {
     setIsAiModalOpen(true);
   };
 
-  const handleAiMoveLead = (leadId: string, fromAgentId: number, direction: 'left' | 'right') => {
-    const agentIds = availableAgents.map(a => a.id);
+const handleAiMoveLead = (leadId: string, fromAgentId: string, direction: 'left' | 'right') => {
+    const agentIds = agents.map(a => a.id);
+
     const fromIdx = agentIds.indexOf(fromAgentId);
     const toIdx = direction === 'left' ? fromIdx - 1 : fromIdx + 1;
     if (toIdx < 0 || toIdx >= agentIds.length) return;
@@ -517,52 +816,45 @@ export const LeadsPage: React.FC = () => {
   };
 
   const handleAiConfirm = async () => {
-    const newAssigned = new Set(assignedLeadIds);
-    const newRecords: Array<{ leadId: string; leadName: string; agentId: number; agentName: string; assignedAt: string }> = [];
-    const leadUpdates: Promise<any>[] = [];
-    let count = 0;
+let okCount = 0;
 
-    Object.entries(aiDistribution).forEach(([agentIdStr, agentLeads]) => {
-      const agentId = Number(agentIdStr);
-      const agent = availableAgents.find(a => a.id === agentId);
-      agentLeads.forEach(l => {
-        newAssigned.add(l.id);
-        count++;
-        newRecords.push({
-          leadId: l.id,
-          leadName: l.name,
-          agentId,
-          agentName: agent?.name || 'Agent',
-          assignedAt: new Date().toISOString(),
-        });
-
-        const updatedLead: Lead = {
-          ...l,
-          assignedAgentId: String(agentId),
-          assignedAgentName: agent?.name || 'Agent',
-        };
-        leadUpdates.push(
-          apiSaveLead(updatedLead).catch(err => {
-            console.warn('[LeadsPage] Failed to save AI assigned agent to API:', err);
-            storageService.saveLead(updatedLead);
-          })
-        );
+    if (apiClient.isMockMode()) {
+      const pairs: Array<{ lead: Lead; agent: AssignableAgent }> = [];
+      Object.entries(aiDistribution).forEach(([agentId, agentLeads]) => {
+        const agent = agents.find(a => a.id === agentId);
+        if (!agent) return;
+        agentLeads.forEach(lead => pairs.push({ lead, agent }));
       });
-    });
+      okCount = await assignLeads(pairs);
+    } else {
+      // Send exactly the distribution the admin previewed/edited: one assign call per agent.
+      try {
+        let skippedCount = 0;
+        for (const [agentId, agentLeads] of Object.entries(aiDistribution)) {
+          const agent = agents.find(a => a.id === agentId);
+          if (!agent?.dbId || agentLeads.length === 0) continue;
+          const res = await apiClient.post<any>('/ghl/leads/assign', {
+            leadIds: agentLeads.map(l => parseInt(l.id.replace('db-', ''), 10)),
+            agentId: agent.dbId
+          });
+          okCount += res?.data?.assigned ?? 0;
+          skippedCount += (res?.data?.skipped || []).length;
+        }
+        if (skippedCount > 0) showToast(`⚠️ ${skippedCount} lead(s) were skipped (already assigned).`);
+      } catch (err: any) {
+        console.error('Auto assign failed', err);
+        showToast(`❌ Auto assign failed: ${err.message || 'Unknown error'}`);
+        loadData();
+        return;
+      }
+    }
 
-    setAssignedLeadIds(newAssigned);
-    setAgentAssignments(prev => {
-      const updated = [...prev, ...newRecords];
-      try { sessionStorage.setItem('ghl_mock_agent_assignments', JSON.stringify(updated)); } catch { }
-      (window as any).__ghlAssignments = updated;
-      return updated;
-    });
-
-    await Promise.allSettled(leadUpdates);
-    await loadData();
 
     setIsAiModalOpen(false);
-    showToast(`✓ ${count} lead${count !== 1 ? 's' : ''} assigned via AI Suggestion`);
+    loadData();
+    if (okCount > 0) {
+      showToast(`✓ ${okCount} lead${okCount !== 1 ? 's' : ''} assigned via AI Suggestion`);
+    }
   };
 
   const handleOpenCreate = () => {
@@ -570,13 +862,9 @@ export const LeadsPage: React.FC = () => {
       console.warn('[LeadsPage] Cannot create lead: user session is not yet loaded.');
       return;
     }
-    const defaultAgent = availableAgents.length > 0 ? availableAgents[0] : null;
-    const defaultAgentId = isLeadScopedUser
-      ? (user.id || '')
-      : (defaultAgent?.id ? String(defaultAgent.id) : (user.id || ''));
-    const defaultAgentName = isLeadScopedUser
-      ? (user.name || 'Agent')
-      : (defaultAgent?.name || user.name || 'Agent');
+const defaultAgentId = isLeadScopedUser ? user.id : undefined;
+    const defaultAgentName = isLeadScopedUser ? user.name : undefined;
+
 
     setFormData({
       id: `lead-${Date.now()}`,
@@ -594,28 +882,133 @@ export const LeadsPage: React.FC = () => {
       notes: '',
       customFields: tenant?.slug === 'jamin'
         ? { budgetRange: '₹45L - ₹65L', preferredLocation: 'Devanahalli North', readyToRegister: 'Immediate' }
-        : { investmentCapacity: '', assetClass: 'AIF', preferredAssetClass: 'AIF', horizon: '3-5 Years' },
+        : { investmentCapacity: '', assetClass: '', preferredAssetClass: '', horizon: '3-5 Years' },
     });
+    setFormErrorMessage(null);
     setIsEditDrawerOpen(true);
   };
 
   const handleOpenEdit = (lead: Lead) => {
     setFormData({ ...lead });
+    setFormErrorMessage(null);
     setIsEditDrawerOpen(true);
+  };
+
+  const handleScheduleActivityForExisting = async (
+    contactId: string,
+    contactType: 'lead' | 'customer',
+    contactName: string,
+    contactPhone: string
+  ) => {
+    const targetIso = followupDate ? new Date(followupDate).toISOString() : new Date(Date.now() + 86400000).toISOString();
+    const targetMs = new Date(targetIso).getTime();
+    const currentAgentId = String(user?.id || 'usr-exec');
+
+    // Check time slot conflict for this representative
+    const conflict = (allFollowups || []).find((f: any) => {
+      if (f.status !== 'Pending') return false;
+      const fAgentId = f.assignedAgentId ? String(f.assignedAgentId) : '';
+      if (fAgentId && currentAgentId && fAgentId !== currentAgentId) return false;
+      const fTime = new Date(f.scheduledAt).getTime();
+      if (isNaN(fTime)) return false;
+      return Math.abs(targetMs - fTime) / (60 * 1000) < 20;
+    });
+
+    if (conflict) {
+      const conflictDateObj = new Date(conflict.scheduledAt);
+      const formattedConflictTime = conflictDateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', ' + conflictDateObj.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+      const suggestedDate = new Date(conflictDateObj.getTime() + 20 * 60 * 1000);
+      const pad = (n: number) => n.toString().padStart(2, '0');
+      const suggestedDateIso = `${suggestedDate.getFullYear()}-${pad(suggestedDate.getMonth() + 1)}-${pad(suggestedDate.getDate())}T${pad(suggestedDate.getHours())}:${pad(suggestedDate.getMinutes())}`;
+      const formattedSuggestedTime = suggestedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' (' + suggestedDate.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ')';
+
+      setSlotConflictModal({
+        conflictTime: formattedConflictTime,
+        contactName: conflict.contactName || 'Another Contact',
+        suggestedTime: formattedSuggestedTime,
+        suggestedDateIso,
+      });
+      return;
+    }
+
+    setIsSavingFollowupActivity(true);
+    try {
+      await apiSaveFollowup({
+        id: `fu-${Date.now()}`,
+        companyId: tenant?.id || 't-ghl-01',
+        contactId: contactId || 'contact-new',
+        contactType,
+        contactName,
+        contactPhone,
+        scheduledAt: targetIso,
+        priority: followupPriority as any,
+        notes: followupNotes || `Follow-up activity created for existing ${contactType}.`,
+        status: 'Pending',
+        assignedAgentId: currentAgentId,
+        assignedAgentName: user?.name || 'Agent',
+      });
+      showToast(`Follow-up activity successfully scheduled for "${contactName}".`);
+      setDuplicateKycModal(null);
+      setDuplicateFollowupModal(null);
+      setDuplicateCustomerModal(null);
+      setIsEditDrawerOpen(false);
+      await loadData();
+    } catch (err: any) {
+      console.error('Failed to schedule follow-up activity:', err);
+      const msg = err.message || '';
+      if (msg.includes('already booked') || msg.includes('time slot') || msg.includes('between calls')) {
+        const conflictDateObj = new Date(targetIso);
+        const formattedConflictTime = conflictDateObj.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ', ' + conflictDateObj.toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' });
+        const suggestedDate = new Date(conflictDateObj.getTime() + 20 * 60 * 1000);
+        const pad = (n: number) => n.toString().padStart(2, '0');
+        const suggestedDateIso = `${suggestedDate.getFullYear()}-${pad(suggestedDate.getMonth() + 1)}-${pad(suggestedDate.getDate())}T${pad(suggestedDate.getHours())}:${pad(suggestedDate.getMinutes())}`;
+        const formattedSuggestedTime = suggestedDate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' (' + suggestedDate.toLocaleDateString([], { month: 'short', day: 'numeric' }) + ')';
+
+        setSlotConflictModal({
+          conflictTime: formattedConflictTime,
+          contactName: 'Existing Appointment',
+          suggestedTime: formattedSuggestedTime,
+          suggestedDateIso,
+        });
+        return;
+      }
+      showToast(`⚠️ Failed to schedule follow-up activity: ${msg || 'Unknown error'}`);
+    } finally {
+      setIsSavingFollowupActivity(false);
+    }
   };
 
   const handleSaveLead = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.name || !formData.phone) return;
+    setFormErrorMessage(null);
+    if (!formData.name || !formData.phone) {
+      const msg = 'Please provide both contact name and phone number.';
+      setFormErrorMessage(msg);
+      showToast(msg);
+      return;
+    }
+
+    const cleanPhone = (formData.phone || '').replace(/\D/g, '');
+    if (cleanPhone.length < 10) {
+      const msg = 'Please enter a valid phone number with at least 10 digits.';
+      setFormErrorMessage(msg);
+      showToast(msg);
+      return;
+    }
 
     // Pull real agent ID and name at save-time to prevent stale/fallback placeholder IDs from leaking
     const matchedAgent = availableAgents.find(a => String(a.id) === String(formData.assignedAgentId));
     const resolvedAgentId = (isLeadScopedUser && user?.id)
       ? user.id
-      : (formData.assignedAgentId && formData.assignedAgentId !== 'usr-exec' ? formData.assignedAgentId : (user?.id || undefined));
+: (formData.assignedAgentId && formData.assignedAgentId !== 'usr-exec' && formData.assignedAgentId !== 'unassigned'
+        ? formData.assignedAgentId
+        : undefined);
     const resolvedAgentName = (isLeadScopedUser && user?.name)
       ? user.name
-      : (matchedAgent?.name || (formData.assignedAgentName && formData.assignedAgentName !== 'Agent' ? formData.assignedAgentName : (user?.name || 'Agent')));
+      : (formData.assignedAgentName && formData.assignedAgentName !== 'Agent' && formData.assignedAgentName !== 'Unassigned'
+        ? formData.assignedAgentName
+        : undefined);
+
 
     const existingInList = leads.find(l => l.id === formData.id);
     const targetCompanyId = formData.companyId || tenant?.id || 't-ghl-01';
@@ -623,11 +1016,179 @@ export const LeadsPage: React.FC = () => {
     let leadToSave: Lead;
     let isUpdated = !!existingInList;
 
-    if (!existingInList) {
+if (!isExistingById) {
+      const normNewPhone = normalizePhone(formData.phone);
+      const normNewEmail = normalizeEmail(formData.email);
+
+      let matchingPendingFollowup: any = null;
+      let existingMatch: Lead | undefined;
+      let existingCustomer: Customer | undefined;
+      let matchingKycDeal: Deal | undefined;
+
+      if (normNewPhone || normNewEmail) {
+        // 1. Search pending follow-ups
+        matchingPendingFollowup = (allFollowups || []).find((f: any) => {
+          if (normNewPhone) {
+            const fDigits = normalizePhone(f.contactPhone);
+            if (fDigits && fDigits === normNewPhone) return true;
+          }
+          return false;
+        });
+
+        // 2. Search existing leads
+        existingMatch = leads.find(l => {
+          if (!targetCompanyId || isTenantMatch(l.companyId, targetCompanyId)) {
+            const normLPhone = normalizePhone(l.phone);
+            const normLEmail = normalizeEmail(l.email);
+            const phoneMatch = normNewPhone && normLPhone && normNewPhone === normLPhone;
+            const emailMatch = normNewEmail && normLEmail && normNewEmail === normLEmail;
+            return phoneMatch || emailMatch;
+          }
+          return false;
+        });
+
+        // 3. Search existing customers
+        existingCustomer = (customers || []).find(c => {
+          if (!targetCompanyId || isTenantMatch(c.companyId, targetCompanyId)) {
+            const normCPhone = normalizePhone(c.phone);
+            const normCEmail = normalizeEmail(c.email);
+            const phoneMatch = normNewPhone && normCPhone && normNewPhone === normCPhone;
+            const emailMatch = normNewEmail && normCEmail && normNewEmail === normCEmail;
+            return phoneMatch || emailMatch;
+          }
+          return false;
+        });
+
+        // 4. Search existing KYC deals
+        matchingKycDeal = (deals || []).find(d => {
+          if (!targetCompanyId || isTenantMatch(d.companyId, targetCompanyId)) {
+            const isKyc = d.stage === 'qualified_investor' || !!d.kycStatus || !!(d as any).kycId;
+            if (!isKyc) return false;
+            if (existingCustomer && d.customerId && String(d.customerId) === String(existingCustomer.id)) return true;
+            if (existingMatch && d.customerId && String(d.customerId) === String(existingMatch.id)) return true;
+            const dPhone = normalizePhone(d.phone);
+            if (normNewPhone && dPhone && dPhone === normNewPhone) return true;
+            const dEmail = normalizeEmail(d.email);
+            if (normNewEmail && dEmail && dEmail === normNewEmail) return true;
+          }
+          return false;
+        });
+      }
+
+      // 1. Authoritative Stage Detection: Check if contact already exists in KYC
+      const isLeadInKyc = existingMatch && (
+        existingMatch.status === 'Qualified' ||
+        !!(existingMatch.customFields as any)?.movedToKycAt
+      );
+
+      const isContactInKyc = !!matchingKycDeal || isLeadInKyc;
+
+      if (isContactInKyc) {
+        const cName = matchingKycDeal?.customerName || existingCustomer?.name || existingMatch?.name || formData.name;
+        const cAgent = matchingKycDeal?.assignedAgentName || existingCustomer?.assignedAgentName || existingMatch?.assignedAgentName || 'an assigned agent';
+        const cType: 'lead' | 'customer' = existingCustomer ? 'customer' : 'lead';
+        const cId = existingCustomer?.id || existingMatch?.id || matchingKycDeal?.customerId || '';
+        const cPhone = existingCustomer?.phone || existingMatch?.phone || matchingKycDeal?.phone || formData.phone;
+
+        setDuplicateKycModal({
+          contactId: String(cId),
+          contactType: cType,
+          contactName: cName,
+          contactPhone: cPhone,
+          contactEmail: existingCustomer?.email || existingMatch?.email || matchingKycDeal?.email || formData.email,
+          assignedAgentName: cAgent,
+          dealId: matchingKycDeal?.id ? String(matchingKycDeal.id) : undefined,
+          kycId: (matchingKycDeal as any)?.kycId ? String((matchingKycDeal as any).kycId) : undefined,
+        });
+        setFollowupNotes(formData.notes ? `Follow-up from lead intake: ${formData.notes}` : `Follow-up with ${cName}`);
+        setIsSchedulingActivity(false);
+        return; // Prevent creating duplicate lead
+      }
+
+      // 2. Authoritative Stage Detection: Check if contact genuinely exists in Follow-up
+      const isLeadInFollowup = existingMatch && (
+        existingMatch.status === 'Follow-up Required' ||
+        (matchingPendingFollowup && (matchingPendingFollowup.contactType === 'lead' || !matchingPendingFollowup.contactType) && matchingPendingFollowup.contactId === existingMatch.id)
+      );
+      const isCustomerInFollowup = existingCustomer && (
+        (matchingPendingFollowup && matchingPendingFollowup.contactType === 'customer' && matchingPendingFollowup.contactId === existingCustomer.id) ||
+        (allFollowups || []).some(f => f.contactId === existingCustomer.id && f.status === 'Pending')
+      );
+      const existsInFollowup = isLeadInFollowup || isCustomerInFollowup || !!matchingPendingFollowup;
+
+      if (existsInFollowup) {
+        const cName = existingCustomer?.name || existingMatch?.name || matchingPendingFollowup?.contactName || formData.name;
+        const cAgent = existingCustomer?.assignedAgentName || existingMatch?.assignedAgentName || matchingPendingFollowup?.assignedAgentName || 'an assigned agent';
+        const cType: 'lead' | 'customer' = existingCustomer ? 'customer' : 'lead';
+        const cId = existingCustomer?.id || existingMatch?.id || matchingPendingFollowup?.contactId || '';
+        const cPhone = existingCustomer?.phone || existingMatch?.phone || matchingPendingFollowup?.contactPhone || formData.phone;
+
+        setDuplicateFollowupModal({
+          contactId: cId,
+          contactType: cType,
+          contactName: cName,
+          contactPhone: cPhone,
+          contactEmail: existingCustomer?.email || existingMatch?.email || formData.email,
+          assignedAgentName: cAgent,
+          existingStatus: existingMatch?.status || (existingCustomer ? 'Active Customer' : 'Follow-up Required'),
+        });
+        setFollowupNotes(formData.notes ? `Follow-up from lead intake: ${formData.notes}` : `Follow-up with ${cName}`);
+        setIsSchedulingActivity(false);
+        return; // Prevent creating duplicate lead
+      }
+
+      // Check if contact already exists as Customer (not in follow-up)
+      if (existingCustomer) {
+        setDuplicateCustomerModal({
+          contactId: existingCustomer.id,
+          contactName: existingCustomer.name,
+          contactPhone: existingCustomer.phone,
+          contactEmail: existingCustomer.email,
+          assignedAgentName: existingCustomer.assignedAgentName || 'Agent',
+        });
+        setFollowupNotes(formData.notes ? `Follow-up from lead intake: ${formData.notes}` : `Follow-up with ${existingCustomer.name}`);
+        return; // Prevent creating duplicate lead for existing customer
+      }
+
+      // Check if contact already exists as Lead (not in follow-up)
+      if (existingMatch) {
+        if (existingMatch.assignedAgentId && String(existingMatch.assignedAgentId) !== String(resolvedAgentId)) {
+          showToast(`⚠️ Lead already exists for "${existingMatch.name}" and is currently assigned to ${existingMatch.assignedAgentName || 'another agent'}.`);
+          return;
+        }
+        showToast(`Duplicate found: "${existingMatch.name}" already exists. Updating existing record.`);
+        isUpdated = true;
+        leadToSave = {
+          ...existingMatch,
+          ...formData,
+          id: existingMatch.id, // Preserve existing ID
+          companyId: existingMatch.companyId || targetCompanyId,
+          // Preserve existing status if already in an active workflow
+          status: (existingMatch.status && existingMatch.status !== 'New')
+            ? existingMatch.status
+            : (isIrm ? 'Interested' : (formData.status || 'New')),
+          assignedAgentId: resolvedAgentId || existingMatch.assignedAgentId,
+          assignedAgentName: resolvedAgentName || existingMatch.assignedAgentName,
+          customFields: {
+            ...(existingMatch.customFields || {}),
+            ...(formData.customFields || {}),
+          },
+        };
+      } else {
+        leadToSave = {
+          ...formData,
+          status: isIrm ? 'Interested' : (formData.status || 'New'),
+          assignedAgentId: resolvedAgentId,
+          assignedAgentName: resolvedAgentName,
+          companyId: targetCompanyId,
+          createdAt: formData.createdAt || new Date().toISOString().split('T')[0],
+        } as Lead;
+      }
+    } else {
       leadToSave = {
         ...formData,
-        id: formData.id && formData.id.startsWith('lead-') ? formData.id : `lead-${Date.now()}`,
-        status: formData.status || 'New',
+        status: isIrm ? 'Interested' : (formData.status || 'New'),
+
         assignedAgentId: resolvedAgentId,
         assignedAgentName: resolvedAgentName,
         companyId: targetCompanyId,
@@ -646,47 +1207,113 @@ export const LeadsPage: React.FC = () => {
     }
 
     try {
-      const savedLead = await apiSaveLead(leadToSave);
-      setLeads(prev => {
-        const idx = prev.findIndex(l => l.id === savedLead.id);
-        if (idx >= 0) {
-          const next = [...prev];
-          next[idx] = savedLead;
-          return next;
-        }
-        return [savedLead, ...prev];
+await apiSaveLead(leadToSave);
+
+      storageService.addAuditLog({
+        id: `aud-${Date.now()}`,
+        timestamp: 'Just now',
+        actorName: user?.name || resolvedAgentName || 'Admin',
+        actorEmail: user?.email || 'agent@nexus.io',
+        action: isUpdated ? 'LEAD_UPDATED' : 'LEAD_CREATED',
+        entityType: 'Lead',
+        entityId: leadToSave.id,
+        companyId: tenant?.id,
+        companyName: tenant?.name,
+        details: `Lead record ${leadToSave.name} (${leadToSave.phone}) saved.`,
       });
-    } catch (err) {
-      console.error('Failed to save lead', err);
-      storageService.saveLead(leadToSave);
-      setLeads(prev => [leadToSave, ...prev]);
+
+      await loadData();
+      showToast(isUpdated ? 'Lead updated successfully.' : 'New lead created successfully.');
+      setFormErrorMessage(null);
+      setIsEditDrawerOpen(false);
+    } catch (err: any) {
+      console.error('[LeadsPage] Failed to save lead:', err);
+      const errMsg = err.message || '';
+      const errList: string[] = err.errors || [];
+
+      const isDupKyc =
+        errList.includes('DUPLICATE_IN_KYC') ||
+        errMsg.includes('already exists in KYC');
+
+      const isDupFollowup =
+        !isDupKyc && (
+          errList.includes('DUPLICATE_IN_FOLLOWUP') ||
+          errMsg.includes('already exists in Follow-up')
+        );
+
+      if (isDupKyc) {
+        const cId = errList.find(e => e.startsWith('CONTACT_ID:'))?.split(':')[1] || '';
+        const cType = (errList.find(e => e.startsWith('CONTACT_TYPE:'))?.split(':')[1] as any) || 'lead';
+        const cName = errList.find(e => e.startsWith('CONTACT_NAME:'))?.split(':')[1] || formData.name;
+        const cAgent = errList.find(e => e.startsWith('ASSIGNED_AGENT:'))?.split(':')[1] || 'Agent';
+        const kId = errList.find(e => e.startsWith('KYC_ID:'))?.split(':')[1] || '';
+        const dId = errList.find(e => e.startsWith('DEAL_ID:'))?.split(':')[1] || '';
+
+        setDuplicateKycModal({
+          contactId: cId,
+          contactType: cType,
+          contactName: cName,
+          contactPhone: formData.phone,
+          contactEmail: formData.email,
+          assignedAgentName: cAgent,
+          kycId: kId,
+          dealId: dId,
+        });
+        setFollowupNotes(formData.notes ? `Follow-up from lead intake: ${formData.notes}` : `Follow-up with ${cName}`);
+        setIsSchedulingActivity(false);
+      } else if (isDupFollowup) {
+        const cId = errList.find(e => e.startsWith('CONTACT_ID:'))?.split(':')[1] || '';
+        const cType = (errList.find(e => e.startsWith('CONTACT_TYPE:'))?.split(':')[1] as any) || 'lead';
+        const cName = errList.find(e => e.startsWith('CONTACT_NAME:'))?.split(':')[1] || formData.name;
+        const cAgent = errList.find(e => e.startsWith('ASSIGNED_AGENT:'))?.split(':')[1] || 'Agent';
+
+        setDuplicateFollowupModal({
+          contactId: cId,
+          contactType: cType,
+          contactName: cName,
+          contactPhone: formData.phone,
+          contactEmail: formData.email,
+          assignedAgentName: cAgent,
+        });
+        setFollowupNotes(formData.notes ? `Follow-up from lead intake: ${formData.notes}` : `Follow-up with ${cName}`);
+        setIsSchedulingActivity(false);
+      } else if (errList.includes('DUPLICATE_CUSTOMER') || errMsg.includes('customer already exists')) {
+        const cId = errList.find(e => e.startsWith('CONTACT_ID:'))?.split(':')[1] || '';
+        const cName = errList.find(e => e.startsWith('CONTACT_NAME:'))?.split(':')[1] || formData.name;
+        const cAgent = errList.find(e => e.startsWith('ASSIGNED_AGENT:'))?.split(':')[1] || 'Agent';
+        setDuplicateCustomerModal({
+          contactId: cId,
+          contactName: cName,
+          contactPhone: formData.phone,
+          contactEmail: formData.email,
+          assignedAgentName: cAgent,
+        });
+      } else {
+        const displayErr = errMsg || 'Failed to save lead record. Please check the entered values and try again.';
+        setFormErrorMessage(displayErr);
+        showToast(`⚠️ ${displayErr}`);
+      }
     }
 
-    storageService.addAuditLog({
-      id: `aud-${Date.now()}`,
-      timestamp: 'Just now',
-      actorName: user?.name || resolvedAgentName,
-      actorEmail: user?.email || 'agent@nexus.io',
-      action: isUpdated ? 'LEAD_UPDATED' : 'LEAD_CREATED',
-      entityType: 'Lead',
-      entityId: leadToSave.id,
-      companyId: tenant?.id,
-      companyName: tenant?.name,
-      details: `Lead record ${leadToSave.name} (${leadToSave.phone}) saved.`,
-    });
-
-    setIsEditDrawerOpen(false);
-    await loadData();
   };
 
   const handleDeleteLead = async (lead: Lead) => {
     if (confirm(`Delete lead ${lead.name}?`)) {
       try {
-        await apiDeleteLead(lead.id);
-      } catch (err) {
-        console.error('Failed to delete lead', err);
-        storageService.deleteLead(lead.id);
+if (lead.id.toString().startsWith('db-')) {
+          const dbId = lead.id.toString().replace('db-', '');
+          await apiClient.delete(`/sales-executive/leads/${dbId}`);
+        } else {
+          await apiSaveLead({ ...lead, status: 'Junk' }).catch(() => { });
+        }
+      } catch (err: any) {
+        console.error('Failed to delete lead from DB', err);
       }
+      storageService.deleteLead(lead.id);
+      setLeads(prev => prev.filter(l => l.id !== lead.id));
+      window.dispatchEvent(new CustomEvent('nexus_storage_updated'));
+      showToast(`Lead ${lead.name} deleted`);
+
       loadData();
     }
   };
@@ -787,7 +1414,23 @@ export const LeadsPage: React.FC = () => {
     let updatedCount = 0;
     const companyId = tenant?.id || 't-ghl-01';
 
-    const promises = parsedRows.map(async (row, index) => {
+// Build a dedup set from current leads AND customers so we detect duplicates across both
+    const normalizePhone = (ph: string) => (ph || '').replace(/\D/g, '').slice(-10);
+    const normalizeEmail = (em: string) => (em || '').trim().toLowerCase();
+
+    const existingPhones = new Set(leads.map(l => normalizePhone(l.phone)).filter(Boolean));
+    const existingEmails = new Set(leads.map(l => normalizeEmail(l.email)).filter(Boolean));
+
+    const existingCompanyCustomers = storageService.getCustomers(tenant?.id) || [];
+    existingCompanyCustomers.forEach((c: any) => {
+      const cPh = normalizePhone(c.phone);
+      if (cPh) existingPhones.add(cPh);
+      const cEm = normalizeEmail(c.email);
+      if (cEm) existingEmails.add(cEm);
+    });
+
+    parsedRows.forEach((row, index) => {
+
       const nameVal = row[columnMap['name']];
       const phoneVal = row[columnMap['phone']];
 
@@ -822,6 +1465,19 @@ export const LeadsPage: React.FC = () => {
         return;
       }
 
+      // ── Duplicate check ──────────────────────────────────────────────────────
+      const normPhone = normalizePhone(phoneVal);
+      const normEmail = normalizeEmail(emailVal);
+      if ((normPhone && existingPhones.has(normPhone)) || (normEmail && existingEmails.has(normEmail))) {
+        console.info(`[CSV Import] Skipping duplicate: ${nameVal} — phone ${phoneVal} or email ${emailVal} already exists`);
+        skipCount++;
+        return;
+      }
+      // Register the new values so later rows in the same batch don't duplicate each other
+      if (normPhone) existingPhones.add(normPhone);
+      if (normEmail) existingEmails.add(normEmail);
+      // ─────────────────────────────────────────────────────────────────────────
+
       const newLead: Lead = {
         id: `lead-${Date.now()}-${index}`,
         companyId,
@@ -831,7 +1487,7 @@ export const LeadsPage: React.FC = () => {
         location: locationVal,
         source: sourceVal,
         priority: priorityVal as any,
-        status: 'New',
+        status: isIrm ? 'Interested' : 'New',
         assignedAgentId: user?.id || 'usr-exec',
         assignedAgentName: user?.name || 'Agent',
         createdAt: new Date().toISOString().split('T')[0],
@@ -861,6 +1517,7 @@ export const LeadsPage: React.FC = () => {
     setImportResults({ success: successCount, skipped: skipCount });
     loadData();
   };
+
 
   const resetImportState = () => {
     setImportFile(null);
@@ -905,16 +1562,41 @@ export const LeadsPage: React.FC = () => {
     render: l => <span className="lead-text-muted">{l.source}</span>,
   };
 
+  const getLeadDisplayAgent = (l: Lead) => {
+    // When IRM user is viewing IRM My Leads, display the Sales Agent who qualified/handed over the lead
+    if (isIrm) {
+      return getAssigningSalesAgentInfo(l);
+    }
+
+    const assignedName =
+      (l.assignedAgentName && l.assignedAgentName !== 'Created by IRM' ? l.assignedAgentName : null) ||
+      (l.assignedByName && l.assignedByName !== 'Created by IRM' ? l.assignedByName : null) ||
+      l.customFields?.qualifiedByAgentName ||
+      l.customFields?.assignedByAgentName ||
+      l.customFields?.agentName ||
+      (String(l.assignedAgentId) === '3' || String(l.assignedById) === '3' ? 'Naveen' : null) ||
+      (String(l.assignedAgentId) === '2' || String(l.assignedById) === '2' ? 'Vishnu' : null) ||
+      (user?.role?.code === 'sales_executive' ? user?.name : 'Naveen') ||
+      'Naveen';
+
+    return getAgentRoleInfo(assignedName, l.assignedAgentId || l.assignedById);
+  };
+
   const assignedAgentColumn: Column<Lead> = {
     key: 'assignedAgentName',
-    header: 'Assigned Agent',
+    header: isIrm ? 'Assigned Sales Agent' : 'Assigned Agent',
     sortable: true,
     width: '18%',
     render: l => {
-      const agentName = (l.assignedAgentName && l.assignedAgentName !== 'Agent')
-        ? l.assignedAgentName
-        : (l.assignedAgentId === user?.id && user?.name ? user.name : (l.assignedAgentName || '—'));
-      return <span className="lead-text-muted">{agentName}</span>;
+      const agentInfo = getLeadDisplayAgent(l);
+      return (
+        <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{agentInfo.name}</span>
+          <span className={`badge-role-inline ${agentInfo.badgeClass}`}>
+            {agentInfo.role}
+          </span>
+        </div>
+      );
     },
   };
 
@@ -973,7 +1655,44 @@ export const LeadsPage: React.FC = () => {
       sortable: true,
       render: l => (
         <div>
-          <div className="lead-name-primary">{l.name}</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span className="lead-name-primary">{l.name}</span>
+            {l.handedOverFromName && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  padding: '2px 6px',
+                  borderRadius: 6,
+                  background: 'rgba(99, 102, 241, 0.15)',
+                  color: '#818cf8',
+                  border: '1px solid rgba(99, 102, 241, 0.3)',
+                }}
+                title={`Handed over from ${l.handedOverFromName}${l.handoverPlannedEnd ? ` until ${new Date(l.handoverPlannedEnd).toLocaleDateString()}` : ''}`}
+              >
+                Covering for {l.handedOverFromName}
+              </span>
+            )}
+            {!l.handedOverFromName && isLeadReturned(l) && (
+              <span
+                style={{
+                  fontSize: 10,
+                  fontWeight: 600,
+                  padding: '2px 7px',
+                  borderRadius: 6,
+                  background: 'rgba(16, 185, 129, 0.15)',
+                  color: '#34d399',
+                  border: '1px solid rgba(16, 185, 129, 0.35)',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 3,
+                }}
+                title={`Returned from coverage by ${getReturnedCoveringName(l)}${getReturnedDate(l) ? ` on ${new Date(getReturnedDate(l)!).toLocaleDateString()}` : ''}`}
+              >
+                ↩ Returned from {getReturnedCoveringName(l)}
+              </span>
+            )}
+          </div>
           <div className="lead-name-sub">{l.phone}</div>
         </div>
       ),
@@ -1016,7 +1735,7 @@ export const LeadsPage: React.FC = () => {
             aria-label={`Call ${l.name}`}
             onClick={e => {
               e.stopPropagation();
-              initiateCall(l.name, l.phone, 'lead', l.id);
+              initiateCall(l.name, l.phone, 'lead', l.id, undefined, isIrm ? 'my_leads' : undefined);
             }}
           >
             <Phone size={12} color="#ffffff" />
@@ -1045,11 +1764,17 @@ export const LeadsPage: React.FC = () => {
       icon: <Edit size={14} className="leads-action-icon" />,
       onClick: l => handleOpenEdit(l),
     },
+    ...(isExec ? [{
+      label: 'Assign to IRM',
+      icon: <UserCheck size={14} className="leads-action-icon" />,
+      onClick: (l: Lead) => handleOpenAssignIrm(l),
+    }] : []),
     {
       label: 'Delete Lead',
       icon: <Trash2 size={14} color="#ef4444" className="leads-action-icon" />,
       danger: true,
       onClick: l => handleDeleteLead(l),
+      hidden: () => isIrm,
     },
   ];
 
@@ -1079,6 +1804,25 @@ export const LeadsPage: React.FC = () => {
         </div>
       </div>
 
+      {loadError && (
+        <div
+          className="alert-banner error"
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            padding: '12px 16px',
+            marginBottom: '16px',
+            borderRadius: '8px',
+            background: 'rgba(239, 68, 68, 0.1)',
+            border: '1px solid rgba(239, 68, 68, 0.3)',
+            color: '#ef4444',
+          }}
+        >
+          <span>{loadError}</span>
+        </div>
+      )}
+
       {/* Leads Table */}
       <DataTable
         columns={columns}
@@ -1098,6 +1842,13 @@ export const LeadsPage: React.FC = () => {
           <div className="leads-toolbar">
             <FilterBar
               filters={[
+                ...(handoverOptions.length > 0 ? [{
+                  key: 'handover',
+                  label: 'View',
+                  value: handoverFilter,
+                  onChange: setHandoverFilter,
+                  options: handoverOptions
+                }] : []),
                 ...(isGhlAdmin ? [] : [{
                   key: 'status',
                   label: 'Status',
@@ -1139,6 +1890,7 @@ export const LeadsPage: React.FC = () => {
                 setStatusFilter('All');
                 setAgentFilter('All');
                 setCapacityFilter('All');
+                setHandoverFilter('Mine');
                 setDatePreset('all');
                 setDateFrom('');
                 setDateTo('');
@@ -1202,7 +1954,7 @@ export const LeadsPage: React.FC = () => {
             <button
               className="btn btn-call"
               onClick={() => {
-                if (selectedLead) initiateCall(selectedLead.name, selectedLead.phone, 'lead', selectedLead.id);
+                if (selectedLead) initiateCall(selectedLead.name, selectedLead.phone, 'lead', selectedLead.id, undefined, isIrm ? 'my_leads' : undefined);
               }}
             >
               <Phone size={14} /> Call Lead
@@ -1211,218 +1963,193 @@ export const LeadsPage: React.FC = () => {
         }
       >
         {selectedLead && (() => {
-            const isGhlIrm = isIrm && (tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01');
+          const isGhlIrm = isIrm && (tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01');
 
-            /** ── Investment Capacity value ── */
-            const investmentCapacity =
-              selectedLead.customFields?.investmentCapacity ||
-              selectedLead.customFields?.capacityRange ||
-              selectedLead.customFields?.investmentRange ||
-              (selectedLead as any).investmentRange ||
-              null;
+          /** ── Investment Capacity value ── */
+          const investmentCapacity =
+            selectedLead.customFields?.investmentCapacity ||
+            selectedLead.customFields?.capacityRange ||
+            selectedLead.customFields?.investmentRange ||
+            (selectedLead as any).investmentRange ||
+            null;
 
-            /** ── User-facing message ── */
-            const userMessage =
-              (selectedLead as any).message ||
-              (selectedLead as any).userMessage ||
-              selectedLead.customFields?.message ||
-              selectedLead.customFields?.userMessage ||
-              selectedLead.notes ||
-              null;
-
-
+          /** ── User-facing message ── */
+          const userMessage =
+            (selectedLead as any).message ||
+            (selectedLead as any).userMessage ||
+            selectedLead.customFields?.message ||
+            selectedLead.customFields?.userMessage ||
+            selectedLead.notes ||
+            null;
 
 
-            return (
-              <>
-                {/* ── Quick Info Banner (Assigned Agent) ── */}
-                <div className="lead-quick-banner">
-                  <div className="lead-assigned-note">
-                    Assigned to <strong>{selectedLead.assignedAgentName}</strong>
-                  </div>
+
+
+          return (
+            <>
+              {/* ── Quick Info Banner (Assigned Agent) ── */}
+              <div className="lead-quick-banner">
+                <div className="lead-assigned-note" style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  {isIrm ? 'Assigned Sales Agent' : 'Assigned'} : <strong>{getLeadDisplayAgent(selectedLead).name}</strong>
+                  <span className={`badge-role-inline ${getLeadDisplayAgent(selectedLead).badgeClass}`}>
+                    {getLeadDisplayAgent(selectedLead).role}
+                  </span>
                 </div>
+              </div>
 
-                {/* ── IRM Assignment Section ── */}
-                <div className="lead-irm-card">
-                  <div className="lead-irm-card-header">
-                    <span className="lead-irm-card-title">
-                      <UserCheck size={14} color="#8b5cf6" /> IRM Relationship Manager
-                    </span>
-                    {!isIrm && (
-                      <button
-                        type="button"
-                        className="btn btn-secondary btn-sm"
-                        onClick={() => handleOpenAssignIrm(selectedLead)}
-                      >
-                        {selectedLead.assignedIrmName ? 'Reassign IRM' : '+ Assign IRM'}
-                      </button>
-                    )}
-                  </div>
-                  <div className="lead-irm-body">
-                    <div className="lead-irm-info">
-                      <div className="lead-irm-name">
-                        {selectedLead.assignedIrmName || 'Not assigned to IRM'}
-                      </div>
-                      <div className="lead-irm-sub">
-                        {selectedLead.assignedIrmAt
-                          ? `Assigned on ${new Date(selectedLead.assignedIrmAt).toLocaleDateString()}`
-                          : 'Assign to IRM to route this lead to high-net-worth portfolio management'}
-                      </div>
-                    </div>
-                    <span className={`customer-irm-status-pill ${selectedLead.assignedIrmName ? 'assigned' : 'unassigned'}`}>
-                      {selectedLead.assignedIrmName ? (
-                        <>
-                          <UserCheck size={11} /> {selectedLead.assignedIrmName}
-                        </>
-                      ) : (
-                        'Unassigned'
-                      )}
-                    </span>
-                  </div>
-                </div>
+{isLeadReturned(selectedLead) && (
+                <div style={{
+                  margin: '10px 0',
+                  padding: '10px 14px',
+                  borderRadius: 8,
+                  background: 'rgba(16, 185, 129, 0.12)',
+                  border: '1px solid rgba(16, 185, 129, 0.35)',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                }}>
+                  <span style={{ fontSize: 16 }}>↩️</span>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 700, color: '#34d399' }}>
+                      Returned from Coverage by {getReturnedCoveringName(selectedLead)}
 
-                {/* ── Contact & Profile Details ── */}
-                <div className="card lead-detail-card">
-                  <h4 className="lead-detail-title">Contact &amp; Profile Details</h4>
-                  <div className="lead-detail-grid">
-                    <div>
-                      <span className="lead-detail-label">Email:</span>
-                      <div className="lead-detail-value">{selectedLead.email || '—'}</div>
                     </div>
-                    <div>
-                      <span className="lead-detail-label">Location:</span>
-                      <div className="lead-detail-value">{selectedLead.location || '—'}</div>
-                    </div>
-                    <div>
-                      <span className="lead-detail-label">Lead Source:</span>
-                      <div className="lead-detail-value">{selectedLead.source}</div>
-                    </div>
-                    <div>
-                      <span className="lead-detail-label">Follow-up:</span>
-                      <div className="lead-detail-value lead-followup-text has-date">
-                        {selectedLead.nextFollowupDate || 'Not scheduled'}
-                      </div>
+                    <div style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 2 }}>
+                      This lead was covered while you were away and handed back to you{getReturnedDate(selectedLead) ? ` on ${new Date(getReturnedDate(selectedLead)!).toLocaleDateString()}` : ''}. Review recent call logs and updated notes below.
                     </div>
                   </div>
                 </div>
+              )}
 
-                {/* ── GHL IRM: Investment Capacity (replaces Preferred Asset Class + Investment Horizon unless confirmed by IRM) ── */}
-                {isGhlIrm ? (
-                  <div className="card lead-custom-card">
-                    <h4 className="lead-custom-title">Investment Details</h4>
-                    <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-                      <div>
-                        <span className="lead-detail-label">Investment Capacity:</span>
-                        <div
-                          className="lead-detail-value"
-                          style={{
-                            marginTop: 4,
-                            fontSize: 16,
-                            fontWeight: 700,
-                            color: '#10b981',
-                            letterSpacing: '0.01em',
-                          }}
-                        >
-                          {investmentCapacity || '—'}
-                        </div>
-                      </div>
-
-                      {/* Only show Preferred Asset Class & Horizon if set & confirmed by IRM */}
-                      {Boolean(
-                        selectedLead.customFields?.irmPreferencesConfirmed ||
-                        (() => {
-                          try {
-                            const raw = localStorage.getItem(`nexus_irm_pref_${selectedLead.id}`) ||
-                              localStorage.getItem(`nexus_irm_pref_${(selectedLead.phone || '').replace(/\D/g, '').slice(-10)}`);
-                            if (raw) return JSON.parse(raw)?.confirmed === true;
-                          } catch {}
-                          return false;
-                        })()
-                      ) && (() => {
-                        const localData = (() => {
-                          try {
-                            const raw = localStorage.getItem(`nexus_irm_pref_${selectedLead.id}`) ||
-                              localStorage.getItem(`nexus_irm_pref_${(selectedLead.phone || '').replace(/\D/g, '').slice(-10)}`);
-                            if (raw) return JSON.parse(raw);
-                          } catch {}
-                          return null;
-                        })();
-                        const assetClass = selectedLead.customFields?.preferredAssetClass || localData?.preferredAssetClass || '—';
-                        const horizon = selectedLead.customFields?.horizon || selectedLead.customFields?.investmentHorizon || localData?.horizon || '—';
-
-                        return (
-                          <div className="lead-detail-grid" style={{ marginTop: 4, paddingTop: 10, borderTop: '1px solid var(--border-base)' }}>
-                            <div>
-                              <span className="lead-detail-label">Preferred Asset Class:</span>
-                              <div className="lead-detail-value">{assetClass}</div>
-                            </div>
-                            <div>
-                              <span className="lead-detail-label">Investment Horizon:</span>
-                              <div className="lead-detail-value">{horizon}</div>
-                            </div>
-                          </div>
-                        );
-                      })()}
+              {/* ── Contact & Profile Details ── */}
+              <div className="card lead-detail-card">
+                <h4 className="lead-detail-title">Contact &amp; Profile Details</h4>
+                <div className="lead-detail-grid">
+                  <div>
+                    <span className="lead-detail-label">Email:</span>
+                    <div className="lead-detail-value">{selectedLead.email || '—'}</div>
+                  </div>
+                  <div>
+                    <span className="lead-detail-label">Location:</span>
+                    <div className="lead-detail-value">{selectedLead.location || '—'}</div>
+                  </div>
+                  <div>
+                    <span className="lead-detail-label">Lead Source:</span>
+                    <div className="lead-detail-value">{selectedLead.source}</div>
+                  </div>
+                  <div>
+                    <span className="lead-detail-label">Follow-up:</span>
+                    <div className="lead-detail-value lead-followup-text has-date">
+                      {selectedLead.nextFollowupDate || 'Not scheduled'}
                     </div>
                   </div>
-                ) : (
-                  /* Non-IRM tenants: show the generic custom attributes exactly as before */
-                  (() => {
-                    const activeDefs = storageService
-                      .getCustomFieldDefinitions(tenant?.id)
-                      .filter(d => d.active !== false && (d.module === 'leads' || !d.module))
-                      .filter(d => !(isExec && (d.fieldKey === 'assetClass' || d.fieldKey === 'preferredAssetClass')))
-                      .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
-                    const rows = activeDefs
-                      .map(def => {
-                        const key = def.fieldKey || def.id;
-                        const val = selectedLead.customFields?.[key];
-                        if (val === undefined || val === null || val === '') return null;
-                        return { id: def.id, label: def.label || key.replace(/([A-Z])/g, ' $1'), value: String(val) };
-                      })
-                      .filter(Boolean);
-                    if (rows.length === 0) return null;
-                    return (
-                      <div className="card lead-custom-card">
-                        <h4 className="lead-custom-title">{tenant?.name} Custom Attributes</h4>
-                        <div className="lead-detail-grid">
-                          {rows.map(item => (
-                            <div key={item!.id}>
-                              <span className="lead-custom-label">{item!.label}:</span>
-                              <div className="lead-custom-value">{item!.value}</div>
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    );
-                  })()
-                )}
+                </div>
+              </div>
 
-                {/* ── Message from User ── */}
+              {/* ── GHL IRM: Investment Capacity (replaces Preferred Asset Class + Investment Horizon unless confirmed by IRM) ── */}
+              {isGhlIrm ? (
                 <div className="card lead-custom-card">
-                  <h4 className="lead-custom-title">Message from User</h4>
-                  <div className="lead-user-message-box">
-                    {userMessage ? (
-                      <div className="lead-user-message-text">{userMessage}</div>
-                    ) : (
-                      <div className="lead-user-message-empty">No message available</div>
-                    )}
+                  <h4 className="lead-custom-title">Investment Details</h4>
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                    <div>
+                      <span className="lead-detail-label">Investment Capacity:</span>
+                      <div
+                        className="lead-detail-value"
+                        style={{
+                          marginTop: 4,
+                          fontSize: 16,
+                          fontWeight: 700,
+                          color: '#10b981',
+                          letterSpacing: '0.01em',
+                        }}
+                      >
+                        {investmentCapacity || '—'}
+                      </div>
+                    </div>
+
+                    {/* Only show Preferred Asset Class & Horizon if set & confirmed by IRM */}
+                    {Boolean(
+                      selectedLead.customFields?.irmPreferencesConfirmed &&
+                      selectedLead.customFields?.preferredAssetClass
+                    ) ? (
+                      <div className="lead-detail-grid" style={{ marginTop: 4, paddingTop: 10, borderTop: '1px solid var(--border-base)' }}>
+                        <div>
+                          <span className="lead-detail-label">Preferred Asset Class:</span>
+                          <div className="lead-detail-value">{selectedLead.customFields?.preferredAssetClass}</div>
+                        </div>
+                        <div>
+                          <span className="lead-detail-label">Investment Horizon:</span>
+                          <div className="lead-detail-value">{selectedLead.customFields?.horizon || selectedLead.customFields?.investmentHorizon || '—'}</div>
+                        </div>
+                      </div>
+                    ) : (() => {
+                      try {
+                        localStorage.removeItem(`nexus_irm_pref_${selectedLead.id}`);
+                        const fDigits = (selectedLead.phone || '').replace(/\D/g, '').slice(-10);
+                        if (fDigits) localStorage.removeItem(`nexus_irm_pref_${fDigits}`);
+                      } catch { }
+                      return null;
+                    })()}
                   </div>
                 </div>
+              ) : (
+                /* Non-IRM tenants: show the generic custom attributes exactly as before */
+                (() => {
+                  const activeDefs = storageService
+                    .getCustomFieldDefinitions(tenant?.id)
+                    .filter(d => d.active !== false && (d.module === 'leads' || !d.module))
+                    .filter(d => !(isExec && (d.fieldKey === 'assetClass' || d.fieldKey === 'preferredAssetClass')))
+                    .sort((a, b) => (a.displayOrder ?? 0) - (b.displayOrder ?? 0));
+                  const rows = activeDefs
+                    .map(def => {
+                      const key = def.fieldKey || def.id;
+                      const val = selectedLead.customFields?.[key];
+                      if (val === undefined || val === null || val === '') return null;
+                      return { id: def.id, label: def.label || key.replace(/([A-Z])/g, ' $1'), value: String(val) };
+                    })
+                    .filter(Boolean);
+                  if (rows.length === 0) return null;
+                  return (
+                    <div className="card lead-custom-card">
+                      <h4 className="lead-custom-title">{tenant?.name} Custom Attributes</h4>
+                      <div className="lead-detail-grid">
+                        {rows.map(item => (
+                          <div key={item!.id}>
+                            <span className="lead-custom-label">{item!.label}:</span>
+                            <div className="lead-custom-value">{item!.value}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()
+              )}
 
-                <LeadDetailDrawerContent
-                  contactName={selectedLead.name}
-                  contactPhone={selectedLead.phone}
-                  contactId={selectedLead.id}
-                  contactType="lead"
-                  tenantId={tenant?.id}
-                  tenantName={tenant?.name}
-                  onCall={() => initiateCall(selectedLead.name, selectedLead.phone, 'lead', selectedLead.id)}
-                  sectionsOnly={['callRecordings']}
-                />
-              </>
-            );
-          })()}
+              {/* ── Message from User ── */}
+              <div className="card lead-custom-card">
+                <h4 className="lead-custom-title">Message from User</h4>
+                <div className="lead-user-message-box">
+                  {userMessage ? (
+                    <div className="lead-user-message-text">{userMessage}</div>
+                  ) : (
+                    <div className="lead-user-message-empty">No message available</div>
+                  )}
+                </div>
+              </div>
+
+              <LeadDetailDrawerContent
+                contactName={selectedLead.name}
+                contactPhone={selectedLead.phone}
+                contactId={selectedLead.id}
+                contactType="lead"
+                tenantId={tenant?.id}
+                tenantName={tenant?.name}
+                onCall={() => initiateCall(selectedLead.name, selectedLead.phone, 'lead', selectedLead.id, undefined, isIrm ? 'my_leads' : undefined)}
+                sectionsOnly={['callRecordings']}
+              />
+            </>
+          );
+        })()}
       </Drawer>
 
       {/* Create / Edit Drawer */}
@@ -1444,7 +2171,7 @@ export const LeadsPage: React.FC = () => {
               name="fld-fullname-nexus"
               value={formData.name || ''}
               onChange={e => setFormData({ ...formData, name: e.target.value })}
-              placeholder="e.g. Ramesh Chandra"
+              placeholder="e.g. Agent One"
             />
           </div>
 
@@ -1471,7 +2198,7 @@ export const LeadsPage: React.FC = () => {
                 name="fld-email-nexus"
                 value={formData.email || ''}
                 onChange={e => setFormData({ ...formData, email: e.target.value })}
-                placeholder="ramesh@example.com"
+                placeholder="agent1@example.com"
               />
             </div>
           </div>
@@ -1505,84 +2232,32 @@ export const LeadsPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="lead-form-grid-2">
+{!isLeadScopedUser && (
             <div className="form-group">
-              <label className="form-label">Assigned Agent</label>
+              <label className="form-label">Assigned Sales Agent</label>
               <select
                 className="form-select"
-                value={formData.assignedAgentId || (isLeadScopedUser ? (user?.id || '') : '')}
-                disabled={isLeadScopedUser}
+                value={formData.assignedAgentId || ''}
                 onChange={e => {
-                  const selectedId = e.target.value;
-                  const agentObj = availableAgents.find(a => String(a.id) === String(selectedId));
+                  const val = e.target.value;
+                  const agentObj = agents.find(a => String(a.id) === String(val) || String(a.dbId) === String(val));
                   setFormData(prev => ({
                     ...prev,
-                    assignedAgentId: selectedId,
-                    assignedAgentName: agentObj?.name || (user?.name ?? 'Agent'),
+                    assignedAgentId: val || undefined,
+                    assignedAgentName: agentObj ? agentObj.name : undefined,
                   }));
                 }}
               >
-                {isLeadScopedUser ? (
-                  <option value={user?.id || ''}>{user?.name || 'Current User'}</option>
-                ) : (
-                  <>
-                    <option value="">-- Unassigned --</option>
-                    {availableAgents.map(ag => (
-                      <option key={ag.id} value={ag.id}>
-                        {ag.name}
-                      </option>
-                    ))}
-                  </>
-                )}
+                <option value="">Unassigned (Queue for manual / auto distribution)</option>
+                {agents.map(a => (
+                  <option key={a.id} value={a.id}>
+                    {a.name}
+                  </option>
+                ))}
               </select>
             </div>
-            <div className="form-group">
-              <label className="form-label">Lead Status</label>
-              <select
-                className="form-select"
-                value={formData.status || 'New'}
-                onChange={e => setFormData({ ...formData, status: e.target.value as any })}
-              >
-                <option value="New">New</option>
-                <option value="Contacted">Contacted</option>
-                <option value="Callback">Callback</option>
-                <option value="Interested">Interested</option>
-                <option value="Follow-up Required">Follow-up Required</option>
-              </select>
-            </div>
-            {!isIrm && (
-              <div className="form-group" style={{ gridColumn: 'span 2' }}>
-                <label className="form-label">Assign to IRM (Investment Relationship Manager)</label>
-                <select
-                  className="form-select"
-                  value={formData.assignedIrmId || ''}
-                  onChange={e => {
-                    const selId = e.target.value;
-                    const irm = companyIrms.find(i => String(i.id) === String(selId));
-                    setFormData(prev => ({
-                      ...prev,
-                      assignedIrmId: selId || undefined,
-                      assignedIrmName: irm?.name || undefined,
-                      assignedIrmAt: selId ? (prev.assignedIrmAt || new Date().toISOString()) : undefined,
-                      customFields: {
-                        ...prev.customFields,
-                        assignedIrmId: selId || undefined,
-                        assignedIrmName: irm?.name || undefined,
-                        assignedIrmAt: selId ? (prev.assignedIrmAt || new Date().toISOString()) : undefined,
-                      }
-                    }));
-                  }}
-                >
-                  <option value="">— Not Assigned to IRM —</option>
-                  {companyIrms.map(irm => (
-                    <option key={irm.id} value={irm.id}>
-                      {irm.name} ({irm.email})
-                    </option>
-                  ))}
-                </select>
-              </div>
-            )}
-          </div>
+          )}
+
 
           {/* DYNAMIC TENANT CUSTOM FIELDS (Blueprint Section 7.3) */}
           <div className="lead-custom-schema-box">
@@ -1638,6 +2313,7 @@ export const LeadsPage: React.FC = () => {
                       value={currentAssetClass}
                       onChange={e => handleAssetClassChange(e.target.value)}
                     >
+                      <option value="">--</option>
                       <option value="AIF">AIF</option>
                       <option value="CO-AIF">CO-AIF</option>
                     </select>
@@ -1677,6 +2353,22 @@ export const LeadsPage: React.FC = () => {
               placeholder="Client background, key objections, time horizon..."
             />
           </div>
+
+          {formErrorMessage && (
+            <div style={{
+              margin: '14px 0',
+              padding: '10px 14px',
+              borderRadius: 6,
+              backgroundColor: 'rgba(239,68,68,0.08)',
+              border: '1px solid rgba(239,68,68,0.25)',
+              color: '#dc2626',
+              fontSize: 13,
+              lineHeight: 1.5,
+              fontWeight: 500
+            }}>
+              ⚠️ {formErrorMessage}
+            </div>
+          )}
 
           <div className="lead-form-footer-actions">
             <button
@@ -1999,7 +2691,8 @@ export const LeadsPage: React.FC = () => {
               <>
                 <p className="assign-modal-sub">Select an agent to assign the {selectedLeadIds.size} selected lead{selectedLeadIds.size !== 1 ? 's' : ''} to:</p>
                 <div className="assign-agent-list">
-                  {availableAgents.map(agent => (
+{agents.map(agent => (
+
                     <label key={agent.id} className={`assign-agent-row${assignSelectedAgent?.id === agent.id ? ' selected' : ''}`}>
                       <input
                         type="radio"
@@ -2052,7 +2745,8 @@ export const LeadsPage: React.FC = () => {
               <div>
                 <h3 className="assign-modal-title">✦ AI Suggestion — Round Robin</h3>
                 <p className="assign-modal-sub" style={{ margin: '2px 0 0' }}>
-                  {Object.values(aiDistribution).flat().length} leads distributed across {availableAgents.length} agents
+{Object.values(aiDistribution).flat().length} leads distributed across {agents.length} agents
+
                 </p>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2067,7 +2761,8 @@ export const LeadsPage: React.FC = () => {
             </div>
 
             <div className="ai-dist-grid">
-              {availableAgents.map((agent, agentIdx) => {
+{agents.map((agent, agentIdx) => {
+
                 const agentLeads = aiDistribution[agent.id] || [];
                 return (
                   <div key={agent.id} className="ai-dist-col">
@@ -2096,7 +2791,8 @@ export const LeadsPage: React.FC = () => {
                                 <button
                                   type="button"
                                   className="ai-move-btn"
-                                  disabled={agentIdx === availableAgents.length - 1}
+disabled={agentIdx === agents.length - 1}
+
                                   onClick={() => handleAiMoveLead(lead.id, agent.id, 'right')}
                                   title="Move right"
                                 >▶</button>
@@ -2120,6 +2816,560 @@ export const LeadsPage: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* ── Duplicate in KYC Resolution Modal ────────────────────────────── */}
+      {duplicateKycModal && (
+        <Modal
+          isOpen={!!duplicateKycModal}
+          onClose={() => {
+            setDuplicateKycModal(null);
+            setIsSchedulingActivity(false);
+          }}
+          title="Contact Already in KYC"
+          subtitle="Duplicate Contact Prevention"
+          maxWidth={540}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{
+              display: 'flex',
+              gap: 12,
+              alignItems: 'flex-start',
+              padding: 14,
+              borderRadius: 'var(--radius-md)',
+              background: 'rgba(16, 185, 129, 0.08)',
+              border: '1px solid rgba(16, 185, 129, 0.3)',
+              color: 'var(--text-primary)',
+            }}>
+              <CheckCircle2 size={24} style={{ color: '#10b981', flexShrink: 0, marginTop: 2 }} />
+              <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+                <strong>Customer "{duplicateKycModal.contactName}"</strong> already exists in KYC Onboarding (assigned to <strong>{duplicateKycModal.assignedAgentName}</strong>).
+                <div style={{ marginTop: 4, color: 'var(--text-secondary)' }}>
+                  A record matching phone <code>{duplicateKycModal.contactPhone}</code> is currently active in the KYC verification pipeline. To prevent duplicate investor profiles, this record was not overwritten.
+                </div>
+              </div>
+            </div>
+
+            {!isSchedulingActivity ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 4 }}>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
+                  What would you like to do with this contact?
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ justifyContent: 'flex-start', padding: '12px 16px' }}
+                    onClick={() => {
+                      setDuplicateKycModal(null);
+                      setIsEditDrawerOpen(false);
+                      handleNavigate('kyc');
+                    }}
+                  >
+                    <ArrowRight size={16} />
+                    <span>Open Contact in KYC</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ justifyContent: 'flex-start', padding: '12px 16px' }}
+                    onClick={() => setIsSchedulingActivity(true)}
+                  >
+                    <CalendarCheck size={16} style={{ color: 'var(--primary-color)' }} />
+                    <span>Schedule Additional Follow-up Task for This Contact</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ justifyContent: 'center' }}
+                    onClick={() => {
+                      setDuplicateKycModal(null);
+                      setIsSchedulingActivity(false);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 4 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Schedule Follow-up Activity for "{duplicateKycModal.contactName}"
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Follow-up Date & Time *</label>
+                  <input
+                    type="datetime-local"
+                    className="form-input"
+                    value={followupDate}
+                    onChange={e => setFollowupDate(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Priority</label>
+                  <select
+                    className="form-select"
+                    value={followupPriority}
+                    onChange={e => setFollowupPriority(e.target.value)}
+                  >
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                    <option value="Urgent">Urgent</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Task Notes / Agenda</label>
+                  <textarea
+                    className="form-textarea"
+                    rows={3}
+                    value={followupNotes}
+                    onChange={e => setFollowupNotes(e.target.value)}
+                    placeholder="Enter details for this follow-up activity..."
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setIsSchedulingActivity(false)}
+                    disabled={isSavingFollowupActivity}
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={isSavingFollowupActivity}
+                    onClick={() =>
+                      handleScheduleActivityForExisting(
+                        duplicateKycModal.contactId,
+                        duplicateKycModal.contactType === 'customer' ? 'customer' : 'lead',
+                        duplicateKycModal.contactName,
+                        duplicateKycModal.contactPhone
+                      )
+                    }
+                  >
+                    {isSavingFollowupActivity ? 'Scheduling...' : 'Save Follow-up Activity'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Duplicate in Follow-up Resolution Modal ──────────────────────── */}
+      {duplicateFollowupModal && (
+        <Modal
+          isOpen={!!duplicateFollowupModal}
+          onClose={() => {
+            setDuplicateFollowupModal(null);
+            setIsSchedulingActivity(false);
+          }}
+          title="Contact Already in Follow-up"
+          subtitle="Duplicate Lead Prevention"
+          maxWidth={540}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{
+              display: 'flex',
+              gap: 12,
+              alignItems: 'flex-start',
+              padding: 14,
+              borderRadius: 'var(--radius-md)',
+              background: 'rgba(245, 158, 11, 0.08)',
+              border: '1px solid rgba(245, 158, 11, 0.25)',
+              color: 'var(--text-primary)',
+            }}>
+              <AlertTriangle size={24} style={{ color: '#d97706', flexShrink: 0, marginTop: 2 }} />
+              <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+                <strong>Customer "{duplicateFollowupModal.contactName}"</strong> already exists in Follow-up (assigned to <strong>{duplicateFollowupModal.assignedAgentName}</strong>).
+                <div style={{ marginTop: 4, color: 'var(--text-secondary)' }}>
+                  A record matching phone <code>{duplicateFollowupModal.contactPhone}</code> is currently in the active follow-up pipeline. To prevent duplicates, this record was not overwritten.
+                </div>
+              </div>
+            </div>
+
+            {!isSchedulingActivity ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 4 }}>
+                <p style={{ fontSize: 13, color: 'var(--text-secondary)', margin: 0 }}>
+                  What would you like to do with this contact?
+                </p>
+
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ justifyContent: 'flex-start', padding: '12px 16px' }}
+                    onClick={() => {
+                      setDuplicateFollowupModal(null);
+                      setIsEditDrawerOpen(false);
+                      handleNavigate('followups');
+                    }}
+                  >
+                    <ArrowRight size={16} />
+                    <span>Open Contact in Follow-ups</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ justifyContent: 'flex-start', padding: '12px 16px' }}
+                    onClick={() => setIsSchedulingActivity(true)}
+                  >
+                    <CalendarCheck size={16} style={{ color: 'var(--primary-color)' }} />
+                    <span>Schedule Additional Follow-up Task for This Contact</span>
+                  </button>
+
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ justifyContent: 'center' }}
+                    onClick={() => {
+                      setDuplicateFollowupModal(null);
+                      setIsSchedulingActivity(false);
+                    }}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 12, marginTop: 4 }}>
+                <div style={{ fontSize: 13, fontWeight: 600, color: 'var(--text-primary)' }}>
+                  Schedule Follow-up Activity for "{duplicateFollowupModal.contactName}"
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Follow-up Date & Time *</label>
+                  <input
+                    type="datetime-local"
+                    className="form-input"
+                    value={followupDate}
+                    onChange={e => setFollowupDate(e.target.value)}
+                    required
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Priority</label>
+                  <select
+                    className="form-select"
+                    value={followupPriority}
+                    onChange={e => setFollowupPriority(e.target.value)}
+                  >
+                    <option value="Low">Low</option>
+                    <option value="Medium">Medium</option>
+                    <option value="High">High</option>
+                    <option value="Urgent">Urgent</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Task Notes / Agenda</label>
+                  <textarea
+                    className="form-textarea"
+                    rows={3}
+                    value={followupNotes}
+                    onChange={e => setFollowupNotes(e.target.value)}
+                    placeholder="Enter details for this follow-up activity..."
+                  />
+                </div>
+
+                <div style={{ display: 'flex', gap: 10, justifyContent: 'flex-end', marginTop: 8 }}>
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    onClick={() => setIsSchedulingActivity(false)}
+                    disabled={isSavingFollowupActivity}
+                  >
+                    Back
+                  </button>
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    disabled={isSavingFollowupActivity}
+                    onClick={() =>
+                      handleScheduleActivityForExisting(
+                        duplicateFollowupModal.contactId,
+                        duplicateFollowupModal.contactType,
+                        duplicateFollowupModal.contactName,
+                        duplicateFollowupModal.contactPhone
+                      )
+                    }
+                  >
+                    {isSavingFollowupActivity ? 'Scheduling...' : 'Save Follow-up Activity'}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Duplicate Customer Resolution Modal ─────────────────────────── */}
+      {duplicateCustomerModal && (
+        <Modal
+          isOpen={!!duplicateCustomerModal}
+          onClose={() => setDuplicateCustomerModal(null)}
+          title="Customer Already Exists"
+          subtitle="Duplicate Customer Prevention"
+          maxWidth={500}
+        >
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <div style={{
+              display: 'flex',
+              gap: 12,
+              alignItems: 'flex-start',
+              padding: 14,
+              borderRadius: 'var(--radius-md)',
+              background: 'rgba(59, 130, 246, 0.08)',
+              border: '1px solid rgba(59, 130, 246, 0.25)',
+              color: 'var(--text-primary)',
+            }}>
+              <UserCheck size={24} style={{ color: '#2563eb', flexShrink: 0, marginTop: 2 }} />
+              <div style={{ fontSize: 13, lineHeight: 1.5 }}>
+                <strong>Customer "{duplicateCustomerModal.contactName}"</strong> already exists in the system (assigned to <strong>{duplicateCustomerModal.assignedAgentName}</strong>).
+                <div style={{ marginTop: 4, color: 'var(--text-secondary)' }}>
+                  A customer profile already exists for this phone/email. Instead of creating a duplicate lead, you can open their existing profile or schedule a follow-up activity.
+                </div>
+              </div>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                style={{ justifyContent: 'flex-start', padding: '12px 16px' }}
+                onClick={() => {
+                  setDuplicateCustomerModal(null);
+                  setIsEditDrawerOpen(false);
+                  handleNavigate('customers');
+                }}
+              >
+                <ArrowRight size={16} />
+                <span>Open in Customer 360</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ justifyContent: 'flex-start', padding: '12px 16px' }}
+                onClick={() => {
+                  const cust = duplicateCustomerModal;
+                  setDuplicateCustomerModal(null);
+                  setDuplicateFollowupModal({
+                    contactId: cust.contactId,
+                    contactType: 'customer',
+                    contactName: cust.contactName,
+                    contactPhone: cust.contactPhone,
+                    contactEmail: cust.contactEmail,
+                    assignedAgentName: cust.assignedAgentName,
+                  });
+                  setIsSchedulingActivity(true);
+                }}
+              >
+                <CalendarCheck size={16} style={{ color: 'var(--primary-color)' }} />
+                <span>Schedule Follow-up Activity for This Customer</span>
+              </button>
+
+              <button
+                type="button"
+                className="btn btn-secondary"
+                style={{ justifyContent: 'center' }}
+                onClick={() => setDuplicateCustomerModal(null)}
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </Modal>
+      )}
+
+      {/* ── Time Slot Conflict Alert Popup Modal ── */}
+      <Modal
+        isOpen={!!slotConflictModal}
+        onClose={() => setSlotConflictModal(null)}
+        title="Time Slot Already Booked"
+        subtitle="Schedule Spacing & Conflict Warning"
+        maxWidth={490}
+        footer={
+          <div style={{ display: 'flex', gap: 10, width: '100%' }}>
+            <button
+              type="button"
+              className="btn btn-secondary"
+              onClick={() => setSlotConflictModal(null)}
+              style={{ flex: 1 }}
+            >
+              Choose Another Time
+            </button>
+            {slotConflictModal?.suggestedDateIso && (
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={() => {
+                  if (slotConflictModal.suggestedDateIso) {
+                    setFollowupDate(slotConflictModal.suggestedDateIso.slice(0, 16));
+                  }
+                  setSlotConflictModal(null);
+                }}
+                style={{ flex: 1.2 }}
+              >
+                Use Suggested (+20m)
+              </button>
+            )}
+          </div>
+        }
+      >
+        <div style={{ textAlign: 'center', padding: '10px 4px' }}>
+          <div style={{
+            width: 52,
+            height: 52,
+            borderRadius: '50%',
+            background: 'rgba(239, 68, 68, 0.1)',
+            color: '#dc2626',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: 26,
+            margin: '0 auto 14px'
+          }}>
+            <AlertTriangle size={28} color="#dc2626" />
+          </div>
+          <h4 style={{ margin: '0 0 8px', fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-primary, #0f172a)' }}>
+            This Time Slot is Already Booked
+          </h4>
+          <p style={{ margin: '0 0 14px', color: 'var(--text-secondary, #64748b)', fontSize: '0.9rem', lineHeight: 1.5 }}>
+            You already have a scheduled follow-up near this time:
+          </p>
+          <div style={{
+            background: 'var(--bg-surface-hover, #f8fafc)',
+            border: '1px solid var(--border-base, #e2e8f0)',
+            borderRadius: 8,
+            padding: '12px 16px',
+            marginBottom: 14,
+            textAlign: 'left'
+          }}>
+            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
+              <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary, #64748b)' }}>Contact:</span>
+              <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary, #1e293b)' }}>
+                {slotConflictModal?.contactName}
+              </span>
+            </div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+              <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary, #64748b)' }}>Scheduled Time:</span>
+              <span style={{ fontSize: '0.88rem', fontWeight: 600, color: '#ef4444' }}>
+                {slotConflictModal?.conflictTime}
+              </span>
+            </div>
+          </div>
+
+          {/* Meaningful scheduling advice box */}
+          <div style={{
+            background: 'rgba(59, 130, 246, 0.08)',
+            border: '1px solid rgba(59, 130, 246, 0.25)',
+            borderRadius: 8,
+            padding: '12px 14px',
+            marginBottom: 14,
+            textAlign: 'left'
+          }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, color: '#2563eb', fontWeight: 600, fontSize: '0.85rem' }}>
+              <Clock size={15} />
+              Scheduling Buffer Advice
+            </div>
+            <p style={{ margin: 0, fontSize: '0.83rem', color: 'var(--text-primary, #334155)', lineHeight: 1.5 }}>
+              To avoid overlapping appointments and ensure sufficient time for each call, <strong>please schedule your follow-up at least 15–20 minutes after your existing appointment.</strong>
+            </p>
+          </div>
+
+          {slotConflictModal?.suggestedTime && (
+            <div style={{
+              background: 'rgba(16, 185, 129, 0.08)',
+              border: '1px solid rgba(16, 185, 129, 0.25)',
+              borderRadius: 8,
+              padding: '10px 14px',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              marginBottom: 4
+            }}>
+              <span style={{ fontSize: '0.82rem', color: '#059669', fontWeight: 600 }}>Suggested Next Slot:</span>
+              <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#059669' }}>
+                {slotConflictModal.suggestedTime}
+              </span>
+            </div>
+          )}
+        </div>
+      </Modal>
+
+      {/* ── Assign IRM Modal ── */}
+      <Modal
+        isOpen={isAssignIrmModalOpen && !!leadToAssignIrm}
+        onClose={() => setIsAssignIrmModalOpen(false)}
+        title="Assign Lead to IRM"
+        subtitle={`Assigning ${leadToAssignIrm?.name} to an Investment Relationship Manager`}
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setIsAssignIrmModalOpen(false)}>
+              Cancel
+            </button>
+            <button
+              className="btn btn-primary"
+              disabled={!selectedIrmForLead}
+              onClick={handleConfirmAssignIrm}
+            >
+              Confirm IRM Assignment
+            </button>
+          </>
+        }
+      >
+        <div className="lead-modal-content">
+          <p className="lead-irm-modal-desc">
+            Select an active IRM from the company database. Once assigned, this lead will be routed directly to the IRM&apos;s portal and consultations dashboard.
+          </p>
+
+          {companyIrms.length === 0 ? (
+            <div className="lead-irm-empty" style={{ padding: '20px', textAlign: 'center', color: 'var(--text-muted)' }}>
+              No active IRMs found for this organization.
+            </div>
+          ) : (
+            <div className="lead-irm-agent-list">
+              {companyIrms.map(irm => {
+                const isSelected = String(selectedIrmForLead) === String(irm.id);
+                return (
+                  <div
+                    key={irm.id}
+                    className={`lead-irm-agent-row ${isSelected ? 'selected' : ''}`}
+                    onClick={() => setSelectedIrmForLead(String(irm.id))}
+                  >
+                    <input
+                      type="radio"
+                      name="selectedLeadIrm"
+                      checked={isSelected}
+                      onChange={() => setSelectedIrmForLead(String(irm.id))}
+                    />
+                    <div className="lead-irm-agent-avatar">
+                      {irm.name[0]?.toUpperCase()}
+                    </div>
+                    <div className="lead-irm-agent-details">
+                      <div className="lead-irm-agent-name">{irm.name}</div>
+                      <div className="lead-irm-agent-email">{irm.email}</div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </Modal>
 
       {/* ── Toast notification ───────────────────────────────────────────── */}
       {toast && (

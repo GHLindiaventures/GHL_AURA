@@ -319,7 +319,7 @@ public class PlatformCallConfigService : IPlatformCallConfigService
             Success = true,
             LatencyMs = 24,
             Message = "SIP Gateway handshake verified. Carrier trunk active across Mumbai AP-South with 0.0% packet drop.",
-            TestedAt = DateTime.UtcNow.ToString("o")
+            TestedAt = DateTime.UtcNow
         };
 
         return ApiResponse<CarrierTestResultDto>.SuccessResult(result, "SIP Gateway handshake verified.");

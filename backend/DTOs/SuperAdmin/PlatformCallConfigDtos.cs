@@ -74,5 +74,5 @@ public class CarrierTestResultDto
     public bool Success { get; set; }
     public int LatencyMs { get; set; }
     public string Message { get; set; } = string.Empty;
-    public string TestedAt { get; set; } = string.Empty;
+    public DateTime TestedAt { get; set; } = DateTime.UtcNow;
 }
