@@ -684,7 +684,7 @@ export class SuperAdminService {
           bc.postMessage({ type: 'ACCOUNT_SUSPENDED', ...suspensionEvent });
           bc.close();
         }
-      } catch {}
+      } catch { }
     }
     notifyAdminStorageUpdated();
     return res.data;
@@ -703,8 +703,10 @@ export class SuperAdminService {
     return true;
   }
 
-  async resetUserPasswordApi(id: string): Promise<{ success: boolean; tempPassword?: string }> {
-    const res = await apiClient.post<ApiResponse<{ tempPassword: string }>>(`/super-admin/users/${id}/reset-password`);
+  async resetUserPasswordApi(id: string, newPassword?: string): Promise<{ success: boolean; tempPassword?: string }> {
+    const res = await apiClient.post<ApiResponse<{ tempPassword: string }>>(`/super-admin/users/${id}/reset-password`, {
+      newPassword: newPassword || undefined,
+    });
     if (!res || !res.data) {
       throw new Error(res?.message || 'Failed to generate temporary credentials.');
     }
@@ -992,8 +994,8 @@ export class SuperAdminService {
     const roles = this.getRoles();
     const users = this.getUsers();
     return Object.values(roles).map(r => {
-      const userCount = r.usersCount !== undefined 
-        ? r.usersCount 
+      const userCount = r.usersCount !== undefined
+        ? r.usersCount
         : users.filter(u => u.role?.code === r.code || u.role?.id === r.id).length;
       return {
         ...r,
@@ -1529,7 +1531,7 @@ export class SuperAdminService {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.CARRIER_SETTINGS);
       if (raw) return JSON.parse(raw);
-    } catch {}
+    } catch { }
     return {
       primaryCarrier: 'Twilio Elastic SIP Trunking',
       secondaryCarrier: 'Tata Communications SIP',
@@ -1833,7 +1835,7 @@ export class SuperAdminService {
     try {
       const raw = localStorage.getItem('nexus_system_diagnostics');
       if (raw) return JSON.parse(raw);
-    } catch {}
+    } catch { }
 
     return {
       apiStatus: 'Healthy',
@@ -1928,7 +1930,7 @@ export class SuperAdminService {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.ANNOUNCEMENTS);
       if (raw) return JSON.parse(raw);
-    } catch {}
+    } catch { }
     return [];
   }
 
@@ -2096,7 +2098,7 @@ export class SuperAdminService {
             parsed.callsConnected = res.data.callsConnected;
             localStorage.setItem(STORAGE_KEYS.METRICS, JSON.stringify(parsed));
           }
-        } catch {}
+        } catch { }
         return res.data;
       }
     } catch (err) {
@@ -2114,7 +2116,7 @@ export class SuperAdminService {
           return parsed;
         }
       }
-    } catch {}
+    } catch { }
 
     const tenants = this.getTenants();
     const users = this.getUsers();
