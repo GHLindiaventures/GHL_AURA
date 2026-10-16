@@ -95,7 +95,7 @@ export const PlatformCallConfigPage: React.FC = () => {
   const [isSavingVocab, setIsSavingVocab] = useState(false);
 
   // Speech Simulation State
-  const [simTranscript, setSimTranscript] = useState('The buyer wants to acquire 4 guntha in white feild and check if katha is e katha and bda approved.');
+  const [simTranscript, setSimTranscript] = useState('');
   const [simResult, setSimResult] = useState<SimulateSpeechResult | null>(null);
   const [isSimulatingSpeech, setIsSimulatingSpeech] = useState(false);
 
@@ -159,7 +159,7 @@ export const PlatformCallConfigPage: React.FC = () => {
   const handleOpenAddDid = () => {
     setEditingDidId(null);
     setDidPhone('');
-    setDidTenantId(tenants[0]?.id ? String(tenants[0].id) : '');
+    setDidTenantId('');
     setDidRoutingStrategy('Round-Robin');
     setDidQueueName('');
     setDidEnableRecording(true);
@@ -641,6 +641,7 @@ export const PlatformCallConfigPage: React.FC = () => {
                   name="primaryCarrier"
                   type="text"
                   className="form-control"
+                  placeholder="e.g. Twilio Elastic SIP Trunking"
                   value={carrierSettings.primaryCarrier}
                   onChange={e =>
                     setCarrierSettings({ ...carrierSettings, primaryCarrier: e.target.value })
@@ -655,6 +656,7 @@ export const PlatformCallConfigPage: React.FC = () => {
                   name="secondaryCarrier"
                   type="text"
                   className="form-control"
+                  placeholder="e.g. Tata Communications / Exotel SIP"
                   value={carrierSettings.secondaryCarrier}
                   onChange={e =>
                     setCarrierSettings({ ...carrierSettings, secondaryCarrier: e.target.value })
@@ -669,6 +671,7 @@ export const PlatformCallConfigPage: React.FC = () => {
                   name="sipRealm"
                   type="text"
                   className="form-control font-mono"
+                  placeholder="e.g. sip.yourdomain.com:5060"
                   value={carrierSettings.sipRealm}
                   onChange={e =>
                     setCarrierSettings({ ...carrierSettings, sipRealm: e.target.value })
@@ -683,6 +686,7 @@ export const PlatformCallConfigPage: React.FC = () => {
                   name="webrtcGatewayUrl"
                   type="text"
                   className="form-control font-mono"
+                  placeholder="e.g. wss://webrtc.yourdomain.com:8443/ws"
                   value={carrierSettings.webrtcGatewayUrl}
                   onChange={e =>
                     setCarrierSettings({ ...carrierSettings, webrtcGatewayUrl: e.target.value })
@@ -697,7 +701,8 @@ export const PlatformCallConfigPage: React.FC = () => {
                   name="recordingRetentionDays"
                   type="number"
                   className="form-control"
-                  value={carrierSettings.recordingRetentionDays}
+                  placeholder="90"
+                  value={carrierSettings.recordingRetentionDays || ''}
                   onChange={e =>
                     setCarrierSettings({
                       ...carrierSettings,
@@ -714,6 +719,7 @@ export const PlatformCallConfigPage: React.FC = () => {
                   name="whisperAiModel"
                   type="text"
                   className="form-control"
+                  placeholder="e.g. OpenAI Whisper-Large-v3"
                   value={carrierSettings.whisperAiModel}
                   onChange={e =>
                     setCarrierSettings({ ...carrierSettings, whisperAiModel: e.target.value })
@@ -744,32 +750,44 @@ export const PlatformCallConfigPage: React.FC = () => {
               <Radio size={18} color="#38bdf8" />
             </div>
 
-            <div className="simulator-controls">
-              <div className="form-group">
-                <label htmlFor="simulator-did" className="form-label">Select Inbound DID to Test</label>
-                <select
-                  id="simulator-did"
-                  name="simulatedDid"
-                  className="form-control"
-                  value={simulatedDid}
-                  onChange={e => setSimulatedDid(e.target.value)}
-                >
-                  {dids.map(d => (
-                    <option key={d.id} value={d.phoneNumber}>
-                      {d.phoneNumber} — {d.tenantName} ({d.routingStrategy})
-                    </option>
-                  ))}
-                </select>
+            {dids.length === 0 ? (
+              <div style={{ padding: '24px 16px', textAlign: 'center', background: '#090d16', borderRadius: 8, border: '1px solid #1e293b' }}>
+                <PhoneCall size={20} color="#64748b" style={{ margin: '0 auto 8px', display: 'block' }} />
+                <div style={{ fontSize: '13px', color: '#94a3b8', marginBottom: 12 }}>
+                  No virtual DID hotlines allocated yet. Allocate a virtual DID number to test carrier resolution and agent queue routing.
+                </div>
+                <button className="btn btn-primary btn-sm" onClick={handleOpenAddDid}>
+                  <Plus size={13} /> Allocate Virtual DID
+                </button>
               </div>
+            ) : (
+              <div className="simulator-controls">
+                <div className="form-group">
+                  <label htmlFor="simulator-did" className="form-label">Select Inbound DID to Test</label>
+                  <select
+                    id="simulator-did"
+                    name="simulatedDid"
+                    className="form-control"
+                    value={simulatedDid}
+                    onChange={e => setSimulatedDid(e.target.value)}
+                  >
+                    {dids.map(d => (
+                      <option key={d.id} value={d.phoneNumber}>
+                        {d.phoneNumber} — {d.tenantName} ({d.routingStrategy})
+                      </option>
+                    ))}
+                  </select>
+                </div>
 
-              <button
-                className="btn btn-primary btn-sm btn-run-sim"
-                disabled={isSimulating}
-                onClick={handleRunSimulation}
-              >
-                <Play size={13} /> {isSimulating ? 'Simulating Call...' : 'Trigger Test Inbound Call'}
-              </button>
-            </div>
+                <button
+                  className="btn btn-primary btn-sm btn-run-sim"
+                  disabled={isSimulating}
+                  onClick={handleRunSimulation}
+                >
+                  <Play size={13} /> {isSimulating ? 'Simulating Call...' : 'Trigger Test Inbound Call'}
+                </button>
+              </div>
+            )}
 
             <div className="simulator-terminal">
               <div className="terminal-header">
@@ -815,7 +833,7 @@ export const PlatformCallConfigPage: React.FC = () => {
               <span className="speech-kpi-val" style={{ color: '#38bdf8' }}>
                 {vocabularies.reduce((acc, v) => acc + (v.keywords?.length || 0), 0)}
               </span>
-              <span className="speech-kpi-sub">Real estate & wealth metrics</span>
+              <span className="speech-kpi-sub">Domain-specialized metrics</span>
             </div>
             <div className="speech-kpi-card">
               <span className="speech-kpi-label">Phonetic Sound-Alikes</span>
@@ -827,9 +845,11 @@ export const PlatformCallConfigPage: React.FC = () => {
             <div className="speech-kpi-card">
               <span className="speech-kpi-label">Acoustic Pipeline Engine</span>
               <span className="speech-kpi-val" style={{ fontSize: '15px', color: '#fbbf24', marginTop: '4px' }}>
-                Sarvam AI + Whisper
+                {carrierSettings.whisperAiModel || (vocabularies.length > 0 ? vocabularies[0].engine : 'Unconfigured')}
               </span>
-              <span className="speech-kpi-sub">Saarika-v2 Multilingual GPU</span>
+              <span className="speech-kpi-sub">
+                {carrierSettings.whisperAiModel ? 'Active Platform STT Model' : 'Configurable in Carrier Settings'}
+              </span>
             </div>
           </div>
 
@@ -845,42 +865,27 @@ export const PlatformCallConfigPage: React.FC = () => {
               </span>
             </div>
 
-            <div className="speech-presets-row">
-              <span style={{ fontSize: '11px', color: '#64748b', alignSelf: 'center', marginRight: '4px' }}>Sample Tests:</span>
-              <button
-                type="button"
-                className="btn-preset-pill"
-                onClick={() => {
-                  const s = 'The buyer wants to acquire 4 guntha in white feild and check if katha is e katha and bda approved.';
-                  setSimTranscript(s);
-                  handleRunSpeechSimulation(s);
-                }}
-              >
-                KA Real Estate (Guntas / Khata)
-              </button>
-              <button
-                type="button"
-                className="btn-preset-pill"
-                onClick={() => {
-                  const s = 'Client is allocating 50 lakhs into debentur offering with 10 percent tds and c kyc verification.';
-                  setSimTranscript(s);
-                  handleRunSpeechSimulation(s);
-                }}
-              >
-                Wealth & Debentures (AIF / TDS)
-              </button>
-              <button
-                type="button"
-                className="btn-preset-pill"
-                onClick={() => {
-                  const s = 'Customer wants to purchase 250 gajaalu in kokapet neopolis registered on dharani portal.';
-                  setSimTranscript(s);
-                  handleRunSpeechSimulation(s);
-                }}
-              >
-                Telangana Registry (Gajalu / Dharani)
-              </button>
-            </div>
+            {vocabularies.length > 0 && (
+              <div className="speech-presets-row">
+                <span style={{ fontSize: '11px', color: '#64748b', alignSelf: 'center', marginRight: '4px' }}>Load Dictionary Sample:</span>
+                {vocabularies.slice(0, 4).map(v => (
+                  <button
+                    key={v.id}
+                    type="button"
+                    className="btn-preset-pill"
+                    onClick={() => {
+                      const terms = (v.keywords || []).slice(0, 3).map(k => k.term).join(' ');
+                      const subs = (v.phoneticSubstitutions || []).slice(0, 2).map(s => s.spokenPattern).join(' ');
+                      const prompt = `Client inquiry regarding ${terms || v.name} verification ${subs ? `and ${subs}` : ''}.`;
+                      setSimTranscript(prompt);
+                      handleRunSpeechSimulation(prompt);
+                    }}
+                  >
+                    {v.name} ({v.languageCode})
+                  </button>
+                ))}
+              </div>
+            )}
 
             <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
               <textarea
@@ -960,7 +965,7 @@ export const PlatformCallConfigPage: React.FC = () => {
 
           {/* Dialect Filter and Header */}
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 14, flexWrap: 'wrap', gap: 10 }}>
-            <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
               <Languages size={15} color="#94a3b8" />
               <button
                 type="button"
@@ -969,27 +974,20 @@ export const PlatformCallConfigPage: React.FC = () => {
               >
                 All Languages ({vocabularies.length})
               </button>
-              <button
-                type="button"
-                className={`btn btn-xs ${selectedLanguageFilter === 'kn-IN' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => setSelectedLanguageFilter('kn-IN')}
-              >
-                Kannada (kn-IN)
-              </button>
-              <button
-                type="button"
-                className={`btn btn-xs ${selectedLanguageFilter === 'hi-IN' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => setSelectedLanguageFilter('hi-IN')}
-              >
-                Hindi / Wealth (hi-IN)
-              </button>
-              <button
-                type="button"
-                className={`btn btn-xs ${selectedLanguageFilter === 'te-IN' ? 'btn-primary' : 'btn-secondary'}`}
-                onClick={() => setSelectedLanguageFilter('te-IN')}
-              >
-                Telugu (te-IN)
-              </button>
+              {Array.from(new Set(vocabularies.map(v => v.languageCode).filter(Boolean))).map(code => {
+                const count = vocabularies.filter(v => v.languageCode === code).length;
+                const vocab = vocabularies.find(v => v.languageCode === code);
+                return (
+                  <button
+                    key={code}
+                    type="button"
+                    className={`btn btn-xs ${selectedLanguageFilter === code ? 'btn-primary' : 'btn-secondary'}`}
+                    onClick={() => setSelectedLanguageFilter(code)}
+                  >
+                    {vocab?.language || code} ({count})
+                  </button>
+                );
+              })}
             </div>
 
             <button className="btn btn-secondary btn-sm" onClick={handleOpenAddVocab}>
@@ -998,73 +996,91 @@ export const PlatformCallConfigPage: React.FC = () => {
           </div>
 
           {/* Vocabulary Cards Grid */}
-          <div className="vocab-grid">
-            {vocabularies
-              .filter(v => selectedLanguageFilter === 'all' || v.languageCode === selectedLanguageFilter)
-              .map(v => (
-                <div key={v.id} className="vocab-card">
-                  <div>
-                    <div className="vocab-card-header">
-                      <div>
-                        <h4 className="vocab-title">{v.name}</h4>
-                        <span className="vocab-lang-badge">{v.language} ({v.languageCode})</span>
+          {vocabularies.length === 0 ? (
+            <div className="card" style={{ padding: '48px 24px', textAlign: 'center', color: '#94a3b8', background: 'rgba(15, 23, 42, 0.4)', border: '1px dashed #334155' }}>
+              <Mic size={32} style={{ margin: '0 auto 12px', opacity: 0.5, color: '#c084fc' }} />
+              <h4 style={{ color: '#f8fafc', marginBottom: 8, fontSize: '15px' }}>No Regional Speech Dictionaries Configured</h4>
+              <p style={{ maxWidth: '480px', margin: '0 auto 20px', fontSize: '13px', lineHeight: 1.5, color: '#94a3b8' }}>
+                Add custom domain dictionaries with boosted keywords and phonetic sound-alike normalization rules to optimize transcription accuracy for regional dialects.
+              </p>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                onClick={handleOpenAddVocab}
+                style={{ background: 'linear-gradient(135deg, #8b5cf6 0%, #6d28d9 100%)', borderColor: '#a855f7' }}
+              >
+                <Plus size={13} /> Add Vocabulary Dictionary
+              </button>
+            </div>
+          ) : (
+            <div className="vocab-grid">
+              {vocabularies
+                .filter(v => selectedLanguageFilter === 'all' || v.languageCode === selectedLanguageFilter)
+                .map(v => (
+                  <div key={v.id} className="vocab-card">
+                    <div>
+                      <div className="vocab-card-header">
+                        <div>
+                          <h4 className="vocab-title">{v.name}</h4>
+                          <span className="vocab-lang-badge">{v.language} ({v.languageCode})</span>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6 }}>
+                          <button
+                            className="action-btn"
+                            title="Edit Dictionary"
+                            onClick={() => handleOpenEditVocab(v)}
+                          >
+                            <Edit2 size={13} />
+                          </button>
+                          <button
+                            className="action-btn text-danger"
+                            title="Delete Dictionary"
+                            onClick={() => handleDeleteVocab(v)}
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
                       </div>
-                      <div style={{ display: 'flex', gap: 6 }}>
-                        <button
-                          className="action-btn"
-                          title="Edit Dictionary"
-                          onClick={() => handleOpenEditVocab(v)}
-                        >
-                          <Edit2 size={13} />
-                        </button>
-                        <button
-                          className="action-btn text-danger"
-                          title="Delete Dictionary"
-                          onClick={() => handleDeleteVocab(v)}
-                        >
-                          <Trash2 size={13} />
-                        </button>
+
+                      <p className="vocab-desc" style={{ marginTop: 8 }}>{v.description}</p>
+                    </div>
+
+                    {/* Keywords list */}
+                    <div className="vocab-terms-box">
+                      <div className="vocab-terms-title">
+                        Boosted Keywords ({v.keywords?.length || 0}):
+                      </div>
+                      <div className="matched-tags-cluster">
+                        {(v.keywords || []).slice(0, 8).map((k, idx) => (
+                          <span key={idx} className="boost-tag">
+                            {k.term} ({k.boostWeight?.toFixed ? k.boostWeight.toFixed(1) : k.boostWeight}x)
+                          </span>
+                        ))}
+                        {(v.keywords?.length || 0) > 8 && (
+                          <span style={{ fontSize: '10px', color: '#94a3b8', alignSelf: 'center' }}>
+                            +{(v.keywords?.length || 0) - 8} more
+                          </span>
+                        )}
                       </div>
                     </div>
 
-                    <p className="vocab-desc" style={{ marginTop: 8 }}>{v.description}</p>
-                  </div>
-
-                  {/* Keywords list */}
-                  <div className="vocab-terms-box">
-                    <div className="vocab-terms-title">
-                      Boosted Keywords ({v.keywords?.length || 0}):
-                    </div>
-                    <div className="matched-tags-cluster">
-                      {(v.keywords || []).slice(0, 8).map((k, idx) => (
-                        <span key={idx} className="boost-tag">
-                          {k.term} ({k.boostWeight?.toFixed ? k.boostWeight.toFixed(1) : k.boostWeight}x)
-                        </span>
-                      ))}
-                      {(v.keywords?.length || 0) > 8 && (
-                        <span style={{ fontSize: '10px', color: '#94a3b8', alignSelf: 'center' }}>
-                          +{(v.keywords?.length || 0) - 8} more
-                        </span>
-                      )}
+                    {/* Phonetic rules */}
+                    <div className="vocab-terms-box" style={{ background: 'rgba(30, 41, 59, 0.4)' }}>
+                      <div className="vocab-terms-title" style={{ color: '#38bdf8' }}>
+                        Phonetic Sound-Alikes ({v.phoneticSubstitutions?.length || 0}):
+                      </div>
+                      <div className="matched-tags-cluster">
+                        {(v.phoneticSubstitutions || []).slice(0, 5).map((sub, idx) => (
+                          <span key={idx} className="sub-tag">
+                            "{sub.spokenPattern}" ➔ {sub.normalizedTarget}
+                          </span>
+                        ))}
+                      </div>
                     </div>
                   </div>
-
-                  {/* Phonetic rules */}
-                  <div className="vocab-terms-box" style={{ background: 'rgba(30, 41, 59, 0.4)' }}>
-                    <div className="vocab-terms-title" style={{ color: '#38bdf8' }}>
-                      Phonetic Sound-Alikes ({v.phoneticSubstitutions?.length || 0}):
-                    </div>
-                    <div className="matched-tags-cluster">
-                      {(v.phoneticSubstitutions || []).slice(0, 5).map((sub, idx) => (
-                        <span key={idx} className="sub-tag">
-                          "{sub.spokenPattern}" ➔ {sub.normalizedTarget}
-                        </span>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              ))}
-          </div>
+                ))}
+            </div>
+          )}
         </div>
       )}
 
@@ -1086,7 +1102,7 @@ export const PlatformCallConfigPage: React.FC = () => {
                 name="phoneNumber"
                 type="text"
                 className="form-control font-mono"
-                placeholder="+91 80 4700 8004"
+                placeholder="+91 98765 43210"
                 value={didPhone}
                 onChange={e => setDidPhone(e.target.value)}
               />

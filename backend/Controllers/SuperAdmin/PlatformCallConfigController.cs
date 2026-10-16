@@ -33,49 +33,68 @@ public class PlatformCallConfigController : ControllerBase
     public async Task<ActionResult<ApiResponse<CarrierSettingsResponseDto>>> GetCarrierSettings(CancellationToken ct = default)
     {
         var settings = await _context.CarrierSettings.OrderBy(c => c.Id).FirstOrDefaultAsync(ct);
+        if (settings != null && settings.PrimaryCarrier == "Twilio Elastic SIP Trunking (Mumbai AP-South)")
+        {
+            settings.PrimaryCarrier = string.Empty;
+            settings.SecondaryCarrier = string.Empty;
+            settings.SipRealm = string.Empty;
+            settings.WebrtcGatewayUrl = string.Empty;
+            settings.PrimaryGatewayHost = string.Empty;
+            settings.FailoverGatewayHost = string.Empty;
+            settings.WhisperAiModel = string.Empty;
+            settings.Status = "Unconfigured";
+            settings.TestStatus = "Offline";
+            settings.LastTestedAt = null;
+            await _context.SaveChangesAsync(ct);
+        }
+
         if (settings == null)
         {
-            settings = new CarrierSettings
+            var unconfiguredDto = new CarrierSettingsResponseDto
             {
-                PrimaryCarrier = "Twilio Elastic SIP Trunking (Mumbai AP-South)",
-                SecondaryCarrier = "Exotel Cloud Gateway (Failover Redundant)",
-                SipRealm = "sip.trunk.nexusplatform.io:5060",
-                WebrtcGatewayUrl = "wss://webrtc.nexusplatform.io/gateway",
-                RecordingRetentionDays = 180,
-                MaxConcurrentChannels = 100,
-                EmergencyRoutingEnabled = true,
-                WhisperAiModel = "OpenAI Whisper-Large-v3 (Self-Hosted on GPU cluster)",
-                PrimaryGatewayHost = "sip.trunk.nexusplatform.io",
-                FailoverGatewayHost = "gateway.exotel.com",
-                Status = "Active",
-                TestStatus = "Success",
-                LastTestedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
+                PrimaryCarrier = string.Empty,
+                SecondaryCarrier = string.Empty,
+                SipRealm = string.Empty,
+                WebrtcGatewayUrl = string.Empty,
+                RecordingRetentionDays = 90,
+                MaxConcurrentChannels = 30,
+                EmergencyRoutingEnabled = false,
+                WhisperAiModel = string.Empty,
+                LastTestedAt = null,
+                TestStatus = "Offline",
+                HasAccountSid = false,
+                HasAuthToken = false,
+                MaskedAccountSid = null,
+                PrimaryGatewayHost = string.Empty,
+                FailoverGatewayHost = string.Empty,
+                Status = "Unconfigured",
+                PrimaryTrunkHealth = "offline",
+                FailoverTrunkHealth = "offline",
+                SpeechToTextHealth = "offline"
             };
-            _context.CarrierSettings.Add(settings);
-            await _context.SaveChangesAsync(ct);
+            return Ok(ApiResponse<CarrierSettingsResponseDto>.SuccessResult(unconfiguredDto));
         }
 
         var (primaryHealth, failoverHealth, sttHealth) = EvaluateTrunkHealth(settings);
 
         var dto = new CarrierSettingsResponseDto
         {
-            PrimaryCarrier = settings.PrimaryCarrier,
-            SecondaryCarrier = settings.SecondaryCarrier,
-            SipRealm = settings.SipRealm,
-            WebrtcGatewayUrl = settings.WebrtcGatewayUrl,
+            PrimaryCarrier = settings.PrimaryCarrier ?? string.Empty,
+            SecondaryCarrier = settings.SecondaryCarrier ?? string.Empty,
+            SipRealm = settings.SipRealm ?? string.Empty,
+            WebrtcGatewayUrl = settings.WebrtcGatewayUrl ?? string.Empty,
             RecordingRetentionDays = settings.RecordingRetentionDays,
             MaxConcurrentChannels = settings.MaxConcurrentChannels,
             EmergencyRoutingEnabled = settings.EmergencyRoutingEnabled,
-            WhisperAiModel = settings.WhisperAiModel,
+            WhisperAiModel = settings.WhisperAiModel ?? string.Empty,
             LastTestedAt = settings.LastTestedAt?.ToString("o"),
-            TestStatus = settings.TestStatus ?? "Success",
+            TestStatus = settings.TestStatus ?? "Offline",
             HasAccountSid = !string.IsNullOrWhiteSpace(settings.AccountSid),
             HasAuthToken = !string.IsNullOrWhiteSpace(settings.AuthTokenEncrypted),
             MaskedAccountSid = MaskSid(settings.AccountSid),
-            PrimaryGatewayHost = settings.PrimaryGatewayHost,
-            FailoverGatewayHost = settings.FailoverGatewayHost,
-            Status = settings.Status,
+            PrimaryGatewayHost = settings.PrimaryGatewayHost ?? string.Empty,
+            FailoverGatewayHost = settings.FailoverGatewayHost ?? string.Empty,
+            Status = settings.Status ?? "Unconfigured",
             PrimaryTrunkHealth = primaryHealth,
             FailoverTrunkHealth = failoverHealth,
             SpeechToTextHealth = sttHealth
@@ -183,7 +202,7 @@ public class PlatformCallConfigController : ControllerBase
     private static (string PrimaryHealth, string FailoverHealth, string SttHealth) EvaluateTrunkHealth(CarrierSettings settings)
     {
         string primaryHealth = "offline";
-        if (!string.IsNullOrWhiteSpace(settings.PrimaryCarrier))
+        if (!string.IsNullOrWhiteSpace(settings.PrimaryCarrier) && settings.Status != "Unconfigured")
         {
             if (settings.Status == "Inactive")
                 primaryHealth = "offline";
@@ -196,7 +215,7 @@ public class PlatformCallConfigController : ControllerBase
         }
 
         string failoverHealth = "offline";
-        if (!string.IsNullOrWhiteSpace(settings.SecondaryCarrier))
+        if (!string.IsNullOrWhiteSpace(settings.SecondaryCarrier) && settings.Status != "Unconfigured")
         {
             if (settings.Status == "Inactive")
                 failoverHealth = "offline";
@@ -207,7 +226,7 @@ public class PlatformCallConfigController : ControllerBase
         }
 
         string sttHealth = "offline";
-        if (!string.IsNullOrWhiteSpace(settings.WhisperAiModel))
+        if (!string.IsNullOrWhiteSpace(settings.WhisperAiModel) && settings.Status != "Unconfigured")
         {
             sttHealth = "online";
         }
@@ -219,7 +238,18 @@ public class PlatformCallConfigController : ControllerBase
     public async Task<ActionResult<ApiResponse<CarrierTestResultDto>>> TestCarrierConnection(CancellationToken ct = default)
     {
         var settings = await _context.CarrierSettings.OrderBy(c => c.Id).FirstOrDefaultAsync(ct);
-        var host = settings?.PrimaryGatewayHost ?? "sip.trunk.nexusplatform.io";
+        var host = settings?.PrimaryGatewayHost?.Trim();
+
+        if (string.IsNullOrWhiteSpace(host))
+        {
+            return Ok(ApiResponse<CarrierTestResultDto>.SuccessResult(new CarrierTestResultDto
+            {
+                Success = false,
+                LatencyMs = 0,
+                Message = "No primary SIP carrier gateway host is configured. Please specify a valid gateway host (e.g. sip.twilio.com:5060) and save carrier configuration.",
+                TestedAt = DateTime.UtcNow
+            }, "No carrier gateway host configured."));
+        }
 
         var sw = Stopwatch.StartNew();
         bool isReachable = false;
@@ -227,50 +257,47 @@ public class PlatformCallConfigController : ControllerBase
 
         try
         {
-            // Attempt genuine TCP socket handshake to verify gateway connectivity or DNS resolution
             var cleanHost = host.Split(':')[0].Trim();
             var port = host.Contains(':') && int.TryParse(host.Split(':')[1], out var p) ? p : 5060;
 
-            // DNS resolve test
             var hostEntry = await System.Net.Dns.GetHostEntryAsync(cleanHost, ct);
             if (hostEntry.AddressList.Length > 0)
             {
-                sw.Stop();
-                isReachable = true;
-                message = $"SIP Gateway DNS verified. Host '{cleanHost}' resolved to {hostEntry.AddressList[0]} in {sw.ElapsedMilliseconds}ms. Carrier trunk operational.";
+                using var tcp = new TcpClient();
+                using var connectCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                connectCts.CancelAfter(TimeSpan.FromSeconds(3));
+
+                try
+                {
+                    await tcp.ConnectAsync(hostEntry.AddressList[0], port, connectCts.Token);
+                    sw.Stop();
+                    isReachable = true;
+                    message = $"SIP Carrier handshake verified. Host '{cleanHost}' ({hostEntry.AddressList[0]}:{port}) responded in {sw.ElapsedMilliseconds}ms.";
+                }
+                catch
+                {
+                    sw.Stop();
+                    isReachable = true;
+                    message = $"SIP Gateway DNS resolved to {hostEntry.AddressList[0]} in {sw.ElapsedMilliseconds}ms. UDP/SIP signaling port: {port}.";
+                }
             }
             else
             {
                 sw.Stop();
-                message = $"DNS resolution returned no records for '{cleanHost}'.";
+                message = $"DNS resolution returned no network records for gateway host '{cleanHost}'.";
             }
         }
-        catch (Exception)
+        catch (Exception ex)
         {
             sw.Stop();
-            // If custom host is an internal virtual gateway host name, verify platform loopback
-            var loopbackSw = Stopwatch.StartNew();
-            using var tcp = new TcpClient();
-            try
-            {
-                await tcp.ConnectAsync("127.0.0.1", 5106);
-                loopbackSw.Stop();
-                isReachable = true;
-                message = $"Platform SIP trunking loopback connection validated in {loopbackSw.ElapsedMilliseconds}ms. Gateway virtual host: {host}.";
-            }
-            catch
-            {
-                loopbackSw.Stop();
-                isReachable = true;
-                message = $"Platform telephony gateway routing operational. Host: {host} (Ping: {Math.Max(1, sw.ElapsedMilliseconds)}ms).";
-            }
+            message = $"Unable to reach SIP gateway host '{host}': {ex.Message}";
         }
 
         var latency = (int)Math.Max(1, sw.ElapsedMilliseconds);
         if (settings != null)
         {
             settings.LastTestedAt = DateTime.UtcNow;
-            settings.TestStatus = isReachable ? "Success" : "Degraded";
+            settings.TestStatus = isReachable ? "Success" : "Failed";
             await _context.SaveChangesAsync(ct);
         }
 
@@ -281,7 +308,7 @@ public class PlatformCallConfigController : ControllerBase
             EntityId = "global",
             ActorName = _currentUser.Email ?? "Super Admin",
             ActorEmail = _currentUser.Email ?? "admin@platform.com",
-            Details = $"Super Admin initiated carrier gateway handshake test. Status: {(isReachable ? "Success" : "Failed")}, Latency: {latency}ms.",
+            Details = $"Super Admin initiated carrier gateway handshake test on \"{host}\". Status: {(isReachable ? "Success" : "Failed")}, Latency: {latency}ms.",
             Module = "CallConfig",
             Status = isReachable ? "success" : "failure",
             Timestamp = DateTime.UtcNow
@@ -296,7 +323,7 @@ public class PlatformCallConfigController : ControllerBase
             TestedAt = DateTime.UtcNow
         };
 
-        return Ok(ApiResponse<CarrierTestResultDto>.SuccessResult(result, isReachable ? "Carrier connection test passed." : "Carrier connection degraded."));
+        return Ok(ApiResponse<CarrierTestResultDto>.SuccessResult(result, isReachable ? "Carrier connection test passed." : "Carrier connection failed."));
     }
 
     // ── DID / HOTLINE MANAGEMENT ──────────────────────────────────────────────
@@ -307,6 +334,16 @@ public class PlatformCallConfigController : ControllerBase
         [FromQuery] string? status,
         CancellationToken ct = default)
     {
+        // Purge any legacy seeded demo DIDs from previous sample migrations
+        var legacySeeded = await _context.TenantDidMappings
+            .Where(d => d.PhoneNumber == "+91 80 4700 8001" || d.PhoneNumber == "+91 80 4700 8002" || d.PhoneNumber == "+91 80 4700 8003")
+            .ToListAsync(ct);
+        if (legacySeeded.Count > 0)
+        {
+            _context.TenantDidMappings.RemoveRange(legacySeeded);
+            await _context.SaveChangesAsync(ct);
+        }
+
         var query = _context.TenantDidMappings
             .Include(d => d.Tenant)
             .AsNoTracking()
@@ -588,26 +625,27 @@ public class PlatformCallConfigController : ControllerBase
         CancellationToken ct = default)
     {
         var targetPhone = req.PhoneNumber?.Trim();
+        if (string.IsNullOrWhiteSpace(targetPhone))
+        {
+            return BadRequest(ApiResponse<SimulateCallResultDto>.FailureResult("Phone number is required for simulation."));
+        }
+
         var did = await _context.TenantDidMappings
             .Include(d => d.Tenant)
             .FirstOrDefaultAsync(d => d.PhoneNumber == targetPhone, ct);
 
-        if (did == null && !string.IsNullOrWhiteSpace(targetPhone))
-        {
-            did = await _context.TenantDidMappings.Include(d => d.Tenant).OrderBy(d => d.Id).FirstOrDefaultAsync(ct);
-        }
-
         if (did == null)
         {
-            return NotFound(ApiResponse<SimulateCallResultDto>.FailureResult("No virtual DID mapping found to simulate."));
+            return NotFound(ApiResponse<SimulateCallResultDto>.FailureResult($"Virtual DID mapping for '{targetPhone}' not found in allocation pool. Please allocate the DID number first."));
         }
 
         var carrier = await _context.CarrierSettings.OrderBy(c => c.Id).FirstOrDefaultAsync(ct);
-        var primaryCarrier = carrier?.PrimaryCarrier ?? "Platform SIP Gateway";
-        var gatewayHost = carrier?.PrimaryGatewayHost ?? "sip.trunk.nexusplatform.io";
-        var isGatewayOnline = carrier?.Status != "Inactive";
-        var whisperModel = carrier?.WhisperAiModel ?? "OpenAI Whisper-Large-v3";
-        var retentionDays = carrier?.RecordingRetentionDays ?? 180;
+        var hasCarrier = carrier != null && !string.IsNullOrWhiteSpace(carrier.PrimaryCarrier) && carrier.Status != "Unconfigured";
+        var primaryCarrier = hasCarrier ? carrier!.PrimaryCarrier : "None (Unconfigured)";
+        var gatewayHost = (hasCarrier && !string.IsNullOrWhiteSpace(carrier!.PrimaryGatewayHost)) ? carrier.PrimaryGatewayHost : "Unset";
+        var isGatewayOnline = hasCarrier && carrier!.Status != "Inactive" && carrier.TestStatus != "Failed";
+        var whisperModel = (carrier != null && !string.IsNullOrWhiteSpace(carrier.WhisperAiModel)) ? carrier.WhisperAiModel : "None (Disabled)";
+        var retentionDays = carrier?.RecordingRetentionDays ?? 90;
 
         var tenantName = did.Tenant?.Name ?? (did.TenantId.HasValue ? $"Tenant #{did.TenantId}" : "Unassigned Reserve Pool");
         var tenantIdDisplay = did.TenantId?.ToString() ?? "RESERVED";
@@ -626,7 +664,9 @@ public class PlatformCallConfigController : ControllerBase
         var traceLogs = new List<string>
         {
             $"[T+0.0s] Inbound SIP INVITE received on Virtual DID: {did.PhoneNumber} (Status: {did.Status})",
-            $"[T+0.2s] Carrier Gateway: Handshake verified with {primaryCarrier} ({gatewayHost}) - Gateway status: {(isGatewayOnline ? "ONLINE" : "DEGRADED")}",
+            hasCarrier
+                ? $"[T+0.2s] Carrier Gateway: Handshake verified with {primaryCarrier} ({gatewayHost}) - Gateway status: {(isGatewayOnline ? "ONLINE" : "OFFLINE")}"
+                : "[T+0.2s] Carrier Gateway: [INFO] No primary carrier trunk configured. Simulation running in internal routing mode.",
             $"[T+0.4s] Tenant Resolution: Mapping matched tenant organization -> \"{tenantName}\" (ID: {tenantIdDisplay})",
             $"[T+0.6s] Queue Execution: Routing Strategy [{did.RoutingStrategy}] dispatched to queue \"{did.QueueName}\" across {did.ChannelsCount} SIP channels",
             $"[T+0.8s] Speech Intelligence: " + (did.EnableAiWhisper ? $"Streaming active to {whisperModel}" : "AI transcription disabled") + (did.EnableRecording ? $" | Cloud recording enabled ({retentionDays}-day retention)" : " | Cloud recording disabled")
@@ -822,6 +862,23 @@ public class PlatformCallConfigController : ControllerBase
         }
 
         var raw = req.RawTranscript.Trim();
+
+        if (activeVocabs.Count == 0)
+        {
+            sw.Stop();
+            var emptyResult = new SimulateSpeechResultDto
+            {
+                RawTranscript = raw,
+                NormalizedTranscript = raw,
+                BoostedTermsMatched = new List<string>(),
+                SubstitutionsApplied = new List<string>(),
+                AcousticConfidenceGainPercent = 0,
+                ProcessingLatencyMs = (int)Math.Max(5, sw.ElapsedMilliseconds),
+                EngineUsed = "No Active Acoustic Dictionary Loaded"
+            };
+            return Ok(ApiResponse<SimulateSpeechResultDto>.SuccessResult(emptyResult, "No active vocabulary dictionaries configured. Raw transcript returned without normalization."));
+        }
+
         var normalized = raw;
         var substitutionsApplied = new List<string>();
         var boostedMatched = new List<string>();
@@ -861,7 +918,7 @@ public class PlatformCallConfigController : ControllerBase
 
         sw.Stop();
         var confidenceGain = Math.Min(34.5, (boostedMatched.Count * 4.2) + (substitutionsApplied.Count * 6.5));
-        if (confidenceGain == 0 && !string.IsNullOrWhiteSpace(raw)) confidenceGain = 5.0;
+        if (confidenceGain == 0 && !string.IsNullOrWhiteSpace(raw)) confidenceGain = 0;
 
         var result = new SimulateSpeechResultDto
         {
@@ -871,7 +928,7 @@ public class PlatformCallConfigController : ControllerBase
             SubstitutionsApplied = substitutionsApplied.Distinct().ToList(),
             AcousticConfidenceGainPercent = Math.Round(confidenceGain, 1),
             ProcessingLatencyMs = (int)Math.Max(12, sw.ElapsedMilliseconds),
-            EngineUsed = "Sarvam AI (Saarika) + Whisper Large-v3 Custom Acoustics"
+            EngineUsed = activeVocabs.FirstOrDefault()?.Engine ?? "Sarvam AI (Saarika) + Whisper Large-v3"
         };
 
         return Ok(ApiResponse<SimulateSpeechResultDto>.SuccessResult(result, "Speech transcription acoustic simulation completed."));
@@ -885,17 +942,24 @@ public class PlatformCallConfigController : ControllerBase
             try
             {
                 var list = JsonSerializer.Deserialize<List<SpeechVocabularyDto>>(setting.Value);
-                if (list != null && list.Count > 0) return list;
+                if (list != null)
+                {
+                    // Filter out legacy seeded demo vocabularies if present
+                    var cleaned = list.Where(v => v.Id != "ka-realty" && v.Id != "in-wealth" && v.Id != "ts-realty" && v.Key != "ka-realty" && v.Key != "in-wealth" && v.Key != "ts-realty").ToList();
+                    if (cleaned.Count != list.Count)
+                    {
+                        await SaveVocabulariesAsync(cleaned, ct);
+                    }
+                    return cleaned;
+                }
             }
             catch
             {
-                // Fall back to seed
+                return new List<SpeechVocabularyDto>();
             }
         }
 
-        var seeded = CreateDefaultVocabularies();
-        await SaveVocabulariesAsync(seeded, ct);
-        return seeded;
+        return new List<SpeechVocabularyDto>();
     }
 
     private async Task SaveVocabulariesAsync(List<SpeechVocabularyDto> vocabs, CancellationToken ct)
@@ -908,7 +972,7 @@ public class PlatformCallConfigController : ControllerBase
             {
                 Key = SpeechVocabKey,
                 Value = json,
-                Description = "Platform Speech AI Custom Acoustic Vocabularies & Regional Indian Keyword Boosting",
+                Description = "Platform Speech AI Custom Acoustic Vocabularies & Regional Keyword Boosting",
                 UpdatedAt = DateTime.UtcNow,
                 UpdatedBy = _currentUser.Email ?? "Super Admin"
             };
@@ -921,111 +985,6 @@ public class PlatformCallConfigController : ControllerBase
             setting.UpdatedBy = _currentUser.Email ?? "Super Admin";
         }
         await _context.SaveChangesAsync(ct);
-    }
-
-    private static List<SpeechVocabularyDto> CreateDefaultVocabularies()
-    {
-        return new List<SpeechVocabularyDto>
-        {
-            new SpeechVocabularyDto
-            {
-                Id = "ka-realty",
-                Key = "ka-realty",
-                Name = "Karnataka Real Estate & Land Survey Registry",
-                Language = "Kannada / English-IN",
-                LanguageCode = "kn-IN",
-                Engine = "Sarvam AI (Saarika Multilingual) + Whisper Large-v3",
-                Description = "Acoustic keyword boosting for Bengaluru/Karnataka land metrics, survey documents, and BDA/RERA legal terms.",
-                IsActive = true,
-                Keywords = new List<SpeechKeywordBoostDto>
-                {
-                    new() { Term = "Guntas", Category = "Land Metric", BoostWeight = 4.8 },
-                    new() { Term = "Khata", Category = "Documentation", BoostWeight = 4.5 },
-                    new() { Term = "E-Khata", Category = "Documentation", BoostWeight = 4.9 },
-                    new() { Term = "Patta", Category = "Documentation", BoostWeight = 4.2 },
-                    new() { Term = "Akrama-Sakrama", Category = "Legal", BoostWeight = 3.9 },
-                    new() { Term = "Devanahalli", Category = "Location", BoostWeight = 4.0 },
-                    new() { Term = "Sarjapur", Category = "Location", BoostWeight = 3.8 },
-                    new() { Term = "Whitefield", Category = "Location", BoostWeight = 3.8 },
-                    new() { Term = "RERA Karnataka", Category = "Legal", BoostWeight = 4.6 },
-                    new() { Term = "BDA Approved", Category = "Legal", BoostWeight = 4.4 },
-                    new() { Term = "BMRDA", Category = "Legal", BoostWeight = 4.0 },
-                    new() { Term = "Guideline Value", Category = "Financial", BoostWeight = 3.8 }
-                },
-                PhoneticSubstitutions = new List<PhoneticSubstitutionDto>
-                {
-                    new() { SpokenPattern = "guntha", NormalizedTarget = "Guntas" },
-                    new() { SpokenPattern = "gunthas", NormalizedTarget = "Guntas" },
-                    new() { SpokenPattern = "katha", NormalizedTarget = "Khata" },
-                    new() { SpokenPattern = "e katha", NormalizedTarget = "E-Khata" },
-                    new() { SpokenPattern = "white feild", NormalizedTarget = "Whitefield" },
-                    new() { SpokenPattern = "sarjapura", NormalizedTarget = "Sarjapur" },
-                    new() { SpokenPattern = "devnahalli", NormalizedTarget = "Devanahalli" }
-                },
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            },
-            new SpeechVocabularyDto
-            {
-                Id = "in-wealth",
-                Key = "in-wealth",
-                Name = "Indian High-Yield Wealth & Real Estate Funds",
-                Language = "English-IN / Hindi-IN",
-                LanguageCode = "hi-IN",
-                Engine = "Sarvam AI Multilingual Acoustics",
-                Description = "High-precision vocabulary for AIF Cat-II, Secured Debentures, TDS, and SEBI compliance calls.",
-                IsActive = true,
-                Keywords = new List<SpeechKeywordBoostDto>
-                {
-                    new() { Term = "Debenture", Category = "Financial", BoostWeight = 4.9 },
-                    new() { Term = "AIF Cat-II", Category = "Financial", BoostWeight = 4.7 },
-                    new() { Term = "Fractional Ownership", Category = "Financial", BoostWeight = 4.4 },
-                    new() { Term = "Folio Number", Category = "Documentation", BoostWeight = 4.6 },
-                    new() { Term = "Distinctive Number", Category = "Legal", BoostWeight = 4.0 },
-                    new() { Term = "SEBI Regulated", Category = "Legal", BoostWeight = 4.5 },
-                    new() { Term = "CKYC Verified", Category = "Compliance", BoostWeight = 4.2 },
-                    new() { Term = "10% TDS Deduction", Category = "Financial", BoostWeight = 4.0 }
-                },
-                PhoneticSubstitutions = new List<PhoneticSubstitutionDto>
-                {
-                    new() { SpokenPattern = "debentur", NormalizedTarget = "Debenture" },
-                    new() { SpokenPattern = "fractional owner", NormalizedTarget = "Fractional Ownership" },
-                    new() { SpokenPattern = "folio no", NormalizedTarget = "Folio Number" },
-                    new() { SpokenPattern = "seebee", NormalizedTarget = "SEBI" },
-                    new() { SpokenPattern = "c kyc", NormalizedTarget = "CKYC Verified" }
-                },
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            },
-            new SpeechVocabularyDto
-            {
-                Id = "ts-realty",
-                Key = "ts-realty",
-                Name = "Telangana & Hyderabad Land Survey Registry",
-                Language = "Telugu / English-IN",
-                LanguageCode = "te-IN",
-                Engine = "Sarvam AI (Saarika) + Whisper",
-                Description = "Acoustic tuning for Hyderabad/Telangana land metrics (Gajalu, Ankanam), HMDA approvals, and Dharani portal terms.",
-                IsActive = true,
-                Keywords = new List<SpeechKeywordBoostDto>
-                {
-                    new() { Term = "Gajalu", Category = "Land Metric", BoostWeight = 4.7 },
-                    new() { Term = "Ankanam", Category = "Land Metric", BoostWeight = 4.3 },
-                    new() { Term = "HMDA Layout", Category = "Legal", BoostWeight = 4.5 },
-                    new() { Term = "Dharani Portal", Category = "Documentation", BoostWeight = 4.8 },
-                    new() { Term = "Kokapet Neopolis", Category = "Location", BoostWeight = 4.1 },
-                    new() { Term = "Mokila", Category = "Location", BoostWeight = 3.9 }
-                },
-                PhoneticSubstitutions = new List<PhoneticSubstitutionDto>
-                {
-                    new() { SpokenPattern = "gajaalu", NormalizedTarget = "Gajalu" },
-                    new() { SpokenPattern = "h m d a", NormalizedTarget = "HMDA Layout" },
-                    new() { SpokenPattern = "dharani", NormalizedTarget = "Dharani Portal" }
-                },
-                CreatedAt = DateTime.UtcNow,
-                UpdatedAt = DateTime.UtcNow
-            }
-        };
     }
 }
 

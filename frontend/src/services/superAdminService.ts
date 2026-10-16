@@ -1539,7 +1539,7 @@ export class SuperAdminService {
     const dids = this.getDidMappings();
     const newDid: TenantDidMapping = {
       id: `did-${Date.now().toString().slice(-4)}`,
-      phoneNumber: didData.phoneNumber || '+91 80 4700 9999',
+      phoneNumber: didData.phoneNumber || '',
       tenantId: didData.tenantId || '',
       tenantName: didData.tenantName || 'Unassigned Pool',
       tenantSlug: didData.tenantSlug || '',
@@ -1603,22 +1603,27 @@ export class SuperAdminService {
   getCarrierSettings(): PlatformCarrierSettings {
     try {
       const raw = localStorage.getItem(STORAGE_KEYS.CARRIER_SETTINGS);
-      if (raw) return JSON.parse(raw);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (parsed && parsed.primaryCarrier !== 'Twilio Elastic SIP Trunking') {
+          return parsed;
+        }
+      }
     } catch {}
     return {
-      primaryCarrier: 'Twilio Elastic SIP Trunking',
-      secondaryCarrier: 'Tata Communications SIP',
-      sipRealm: 'sip.nexussales.internal',
-      webrtcGatewayUrl: 'wss://webrtc.nexussales.internal:8443/ws',
+      primaryCarrier: '',
+      secondaryCarrier: '',
+      sipRealm: '',
+      webrtcGatewayUrl: '',
       recordingRetentionDays: 90,
-      maxConcurrentChannels: 64,
-      emergencyRoutingEnabled: true,
-      whisperAiModel: 'Whisper-Large-v3-Turbo',
+      maxConcurrentChannels: 30,
+      emergencyRoutingEnabled: false,
+      whisperAiModel: '',
       lastTestedAt: '',
       testStatus: 'Offline',
       accountSid: '',
       authToken: '',
-      primaryGatewayHost: 'sip.nexussales.internal',
+      primaryGatewayHost: '',
       failoverGatewayHost: '',
     };
   }

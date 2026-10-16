@@ -79,7 +79,7 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({
   const [wizardAdminName, setWizardAdminName] = useState('');
   const [wizardAdminEmail, setWizardAdminEmail] = useState('');
   const [wizardAdminPhone, setWizardAdminPhone] = useState('+91 98450 ');
-  const [wizardDidNumber, setWizardDidNumber] = useState('+91 80 4700 8003');
+  const [wizardDidNumber, setWizardDidNumber] = useState('');
   const [wizardRoutingStrategy, setWizardRoutingStrategy] = useState('Round-Robin');
 
   // Detail Drawer state
@@ -509,6 +509,7 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({
       // Reset fields
       setWizardName('');
       setWizardAdminEmail('');
+      setWizardDidNumber('');
     } catch (err: any) {
       alert(err.message || 'Failed to deploy new organization.');
     } finally {
