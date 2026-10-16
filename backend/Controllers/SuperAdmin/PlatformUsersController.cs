@@ -499,20 +499,15 @@ public class PlatformUsersController : ControllerBase
     }
 
     [HttpPost("{id}/reset-password")]
-    public async Task<ActionResult<ApiResponse<object>>> ResetPassword(int id, [FromBody] AdminResetPasswordRequestDto? req = null)
+    public async Task<ActionResult<ApiResponse<object>>> ResetPassword(int id)
     {
         var user = await _context.Users.FindAsync(id);
         if (user == null)
             return NotFound(ApiResponse<object>.FailureResult($"User with ID {id} not found."));
 
-        if (!string.IsNullOrWhiteSpace(req?.NewPassword) && req.NewPassword.Trim().Length < 6)
-            return BadRequest(ApiResponse<object>.FailureResult("Password must be at least 6 characters long."));
-
-        var tempPassword = !string.IsNullOrWhiteSpace(req?.NewPassword)
-            ? req.NewPassword.Trim()
-            : backend.Helpers.PasswordHasher.GenerateTemporaryPassword();
+        var tempPassword = backend.Helpers.PasswordHasher.GenerateTemporaryPassword();
         user.PasswordHash = backend.Helpers.PasswordHasher.HashPassword(tempPassword);
-        user.MustChangePassword = false;
+        user.MustChangePassword = true;
         user.UpdatedAt = DateTime.UtcNow;
 
         // Invalidate active sessions for this user

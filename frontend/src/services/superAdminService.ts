@@ -703,10 +703,8 @@ export class SuperAdminService {
     return true;
   }
 
-  async resetUserPasswordApi(id: string, newPassword?: string): Promise<{ success: boolean; tempPassword?: string }> {
-    const res = await apiClient.post<ApiResponse<{ tempPassword: string }>>(`/super-admin/users/${id}/reset-password`, {
-      newPassword: newPassword || undefined,
-    });
+  async resetUserPasswordApi(id: string): Promise<{ success: boolean; tempPassword?: string }> {
+    const res = await apiClient.post<ApiResponse<{ tempPassword: string }>>(`/super-admin/users/${id}/reset-password`);
     if (!res || !res.data) {
       throw new Error(res?.message || 'Failed to generate temporary credentials.');
     }
