@@ -127,7 +127,7 @@
 
 .company-tab-btn:hover {
   color: var(--text-primary, #111827);
-  background: var(--surface-hover, #f3f4f6);
+
 }
 
 .company-tab-btn.active {
@@ -145,7 +145,6 @@
   font-size: 0.75rem;
   padding: 2px 8px;
   border-radius: 12px;
-  background: var(--surface-bg-alt, #e5e7eb);
   color: var(--text-secondary, #4b5563);
   font-weight: 700;
 }
@@ -195,26 +194,49 @@
 }
 
 .category-chip {
-  padding: 6px 12px;
+  padding: 6px 14px;
   border-radius: 20px;
-  border: 1px solid var(--border-subtle, #e5e7eb);
-  /* background: var(--surface-card, #ffffff); */
+  border: 1px solid var(--border-subtle, rgba(255, 255, 255, 0.12));
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.05));
   font-size: 0.8rem;
   font-weight: 500;
-  color: var(--text-secondary, #6b7280);
+  color: var(--text-secondary, #94a3b8);
   cursor: pointer;
-  transition: all 0.15s ease;
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .category-chip:hover {
-  background: var(--surface-hover, #f3f4f6);
-  color: var(--text-primary, #111827);
+  background: var(--bg-surface-active, rgba(255, 255, 255, 0.1));
+  border-color: var(--border-base, rgba(255, 255, 255, 0.25));
+  color: var(--text-primary, #ffffff);
 }
 
 .category-chip.active {
-  background: var(--primary-600, #4f46e5);
+  background: var(--primary-600, #dc2626);
   color: #ffffff;
-  border-color: var(--primary-600, #4f46e5);
+  border-color: var(--primary-600, #dc2626);
+  box-shadow: 0 2px 8px rgba(220, 38, 38, 0.35);
+}
+
+.dark-theme .category-chip,
+.admin-theme .category-chip {
+  background: rgba(255, 255, 255, 0.04);
+  border-color: rgba(255, 255, 255, 0.1);
+  color: #94a3b8;
+}
+
+.dark-theme .category-chip:hover,
+.admin-theme .category-chip:hover {
+  background: rgba(255, 255, 255, 0.08);
+  border-color: rgba(255, 255, 255, 0.22);
+  color: #f8fafc;
+}
+
+.dark-theme .category-chip.active,
+.admin-theme .category-chip.active {
+  background: var(--primary-600, #dc2626);
+  color: #ffffff;
+  border-color: var(--primary-600, #dc2626);
 }
 
 /* Cards Grid */
@@ -334,6 +356,7 @@
   line-height: 1.45;
   display: -webkit-box;
   -webkit-line-clamp: 2;
+  line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
 }

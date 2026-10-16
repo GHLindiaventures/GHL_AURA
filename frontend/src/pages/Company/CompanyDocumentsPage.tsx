@@ -337,7 +337,6 @@ export const CompanyDocumentsPage: React.FC = () => {
             title="Refresh documents"
           >
             <RefreshCw size={16} className={isRefreshing ? 'spin-anim' : ''} />
-            <span>Refresh</span>
           </button>
 
           {isAdmin && (
@@ -440,8 +439,8 @@ export const CompanyDocumentsPage: React.FC = () => {
               {searchQuery || selectedCategory !== 'All'
                 ? 'No documents matched your filters. Try clearing the search or category filter.'
                 : activeTab === 'platform'
-                ? 'No documents have been distributed from the Super Admin platform yet.'
-                : 'No company-specific collateral uploaded yet.'}
+                  ? 'No documents have been distributed from the Super Admin platform yet.'
+                  : 'No company-specific collateral uploaded yet.'}
             </p>
             {isAdmin && activeTab !== 'platform' && (
               <button

@@ -1611,7 +1611,7 @@ export class SuperAdminService {
           return parsed;
         }
       }
-    } catch {}
+    } catch { }
     return {
       primaryCarrier: '',
       secondaryCarrier: '',
@@ -2681,7 +2681,7 @@ export class SuperAdminService {
         docs.unshift(newDoc);
         localStorage.setItem(STORAGE_KEYS.DOCUMENTS, JSON.stringify(docs));
         window.dispatchEvent(new Event('nexus_storage_updated'));
-      } catch {}
+      } catch { }
 
       return newDoc;
     }
@@ -2704,7 +2704,7 @@ export class SuperAdminService {
           localStorage.setItem(STORAGE_KEYS.DOCUMENTS, JSON.stringify(filtered));
           window.dispatchEvent(new Event('nexus_storage_updated'));
         }
-      } catch {}
+      } catch { }
       return true;
     }
 
