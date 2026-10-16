@@ -291,7 +291,7 @@ export const FollowupsPage: React.FC = () => {
           return;
         }
       }
-    } catch {}
+    } catch { }
     const d = new Date();
     d.setDate(d.getDate() + 1);
     d.setHours(10, 0, 0, 0);
@@ -596,16 +596,16 @@ export const FollowupsPage: React.FC = () => {
 
     const savedAssetClass = isConfirmed
       ? (l?.customFields?.irmPreferencesConfirmed && l?.customFields?.preferredAssetClass) ||
-        (c?.customFields?.irmPreferencesConfirmed && c?.customFields?.preferredAssetClass) ||
-        savedLocal?.preferredAssetClass ||
-        ''
+      (c?.customFields?.irmPreferencesConfirmed && c?.customFields?.preferredAssetClass) ||
+      savedLocal?.preferredAssetClass ||
+      ''
       : '';
 
     const savedHorizon = isConfirmed
       ? (l?.customFields?.irmPreferencesConfirmed && (l?.customFields?.horizon || l?.customFields?.investmentHorizon)) ||
-        (c?.customFields?.irmPreferencesConfirmed && (c?.customFields?.horizon || c?.customFields?.investmentHorizon)) ||
-        savedLocal?.horizon ||
-        ''
+      (c?.customFields?.irmPreferencesConfirmed && (c?.customFields?.horizon || c?.customFields?.investmentHorizon)) ||
+      savedLocal?.horizon ||
+      ''
       : '';
 
     setPrefAssetClass(savedAssetClass);
@@ -1270,7 +1270,7 @@ export const FollowupsPage: React.FC = () => {
           (matchingLead.assignedIrmId && String(matchingLead.assignedIrmId) === String(user?.id)) ||
           (matchingLead.assignedIrmName && user?.name && matchingLead.assignedIrmName.trim().toLowerCase() === user.name.trim().toLowerCase()) ||
           ((matchingLead.customFields as any)?.assignedIrmId && String((matchingLead.customFields as any).assignedIrmId) === String(user?.id)) ||
-          ((matchingLead.customFields as any)?.assignedIrmName && String((matchingLead.customFields as any).assignedIrmName).trim().toLowerCase() === user.name.trim().toLowerCase())
+          ((matchingLead.customFields as any)?.assignedIrmName && user?.name && String((matchingLead.customFields as any).assignedIrmName).trim().toLowerCase() === user.name.trim().toLowerCase())
         );
       }
 
@@ -1292,7 +1292,7 @@ export const FollowupsPage: React.FC = () => {
         (l.assignedIrmId && String(l.assignedIrmId) === String(user?.id)) ||
         (l.assignedIrmName && user?.name && l.assignedIrmName.trim().toLowerCase() === user.name.trim().toLowerCase()) ||
         ((l.customFields as any)?.assignedIrmId && String((l.customFields as any).assignedIrmId) === String(user?.id)) ||
-        ((l.customFields as any)?.assignedIrmName && String((l.customFields as any).assignedIrmName).trim().toLowerCase() === user.name.trim().toLowerCase());
+        ((l.customFields as any)?.assignedIrmName && user?.name && String((l.customFields as any).assignedIrmName).trim().toLowerCase() === user.name.trim().toLowerCase());
       if (!isAssignedToMe) return false;
       if (l.companyId && tenant?.id && !isTenantMatch(l.companyId, tenant.id)) return false;
 
@@ -1660,8 +1660,8 @@ export const FollowupsPage: React.FC = () => {
                   {selectedRole === 'sales_executive'
                     ? 'All Sales Executives'
                     : selectedRole === 'irm'
-                    ? 'All IRMs'
-                    : 'All Persons'}
+                      ? 'All IRMs'
+                      : 'All Persons'}
                 </option>
                 {(personOptions || []).map((p: any) => (
                   <option key={p.id} value={p.name}>
@@ -1723,13 +1723,12 @@ export const FollowupsPage: React.FC = () => {
           {/* Right Section: Role Mode Tag & Total Count */}
           <div className="admin-followup-meta-group">
             <span
-              className={`followup-role-tag ${
-                selectedRole === 'all'
+              className={`followup-role-tag ${selectedRole === 'all'
                   ? 'tag-all'
                   : selectedRole === 'sales_executive'
-                  ? 'tag-sales-exec'
-                  : 'tag-irm'
-              }`}
+                    ? 'tag-sales-exec'
+                    : 'tag-irm'
+                }`}
             >
               {selectedRole === 'all' ? (
                 <>
@@ -1886,34 +1885,34 @@ export const FollowupsPage: React.FC = () => {
         <div className="followups-tabs-container" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <div style={{ display: 'flex', gap: 8 }}>
             {[
-            { id: 'all', label: `All Tasks (${activePendingFollowups.length})` },
-            {
-              id: 'due',
-              label: `Due Today (${activePendingFollowups.filter(isFollowupToday).length})`,
-            },
-            {
-              id: 'overdue',
-              label: `Overdue (${activePendingFollowups.filter(f => isFollowupOverdue(f) && !isFollowupToday(f)).length})`,
-              danger: true,
-            },
-          ].map(tab => (
-            <button
-              key={tab.id}
-              className={`btn btn-sm ${activeTab === tab.id ? 'btn-primary' : 'btn-secondary'
-                } ${tab.danger && activeTab === tab.id
-                  ? 'followups-tab-danger-active'
-                  : tab.danger
-                    ? 'followups-tab-danger-inactive'
-                    : ''
-                }`}
-              onClick={() => setActiveTab(tab.id as any)}
-            >
-              {tab.danger && (
-                <AlertTriangle size={13} color={activeTab === tab.id ? '#ffffff' : '#dc2626'} />
-              )}
-              {tab.label}
-            </button>
-          ))}
+              { id: 'all', label: `All Tasks (${activePendingFollowups.length})` },
+              {
+                id: 'due',
+                label: `Due Today (${activePendingFollowups.filter(isFollowupToday).length})`,
+              },
+              {
+                id: 'overdue',
+                label: `Overdue (${activePendingFollowups.filter(f => isFollowupOverdue(f) && !isFollowupToday(f)).length})`,
+                danger: true,
+              },
+            ].map(tab => (
+              <button
+                key={tab.id}
+                className={`btn btn-sm ${activeTab === tab.id ? 'btn-primary' : 'btn-secondary'
+                  } ${tab.danger && activeTab === tab.id
+                    ? 'followups-tab-danger-active'
+                    : tab.danger
+                      ? 'followups-tab-danger-inactive'
+                      : ''
+                  }`}
+                onClick={() => setActiveTab(tab.id as any)}
+              >
+                {tab.danger && (
+                  <AlertTriangle size={13} color={activeTab === tab.id ? '#ffffff' : '#dc2626'} />
+                )}
+                {tab.label}
+              </button>
+            ))}
           </div>
 
           {handoverOptions.length > 0 && (
@@ -2255,7 +2254,7 @@ export const FollowupsPage: React.FC = () => {
               Scheduling Buffer Advice
             </div>
             <p style={{ margin: 0, fontSize: '0.83rem', color: 'var(--text-primary, #334155)', lineHeight: 1.5 }}>
-              To ensure sufficient time for each call and avoid overlapping appointments (e.g. 10:00 AM and 10:01 AM), <strong>please schedule your follow-up 15 to 20 minutes afterwards (or 20–30 minutes later)</strong>.
+              To avoid overlapping appointments and ensure sufficient time for each call, <strong>please schedule your follow-up at least 15–20 minutes after your existing appointment.</strong>
             </p>
           </div>
 
