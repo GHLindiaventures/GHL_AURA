@@ -275,7 +275,6 @@ export const PlatformDocumentsPage: React.FC = () => {
             title="Refresh documents list"
           >
             <RefreshCw size={16} className={isRefreshing ? 'spin-anim' : ''} />
-            <span>Refresh</span>
           </button>
 
           <button

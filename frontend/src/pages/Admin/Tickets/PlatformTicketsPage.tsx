@@ -218,7 +218,7 @@ export const PlatformTicketsPage: React.FC = () => {
     setIsUpdatingStatus(true);
     try {
       const isReopen = (selectedTicket.status === 'resolved' || selectedTicket.status === 'closed') &&
-                       (nextStatus === 'open' || nextStatus === 'in_progress');
+        (nextStatus === 'open' || nextStatus === 'in_progress');
       const noteMsg = isReopen
         ? 'Reopened by Super Admin Operations Team for re-investigation'
         : `Status transitioned to ${nextStatus.toUpperCase()}`;
@@ -377,7 +377,6 @@ export const PlatformTicketsPage: React.FC = () => {
             title="Refresh from database"
           >
             <RefreshCw size={15} className={isRefreshing ? 'animate-spin' : ''} />
-            Refresh Telemetry
           </button>
           <button
             className="btn-new-ticket"
@@ -850,15 +849,14 @@ export const PlatformTicketsPage: React.FC = () => {
                   selectedTicket.timeline.map((ev, idx) => (
                     <div
                       key={ev.id || idx}
-                      className={`timeline-event-card ${
-                        ev.type === 'status_change'
+                      className={`timeline-event-card ${ev.type === 'status_change'
                           ? 'status-event'
                           : ev.type === 'reopen'
-                          ? 'status-event'
-                          : ev.type === 'assignment_change'
-                          ? 'status-event'
-                          : ''
-                      }`}
+                            ? 'status-event'
+                            : ev.type === 'assignment_change'
+                              ? 'status-event'
+                              : ''
+                        }`}
                     >
                       <div className="timeline-author-row">
                         <span style={{ fontWeight: 600, color: '#38bdf8' }}>{ev.authorName || 'Platform Operations'}</span>
