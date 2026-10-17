@@ -40,7 +40,38 @@ public static class ServiceExtensions
             }
             else
             {
-                options.UseNpgsql(connectionString);
+                var effectiveConnectionString = connectionString;
+                try
+                {
+                    var npgsqlBuilder = new Npgsql.NpgsqlConnectionStringBuilder(connectionString);
+                    if (!connectionString!.Contains("Maximum Pool Size", StringComparison.OrdinalIgnoreCase) &&
+                        !connectionString.Contains("MaxPoolSize", StringComparison.OrdinalIgnoreCase))
+                    {
+                        npgsqlBuilder.MaxPoolSize = 10;
+                    }
+                    if (!connectionString.Contains("Minimum Pool Size", StringComparison.OrdinalIgnoreCase) &&
+                        !connectionString.Contains("MinPoolSize", StringComparison.OrdinalIgnoreCase))
+                    {
+                        npgsqlBuilder.MinPoolSize = 0;
+                    }
+                    if (!connectionString.Contains("Connection Idle Lifetime", StringComparison.OrdinalIgnoreCase) &&
+                        !connectionString.Contains("ConnectionIdleLifetime", StringComparison.OrdinalIgnoreCase))
+                    {
+                        npgsqlBuilder.ConnectionIdleLifetime = 15;
+                    }
+                    if (!connectionString.Contains("Connection Pruning Interval", StringComparison.OrdinalIgnoreCase) &&
+                        !connectionString.Contains("ConnectionPruningInterval", StringComparison.OrdinalIgnoreCase))
+                    {
+                        npgsqlBuilder.ConnectionPruningInterval = 5;
+                    }
+                    effectiveConnectionString = npgsqlBuilder.ConnectionString;
+                }
+                catch
+                {
+                    // If parsing fails for any reason, use raw connection string
+                }
+
+                options.UseNpgsql(effectiveConnectionString);
             }
         });
 
@@ -62,6 +93,7 @@ public static class ServiceExtensions
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUserService, CurrentUserService>();
         services.AddScoped<ITotpService, TotpService>();
+        services.AddScoped<IReportService, ReportService>();
         services.AddSingleton<IMfaEncryptionService, MfaEncryptionService>();
         services.AddScoped<IMfaService, MfaService>();
         services.AddScoped<IAuthService, AuthService>();
@@ -80,6 +112,50 @@ public static class ServiceExtensions
         services.AddScoped<IIrmPipelineService, IrmPipelineService>();
         services.AddScoped<IKycService, KycService>();
         services.AddScoped<IOpportunityService, OpportunityService>();
+        services.AddScoped<IIrmOtherService, IrmOtherService>();
+        services.AddScoped<IWorkHandoverService, WorkHandoverService>();
+        services.AddScoped<ILeaveRequestService, LeaveRequestService>();
+        services.AddScoped<ICompanyClock, CompanyClock>();
+
+        // AI Services
+        services.Configure<backend.Services.Ai.AiSettings>(configuration.GetSection("Ai"));
+        services.AddHttpClient<backend.Services.Ai.ILlmClient, backend.Services.Ai.OpenAiCompatibleLlmClient>((sp, client) =>
+        {
+            var settings = sp.GetRequiredService<Microsoft.Extensions.Options.IOptions<backend.Services.Ai.AiSettings>>().Value;
+            if (!string.IsNullOrEmpty(settings.Primary.BaseUrl))
+            {
+                client.BaseAddress = new Uri(settings.Primary.BaseUrl);
+                if (!client.BaseAddress.AbsoluteUri.EndsWith("/"))
+                    client.BaseAddress = new Uri(client.BaseAddress.AbsoluteUri + "/");
+            }
+            if (!string.IsNullOrEmpty(settings.Primary.ApiKey))
+            {
+                client.DefaultRequestHeaders.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", settings.Primary.ApiKey);
+            }
+        });
+        services.AddScoped<backend.Services.Ai.AiToolRegistry>(sp =>
+        {
+            var registry = new backend.Services.Ai.AiToolRegistry();
+            registry.Register(new backend.Services.Ai.Tools.DeclineOutOfScopeTool());
+            registry.Register(new backend.Services.Ai.Tools.SearchLeadsTool());
+            registry.Register(new backend.Services.Ai.Tools.SearchFollowupsTool());
+            registry.Register(new backend.Services.Ai.Tools.SearchDealsTool());
+            registry.Register(new backend.Services.Ai.Tools.SearchUsersTool());
+            registry.Register(new backend.Services.Ai.Tools.SearchInvestorsTool());
+            registry.Register(new backend.Services.Ai.Tools.SearchCustomersTool());
+            registry.Register(new backend.Services.Ai.Tools.SearchLeaveRequestsTool());
+            registry.Register(new backend.Services.Ai.Tools.SearchCallsTool());
+            registry.Register(new backend.Services.Ai.Tools.SearchConsultationsTool());
+            registry.Register(new backend.Services.Ai.Tools.SearchWorkHandoversTool());
+            registry.Register(new backend.Services.Ai.Tools.SearchNotificationsTool());
+            registry.Register(new backend.Services.Ai.Tools.SearchCompanyKnowledgeTool());
+            return registry;
+        });
+        services.AddScoped<backend.Services.Ai.AiAssistantService>();
+
+        // Background job: notify admins when a handover's PlannedEndAt has passed (never auto-reverts)
+        services.AddHostedService<backend.Services.BackgroundJobs.HandoverDueDateCheckerService>();
+        services.AddHostedService<backend.Services.BackgroundJobs.LeaveReminderBackgroundService>();
 
         services.AddDev1Services();
 
