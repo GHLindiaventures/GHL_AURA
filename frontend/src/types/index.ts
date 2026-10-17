@@ -575,9 +575,13 @@ export interface DocumentItem {
   uploadedBy: string;
   uploadedAt: string;
   category: string;
-  entityType?: 'lead' | 'customer' | 'investor' | 'booking' | 'consultation' | 'company';
+  entityType?: 'lead' | 'customer' | 'investor' | 'booking' | 'consultation' | 'company' | 'platform';
   entityId?: string;
   fileUrl?: string;
+  targetAudience?: 'all_users' | 'admin_only' | string;
+  isPlatformShared?: boolean;
+  description?: string;
+  targetTenantName?: string;
 }
 
 export interface Department {
@@ -1025,3 +1029,92 @@ export interface PlatformMetrics {
 }
 
 export * from './kanban';
+
+// ── Speech AI Vocabulary Tuning ─────────────────────────────────────────────
+export interface SpeechKeywordBoost {
+  term: string;
+  category: 'Land Metric' | 'Documentation' | 'Financial' | 'Location' | 'Legal' | string;
+  boostWeight: number; // 1.0 - 5.0
+}
+
+export interface PhoneticSubstitution {
+  spokenPattern: string;
+  normalizedTarget: string;
+}
+
+export interface SpeechVocabulary {
+  id: string;
+  key: string;
+  name: string;
+  language: string;
+  languageCode: string;
+  engine: string;
+  description: string;
+  isActive: boolean;
+  keywords: SpeechKeywordBoost[];
+  phoneticSubstitutions: PhoneticSubstitution[];
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface SimulateSpeechResult {
+  rawTranscript: string;
+  normalizedTranscript: string;
+  boostedTermsMatched: string[];
+  substitutionsApplied: string[];
+  acousticConfidenceGainPercent: number;
+  processingLatencyMs: number;
+  engineUsed: string;
+}
+
+// ── Platform Instant Database Backups ───────────────────────────────────────
+export interface BackupSnapshot {
+  id: string;
+  filename: string;
+  fileName?: string;
+  description: string;
+  createdBy: string;
+  createdAt: string;
+  fileSizeBytes: number;
+  formattedSize: string;
+  totalTables: number;
+  totalRecordsCount: number;
+  recordCount?: number;
+  checksumSha256: string;
+  sha256Checksum?: string;
+  status: string;
+  tableCounts: Record<string, number>;
+}
+
+// ── Platform Support & Technical Incident Helpdesk ──────────────────────────
+export interface TicketTimelineEvent {
+  id: string;
+  authorName: string;
+  authorEmail: string;
+  message: string;
+  type: 'note' | 'status_change' | 'priority_change' | 'system_alert' | string;
+  createdAt: string;
+}
+
+export interface PlatformTicket {
+  id: string;
+  ticketNumber: string;
+  title: string;
+  description: string;
+  category: string;
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  status: 'open' | 'in_progress' | 'escalated' | 'resolved' | 'closed';
+  tenantId?: number;
+  tenantName?: string;
+  tenantSlug?: string;
+  reportedByName: string;
+  reportedByEmail: string;
+  assignedToName?: string;
+  assignedToEmail?: string;
+  resolutionNotes?: string;
+  resolvedAt?: string;
+  createdAt: string;
+  updatedAt: string;
+  timeline: TicketTimelineEvent[];
+}
+

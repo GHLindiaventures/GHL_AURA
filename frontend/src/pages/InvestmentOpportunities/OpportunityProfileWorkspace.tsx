@@ -431,7 +431,7 @@ Date: ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short',
             <button
               type="button"
               className="opp-ribbon-btn-call"
-              onClick={() => onCallInvestor(deal.customerName, deal.phone, String(deal.id))}
+              onClick={() => onCallInvestor(deal.customerName || 'Investor', deal.phone!, String(deal.id))}
               title="Initiate direct phone consultation"
             >
               <Phone size={13} />
@@ -704,7 +704,7 @@ Date: ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short',
                   <button
                     type="button"
                     className="opp-ledger-copy"
-                    onClick={() => copyToClipboard(deal.phone, 'rail_phone')}
+                    onClick={() => copyToClipboard(deal.phone || '', 'rail_phone')}
                     title="Copy Phone"
                   >
                     {copiedField === 'rail_phone' ? <Check size={11} color="#84cc16" /> : <Copy size={11} />}
@@ -721,7 +721,7 @@ Date: ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short',
                   <button
                     type="button"
                     className="opp-ledger-copy"
-                    onClick={() => copyToClipboard(deal.email, 'rail_email')}
+                    onClick={() => copyToClipboard(deal.email || '', 'rail_email')}
                     title="Copy Email"
                   >
                     {copiedField === 'rail_email' ? <Check size={11} color="#84cc16" /> : <Copy size={11} />}
@@ -1008,7 +1008,7 @@ Date: ${new Date().toLocaleDateString('en-IN', { day: 'numeric', month: 'short',
                     <button
                       type="button"
                       className="opp-ribbon-btn-call"
-                      onClick={() => onCallInvestor(deal.customerName, deal.phone, String(deal.id))}
+                      onClick={() => onCallInvestor(deal.customerName || 'Investor', deal.phone!, String(deal.id))}
                     >
                       <Phone size={13} />
                       <span>Dial Investor</span>

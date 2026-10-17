@@ -19,9 +19,9 @@ const getPopupPosition = (): PopupPosition => {
         if (['top-left', 'top-right', 'bottom-left', 'bottom-right'].includes(parsed)) {
           return parsed as PopupPosition;
         }
-      } catch {}
+      } catch { }
     }
-  } catch {}
+  } catch { }
   return 'top-right';
 };
 
@@ -284,12 +284,12 @@ export const InCallBar: React.FC = () => {
 
   const connectOptions = isIrm
     ? (() => {
-        const base = storageService.getAgents(tenant?.id).map((a: { id: string | number; name: string }) => ({ name: a.name, status: 'Available' as const }));
-        if (!previousAgentName) return base;
-        // Move the previously-assigned agent to the top of the list as the default
-        const rest = base.filter((a: { name: string }) => a.name !== previousAgentName);
-        return [{ name: previousAgentName, status: 'Available' as const, isPrevious: true }, ...rest];
-      })()
+      const base = storageService.getAgents(tenant?.id).map((a: { id: string | number; name: string }) => ({ name: a.name, status: 'Available' as const }));
+      if (!previousAgentName) return base;
+      // Move the previously-assigned agent to the top of the list as the default
+      const rest = base.filter((a: { name: string }) => a.name !== previousAgentName);
+      return [{ name: previousAgentName, status: 'Available' as const, isPrevious: true }, ...rest];
+    })()
     : storageService.getIrms(tenant?.id);
 
   const filteredConnectOptions = connectOptions.filter((o: any) =>
@@ -559,15 +559,15 @@ export const InCallBar: React.FC = () => {
                 activeCall.status === 'ringing'
                   ? { color: '#38bdf8', fontSize: 11, fontWeight: 600 }
                   : activeCall.isSimulated
-                  ? { color: '#f59e0b', fontSize: 11 }
-                  : undefined
+                    ? { color: '#f59e0b', fontSize: 11 }
+                    : undefined
               }
             >
               {activeCall.status === 'ringing'
                 ? 'Dialing...'
                 : activeCall.isSimulated
-                ? `Simulated (${formatDuration(activeCall.duration)})`
-                : formatDuration(activeCall.duration)}
+                  ? `Simulated (${formatDuration(activeCall.duration)})`
+                  : formatDuration(activeCall.duration)}
             </div>
           </div>
 
@@ -684,15 +684,15 @@ export const InCallBar: React.FC = () => {
                 activeCall.status === 'ringing'
                   ? { color: '#38bdf8', fontWeight: 600 }
                   : activeCall.isSimulated
-                  ? { color: '#f59e0b', fontWeight: 600 }
-                  : undefined
+                    ? { color: '#f59e0b', fontWeight: 600 }
+                    : undefined
               }
             >
               {activeCall.status === 'ringing'
                 ? 'Outbound call initiating • Ringing softphone carrier...'
                 : activeCall.isSimulated
-                ? (activeCall.providerStatus || 'Carrier trunk offline • Simulated Sandbox Mode')
-                : 'Live audio call in progress'}
+                  ? (activeCall.providerStatus || 'Carrier trunk offline • Simulated Sandbox Mode')
+                  : 'Live audio call in progress'}
             </span>
           </div>
 
@@ -1278,8 +1278,8 @@ export const DispositionModal: React.FC = () => {
   const dispositions: CallDisposition[] = isIrm
     ? irmDispositions
     : (isFollowupCall
-        ? FOLLOWUP_CALL_OUTCOMES
-        : SALES_EXEC_DISPOSITIONS);
+      ? FOLLOWUP_CALL_OUTCOMES
+      : SALES_EXEC_DISPOSITIONS);
 
   const handleSave = async () => {
     if (isSubmitting) return;
@@ -1467,30 +1467,30 @@ export const DispositionModal: React.FC = () => {
   return (
     <>
       <Modal
-      isOpen={showDispositionModal}
-      onClose={() => {
-        // Modal must not close until disposition is saved
-      }}
-      closeOnBackdrop={false}
-      closeOnEscape={false}
-      hideCloseButton={true}
-      title="Call Wrap-up & Disposition"
-      subtitle={`Call with ${lastCallRecord.contactName} (${lastCallRecord.contactPhone}) • Duration: ${isSimulated ? '0s (Not Connected)' : `${Math.floor(lastCallRecord.duration / 60)}m ${lastCallRecord.duration % 60}s`}`}
-      maxWidth={580}
-      footer={
-        <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
-          <button
-            type="button"
-            className="btn btn-primary"
-            onClick={handleSave}
-            disabled={isSubmitting}
-          >
-            {isSubmitting ? 'Saving...' : 'Save Disposition & Wrap Up'}
-          </button>
-        </div>
-      }
-    >
-      <div className="disposition-form-container">
+        isOpen={showDispositionModal}
+        onClose={() => {
+          // Modal must not close until disposition is saved
+        }}
+        closeOnBackdrop={false}
+        closeOnEscape={false}
+        hideCloseButton={true}
+        title="Call Wrap-up & Disposition"
+        subtitle={`Call with ${lastCallRecord.contactName} (${lastCallRecord.contactPhone}) • Duration: ${isSimulated ? '0s (Not Connected)' : `${Math.floor(lastCallRecord.duration / 60)}m ${lastCallRecord.duration % 60}s`}`}
+        maxWidth={580}
+        footer={
+          <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleSave}
+              disabled={isSubmitting}
+            >
+              {isSubmitting ? 'Saving...' : 'Save Disposition & Wrap Up'}
+            </button>
+          </div>
+        }
+      >
+        <div className="disposition-form-container">
           {isSimulated && (
             <div
               style={{
@@ -1957,8 +1957,7 @@ export const DispositionModal: React.FC = () => {
               Scheduling Buffer Advice
             </div>
             <p style={{ margin: 0, fontSize: '0.83rem', color: 'var(--text-primary, #334155)', lineHeight: 1.5 }}>
-              To ensure sufficient time for each call and avoid overlapping appointments (e.g. 10:00 AM and 10:01 AM), <strong>please schedule your follow-up 15 to 20 minutes afterwards (or 20–30 minutes later)</strong>.
-            </p>
+              To avoid overlapping appointments and ensure sufficient time for each call, <strong>please schedule your follow-up at least 15–20 minutes after your existing appointment.</strong>            </p>
           </div>
 
           {slotConflictData?.suggestedTime && (
