@@ -633,7 +633,6 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const isCallFromOpportunities = callMod === 'opportunities';
       const isCallFromInvestor360 = callMod === 'investor_360';
       const isCallFromOther = callMod === 'other';
-      const isCustomerContact = lastCallRecord.matchedRecord?.type === 'customer' || Boolean(lastCallRecord.customerId);
       const isIrmRole = user?.role?.code === 'irm' || (user as any)?.roleCode === 'irm';
       const isCallFromMyLeads = isIrmRole && (callMod === 'my_leads' || (!isCallFromFollowup && !isCallFromKyc && !isCallFromOpportunities && !isCallFromInvestor360 && !isCallFromOther && !isCustomerContact));
 

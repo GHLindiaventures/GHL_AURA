@@ -896,7 +896,7 @@ export const OpportunitiesPage: React.FC = () => {
   ];
 
   // ─────────────────────────────────────────────────────────────────────────
-  if (detailDeal) {
+  if (detailDeal && !isGhlAdmin) {
     return (
       <div className="opportunities-page">
         {toastMessage && (
