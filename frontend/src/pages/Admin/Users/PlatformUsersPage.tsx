@@ -610,6 +610,34 @@ export const PlatformUsersPage: React.FC = () => {
 
                       <td style={{ textAlign: 'right' }}>
                         <div className="user-row-actions">
+                          <button
+                            className="action-icon-btn text-cyan"
+                            title={`Log in as ${u.name} (Direct User Impersonation)`}
+                            onClick={() => openUserImpersonateModal(u)}
+                          >
+                            <LogIn size={14} />
+                          </button>
+                          <button
+                            className="action-icon-btn"
+                            title="Reset Password"
+                            onClick={() => openResetModal(u)}
+                          >
+                            <KeyRound size={14} />
+                          </button>
+                          <button
+                            className="action-icon-btn"
+                            title="Edit Profile"
+                            onClick={() => openEditDrawer(u)}
+                          >
+                            <Edit2 size={14} />
+                          </button>
+                          <button
+                            className={`action-icon-btn ${u.status === 'Active' ? 'text-amber' : 'text-green'}`}
+                            title={u.status === 'Active' ? 'Suspend Account' : 'Activate Account'}
+                            onClick={() => handleToggleStatus(u)}
+                          >
+                            {u.status === 'Active' ? <AlertTriangle size={14} /> : <CheckCircle2 size={14} />}
+                          </button>
                           {!isSuperAdminUser && (
                             <button
                               className="action-icon-btn text-danger"
