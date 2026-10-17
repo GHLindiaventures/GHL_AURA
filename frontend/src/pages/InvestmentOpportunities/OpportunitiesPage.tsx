@@ -12,9 +12,10 @@ import {
   CheckCircle,
   FileText,
 } from 'lucide-react';
-import { InvestmentOpportunity, Investor, Deal, DealActivity } from '../../types';
+import { InvestmentOpportunity, Investor, Deal, DealActivity, CallRecord, Consultation, Followup } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useCall } from '../../context/CallContext';
+import { useTheme } from '../../context/ThemeContext';
 import { storageService } from '../../services/storageService';
 import {
   getOpportunities,
@@ -22,6 +23,9 @@ import {
   deleteOpportunity as apiDeleteOpportunity,
   getInvestors,
   getDeals,
+  getCalls,
+  getConsultations,
+  getFollowups,
   saveDeal as apiSaveDeal,
   addDealActivity as apiAddDealActivity,
   saveInvestor as apiSaveInvestor,
@@ -31,6 +35,7 @@ import { DataTable, Column, RowAction } from '../../components/common/DataTable'
 import { StatusChip } from '../../components/common/StatusChip';
 import { FilterBar } from '../../components/common/FilterBar';
 import { Modal } from '../../components/common/Modal';
+import { OpportunityProfileWorkspace } from './OpportunityProfileWorkspace';
 import { apiUrl } from '../../utils/apiUrl';
 import { getAuthHeaders } from '../../utils/authHeaders';
 import './OpportunitiesPage.css';
@@ -80,6 +85,7 @@ const BLANK_OPP_FORM: OppForm = {
 export const OpportunitiesPage: React.FC = () => {
   const { tenant, user } = useAuth();
   const { initiateCall } = useCall();
+  const { theme } = useTheme();
 
   const roleCode = (user?.role?.code || '').toLowerCase();
   const isExec = roleCode === 'sales_executive';
@@ -129,19 +135,39 @@ export const OpportunitiesPage: React.FC = () => {
   const [isEditingAmount, setIsEditingAmount] = useState<boolean>(false);
   const [showConfirmDialog, setShowConfirmDialog] = useState<boolean>(false);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [allCalls, setAllCalls] = useState<CallRecord[]>([]);
+  const [allConsultations, setAllConsultations] = useState<Consultation[]>([]);
+  const [allFollowups, setAllFollowups] = useState<Followup[]>([]);
+  const [activeDossierTab, setActiveDossierTab] = useState<'all' | 'basic' | 'identity' | 'bank' | 'demat' | 'nominees'>('all');
+  const [copiedField, setCopiedField] = useState<string | null>(null);
+
+  const copyToClipboard = (text: string, fieldKey: string) => {
+    if (!text) return;
+    navigator.clipboard.writeText(text);
+    setCopiedField(fieldKey);
+    setTimeout(() => setCopiedField(null), 2000);
+  };
+
+  const isDark = theme === 'dark';
 
   // ── Data loading ──────────────────────────────────────────────────────────
   const loadData = async () => {
     try {
       setLoadError(null);
-      const [oppsData, investorsData, dealsData] = await Promise.all([
+      const [oppsData, investorsData, dealsData, callsData, consultationsData, followupsData] = await Promise.all([
         getOpportunities(tenant?.id),
         getInvestors(tenant?.id),
         getDeals(tenant?.id),
+        getCalls(tenant?.id).catch(() => storageService.getCalls(tenant?.id) || []),
+        getConsultations(tenant?.id).catch(() => storageService.getConsultations(tenant?.id) || []),
+        getFollowups(tenant?.id).catch(() => storageService.getFollowups(tenant?.id) || []),
       ]);
       setOpps(oppsData || []);
       setInvestors(investorsData || []);
       setDeals(dealsData || []);
+      setAllCalls(callsData || []);
+      setAllConsultations(consultationsData || []);
+      setAllFollowups(followupsData || []);
       setDetailDeal(prev => {
         if (!prev) return null;
         const fresh = (dealsData || []).find(d => d.id === prev.id);
@@ -536,6 +562,22 @@ export const OpportunitiesPage: React.FC = () => {
     showToast(`✓ Investment amount ₹${numericAmount.toLocaleString('en-IN')} confirmed for "${detailDeal.customerName}"`);
   };
 
+  const handleRouteChange = async (route: 'direct_aif' | 'debenture') => {
+    if (!detailDeal) return;
+    const updatedDeal: Deal = {
+      ...detailDeal,
+      investmentRoute: route,
+      investorType: route === 'debenture' ? 'Alternate route to Invest in AIF via Debenture' : 'Direct AIF',
+    };
+    try {
+      await persistDeal(updatedDeal);
+      setDetailDeal(updatedDeal);
+      loadData();
+    } catch (err) {
+      console.error('Failed to change investment route:', err);
+    }
+  };
+
   const getDealKycStatus = (deal: Deal, liveKyc?: any): 'Pending' | 'Partially Completed' | 'Submitted' | 'Verified' | 'Wrong' => {
     // 1. Prefer DB-sourced status from deal or live KYC record
     const raw = (deal.kycStatus || liveKyc?.status || '').toString().toLowerCase();
@@ -576,6 +618,7 @@ export const OpportunitiesPage: React.FC = () => {
       aadhaarNumber: dto.aadhaarNumber || '',
       fatherName: dto.fatherName || '',
       dob: dto.dateOfBirth || dto.dob || '',
+      dateOfBirth: dto.dateOfBirth || dto.dob || '',
       city: dto.city || '',
       state: dto.state || '',
       pincode: dto.pincode || '',
@@ -853,6 +896,96 @@ export const OpportunitiesPage: React.FC = () => {
   ];
 
   // ─────────────────────────────────────────────────────────────────────────
+  if (detailDeal) {
+    return (
+      <div className="opportunities-page">
+        {toastMessage && (
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 24,
+              right: 24,
+              backgroundColor: '#059669',
+              color: '#fff',
+              padding: '12px 20px',
+              borderRadius: 8,
+              boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+              zIndex: 9999,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 14,
+              fontWeight: 600,
+            }}
+          >
+            <CheckCircle size={18} /> {toastMessage}
+          </div>
+        )}
+
+        <OpportunityProfileWorkspace
+          deal={detailDeal}
+          liveKycData={liveKycData}
+          isKycLoading={isKycLoading}
+          amountInput={amountInput}
+          isEditingAmount={isEditingAmount}
+          activeDossierTab={activeDossierTab}
+          setActiveDossierTab={setActiveDossierTab}
+          copiedField={copiedField}
+          isDark={isDark}
+          calls={allCalls}
+          consultations={allConsultations}
+          followups={allFollowups}
+          onClose={handleCloseDetailModal}
+          onCallInvestor={(name, phone, id) => initiateCall(name, phone, 'customer', id, undefined, 'opportunities')}
+          onConvertDeal={deal => {
+            handleAdvanceToConverted(deal);
+            handleCloseDetailModal();
+          }}
+          onEditAmount={handleEditAmount}
+          onAmountInputChange={val => setAmountInput(val)}
+          onConfirmAmountClick={() => setShowConfirmDialog(true)}
+          onRouteChange={handleRouteChange}
+          copyToClipboard={copyToClipboard}
+          getDealKycStatus={getDealKycStatus}
+        />
+
+        {/* ── Confirm Investment Amount Dialog ──────────────────────────────── */}
+        <Modal
+          isOpen={showConfirmDialog}
+          onClose={() => setShowConfirmDialog(false)}
+          title="Confirm Investment Amount"
+          maxWidth={460}
+          footer={
+            <>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                onClick={() => setShowConfirmDialog(false)}
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                className="btn btn-primary"
+                onClick={handleConfirmAmount}
+              >
+                Confirm
+              </button>
+            </>
+          }
+        >
+          <div style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.6 }}>
+            Set investment amount to{' '}
+            <strong style={{ color: '#10b981' }}>
+              {formatCurrency(parseFloat(amountInput) || 0)}
+            </strong>{' '}
+            for <strong>{detailDeal?.customerName}</strong>? This will be used for conversion.
+          </div>
+        </Modal>
+      </div>
+    );
+  }
+
   return (
     <div className="opportunities-page">
       {/* Toast Notification */}
