@@ -110,9 +110,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
         const rawParsed = JSON.parse(saved);
         const parsed = rawParsed?.user && (rawParsed.user.id || rawParsed.user.email) ? rawParsed.user : rawParsed;
         if (parsed?.role?.code && SYSTEM_ROLES[parsed.role.code]) {
-          parsed.role.permissions = Array.from(
-            new Set([...(parsed.role.permissions || []), ...SYSTEM_ROLES[parsed.role.code].permissions])
-          );
+          if (!parsed.role.permissions || parsed.role.permissions.length === 0) {
+            parsed.role.permissions = [...SYSTEM_ROLES[parsed.role.code].permissions];
+          }
         }
         return parsed;
       } catch {
@@ -334,8 +334,28 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   const lastRevalidationRef = useRef<number>(0);
   const isRevalidatingRef = useRef<boolean>(false);
 
-  const revalidateSession = async () => {
-    if (!userRef.current || isMockMode() || isRevalidatingRef.current) return;
+  const revalidateSession = async (force: boolean = false) => {
+    if (!userRef.current) return;
+    if (isMockMode()) {
+      try {
+        const storedRoles = localStorage.getItem('nexus_platform_roles');
+        if (storedRoles && userRef.current?.role?.code) {
+          const roles = JSON.parse(storedRoles);
+          const currentRole = roles[userRef.current.role.code];
+          if (currentRole && currentRole.permissions) {
+            setUser(prev => prev ? {
+              ...prev,
+              role: {
+                ...prev.role,
+                permissions: currentRole.permissions,
+              }
+            } : null);
+          }
+        }
+      } catch {}
+      return;
+    }
+    if (isRevalidatingRef.current && !force) return;
     const token = sessionStorage.getItem('nexus_auth_token') || localStorage.getItem('nexus_auth_token');
     if (!token || isJwtExpired(token)) {
       logout();
@@ -357,9 +377,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         if (userData) {
           if (userData.role?.code && SYSTEM_ROLES[userData.role.code]) {
-            userData.role.permissions = Array.from(
-              new Set([...(userData.role.permissions || []), ...(SYSTEM_ROLES[userData.role.code].permissions || [])])
-            );
+            if (!userData.role.permissions || userData.role.permissions.length === 0) {
+              userData.role.permissions = [...(SYSTEM_ROLES[userData.role.code].permissions || [])];
+            }
           }
           const prev = userRef.current;
           const changed =
@@ -369,7 +389,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
             prev.name !== userData.name ||
             prev.email !== userData.email ||
             prev.role?.code !== userData.role?.code ||
-            prev.companyId !== userData.companyId;
+            prev.companyId !== userData.companyId ||
+            JSON.stringify(prev.role?.permissions || []) !== JSON.stringify(userData.role?.permissions || []);
 
           if (changed) {
             setUser(userData);
@@ -448,9 +469,9 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
               const u = raw?.user && (raw.user.id || raw.user.email) ? raw.user : raw;
               if (u) {
                 if (u.role?.code && SYSTEM_ROLES[u.role.code]) {
-                  u.role.permissions = Array.from(
-                    new Set([...(u.role.permissions || []), ...(SYSTEM_ROLES[u.role.code].permissions || [])])
-                  );
+                  if (!u.role.permissions || u.role.permissions.length === 0) {
+                    u.role.permissions = [...(SYSTEM_ROLES[u.role.code].permissions || [])];
+                  }
                 }
                 setUser(u);
               }
@@ -489,8 +510,17 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       }
     };
 
+    const handleAdminUpdated = () => {
+      // Super Admin updated roles/permissions or company settings
+      if (userRef.current) {
+        revalidateSession(true);
+      }
+    };
+
     window.addEventListener('storage', handleStorageEvent);
     window.addEventListener('nexus_auth_unauthorized', handleUnauthorized);
+    window.addEventListener('nexus_admin_updated', handleAdminUpdated);
+    window.addEventListener('nexus_storage_updated', handleAdminUpdated);
     window.addEventListener('focus', handleRevalidate);
     document.addEventListener('visibilitychange', handleVisibilityChange);
 
@@ -513,6 +543,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       } catch { }
       window.removeEventListener('storage', handleStorageEvent);
       window.removeEventListener('nexus_auth_unauthorized', handleUnauthorized);
+      window.removeEventListener('nexus_admin_updated', handleAdminUpdated);
+      window.removeEventListener('nexus_storage_updated', handleAdminUpdated);
       window.removeEventListener('focus', handleRevalidate);
       document.removeEventListener('visibilitychange', handleVisibilityChange);
     };

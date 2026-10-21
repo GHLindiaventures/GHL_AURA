@@ -18,6 +18,10 @@ import { isMockMode as envIsMockMode } from '../config/environment';
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
 class ApiClient {
+  getBaseUrl(): string {
+    return API_BASE_URL;
+  }
+
   isMockMode(): boolean {
     return envIsMockMode();
   }
