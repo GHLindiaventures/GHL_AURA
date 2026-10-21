@@ -35,7 +35,6 @@ import { DataTable, Column, RowAction } from '../../components/common/DataTable'
 import { StatusChip } from '../../components/common/StatusChip';
 import { FilterBar } from '../../components/common/FilterBar';
 import { Modal } from '../../components/common/Modal';
-import { OpportunityProfileWorkspace } from './OpportunityProfileWorkspace';
 import { apiUrl } from '../../utils/apiUrl';
 import { getAuthHeaders } from '../../utils/authHeaders';
 import './OpportunitiesPage.css';
@@ -895,96 +894,6 @@ export const OpportunitiesPage: React.FC = () => {
     },
   ];
 
-  // ─────────────────────────────────────────────────────────────────────────
-  if (detailDeal && !isGhlAdmin) {
-    return (
-      <div className="opportunities-page">
-        {toastMessage && (
-          <div
-            style={{
-              position: 'fixed',
-              bottom: 24,
-              right: 24,
-              backgroundColor: '#059669',
-              color: '#fff',
-              padding: '12px 20px',
-              borderRadius: 8,
-              boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-              zIndex: 9999,
-              display: 'flex',
-              alignItems: 'center',
-              gap: 8,
-              fontSize: 14,
-              fontWeight: 600,
-            }}
-          >
-            <CheckCircle size={18} /> {toastMessage}
-          </div>
-        )}
-
-        <OpportunityProfileWorkspace
-          deal={detailDeal}
-          liveKycData={liveKycData}
-          isKycLoading={isKycLoading}
-          amountInput={amountInput}
-          isEditingAmount={isEditingAmount}
-          activeDossierTab={activeDossierTab}
-          setActiveDossierTab={setActiveDossierTab}
-          copiedField={copiedField}
-          isDark={isDark}
-          calls={allCalls}
-          consultations={allConsultations}
-          followups={allFollowups}
-          onClose={handleCloseDetailModal}
-          onCallInvestor={(name, phone, id) => initiateCall(name, phone, 'customer', id, undefined, 'opportunities')}
-          onConvertDeal={deal => {
-            handleAdvanceToConverted(deal);
-            handleCloseDetailModal();
-          }}
-          onEditAmount={handleEditAmount}
-          onAmountInputChange={val => setAmountInput(val)}
-          onConfirmAmountClick={() => setShowConfirmDialog(true)}
-          onRouteChange={handleRouteChange}
-          copyToClipboard={copyToClipboard}
-          getDealKycStatus={getDealKycStatus}
-        />
-
-        {/* ── Confirm Investment Amount Dialog ──────────────────────────────── */}
-        <Modal
-          isOpen={showConfirmDialog}
-          onClose={() => setShowConfirmDialog(false)}
-          title="Confirm Investment Amount"
-          maxWidth={460}
-          footer={
-            <>
-              <button
-                type="button"
-                className="btn btn-secondary"
-                onClick={() => setShowConfirmDialog(false)}
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={handleConfirmAmount}
-              >
-                Confirm
-              </button>
-            </>
-          }
-        >
-          <div style={{ fontSize: 14, color: 'var(--text-primary)', lineHeight: 1.6 }}>
-            Set investment amount to{' '}
-            <strong style={{ color: '#10b981' }}>
-              {formatCurrency(parseFloat(amountInput) || 0)}
-            </strong>{' '}
-            for <strong>{detailDeal?.customerName}</strong>? This will be used for conversion.
-          </div>
-        </Modal>
-      </div>
-    );
-  }
 
   return (
     <div className="opportunities-page">
@@ -1362,13 +1271,44 @@ export const OpportunitiesPage: React.FC = () => {
           subtitle={`${detailDeal.customerName} • Deal Details`}
           maxWidth={760}
           footer={
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={handleCloseDetailModal}
-            >
-              Close
-            </button>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 12 }}>
+              <div>
+                {detailDeal.phone && (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    onClick={() => initiateCall(detailDeal.customerName, detailDeal.phone || '', 'customer', detailDeal.customerId || detailDeal.id, undefined, 'opportunities')}
+                  >
+                    <Phone size={13} color="#059669" />
+                    <span>Call Investor</span>
+                  </button>
+                )}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  onClick={handleCloseDetailModal}
+                >
+                  Close
+                </button>
+                {!isGhlAdmin && Boolean(detailDeal.investmentAmountConfirmed) && (
+                  <button
+                    type="button"
+                    className="btn btn-primary"
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    onClick={() => {
+                      handleAdvanceToConverted(detailDeal);
+                      handleCloseDetailModal();
+                    }}
+                  >
+                    <CheckCircle size={14} />
+                    <span>Convert Deal</span>
+                  </button>
+                )}
+              </div>
+            </div>
           }
         >
           {(() => {
