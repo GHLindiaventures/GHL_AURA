@@ -866,6 +866,7 @@ function mapCallRecord(c: Record<string, any>): CallRecord {
     recordingUrl: recordingUrl,
     transcription: transcription,
     twilioCallSid: c.twilioCallSid || undefined,
+    leadStatusAtCall: c.leadStatusAtCall || undefined,
     leadId: c.leadId ? sid(c.leadId) : undefined,
     customerId: c.customerId ? sid(c.customerId) : undefined,
   };

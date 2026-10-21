@@ -315,6 +315,7 @@ export interface CallRecord {
   callerType?: 'Agent' | 'IRM';
   connectVia?: 'Connect via Agent' | 'Connect via IRM';
   disposition: CallDisposition;
+  leadStatusAtCall?: string;
   timestamp: string;
   recordingUrl?: string;
   transcription?: string;

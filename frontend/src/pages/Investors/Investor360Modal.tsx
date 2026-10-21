@@ -1255,20 +1255,24 @@ export const Investor360Modal: React.FC<Investor360ModalProps> = ({
 
       {/* ── Footer ──────────────────────────────────────────────────────── */}
       <div className="iv-ft">
-        <button
-          className="iv-btn"
-          onClick={() => onEditInvestor(investor)}
-          id="iv-btn-edit-footer"
-        >
-          <Edit3 size={14} /> Edit Profile
-        </button>
-        <button
-          className="iv-btn iv-btn-call"
-          onClick={() => onCallCustomer(investor.name, investor.phone, investor.id)}
-          id="iv-btn-call-footer"
-        >
-          <Phone size={14} /> Call Customer
-        </button>
+        {!isGhlAdmin && (
+          <button
+            className="iv-btn"
+            onClick={() => onEditInvestor(investor)}
+            id="iv-btn-edit-footer"
+          >
+            <Edit3 size={14} /> Edit Profile
+          </button>
+        )}
+        {!isGhlAdmin && (
+          <button
+            className="iv-btn iv-btn-call"
+            onClick={() => onCallCustomer(investor.name, investor.phone, investor.id)}
+            id="iv-btn-call-footer"
+          >
+            <Phone size={14} /> Call Customer
+          </button>
+        )}
       </div>
     </div>
   );
@@ -1289,22 +1293,26 @@ export const Investor360Modal: React.FC<Investor360ModalProps> = ({
             </div>
           </div>
           <div className="iv-top-right-actions">
-            <button
-              className="iv-action-btn iv-action-secondary"
-              onClick={() => onEditInvestor(investor)}
-              id="iv-btn-edit-top"
-            >
-              <Edit3 size={14} />
-              <span>Edit Profile</span>
-            </button>
-            <button
-              className="iv-action-btn iv-action-call"
-              onClick={() => onCallCustomer(investor.name, investor.phone, investor.id)}
-              id="iv-btn-call-top"
-            >
-              <Phone size={14} />
-              <span>Call Customer</span>
-            </button>
+            {!isGhlAdmin && (
+              <button
+                className="iv-action-btn iv-action-secondary"
+                onClick={() => onEditInvestor(investor)}
+                id="iv-btn-edit-top"
+              >
+                <Edit3 size={14} />
+                <span>Edit Profile</span>
+              </button>
+            )}
+            {!isGhlAdmin && (
+              <button
+                className="iv-action-btn iv-action-call"
+                onClick={() => onCallCustomer(investor.name, investor.phone, investor.id)}
+                id="iv-btn-call-top"
+              >
+                <Phone size={14} />
+                <span>Call Customer</span>
+              </button>
+            )}
           </div>
         </div>
         {mainCard}

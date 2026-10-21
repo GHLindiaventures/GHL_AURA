@@ -263,7 +263,8 @@ public class SalesExecutiveCallsController : ControllerBase
             CreatedAt = c.CreatedAt,
             RecordingUrl = c.RecordingUrl,
             Transcript = c.Transcript,
-            TwilioCallSid = c.TwilioCallSid
+            TwilioCallSid = c.TwilioCallSid,
+            LeadStatusAtCall = c.LeadStatusAtCall
         };
     }
 
@@ -433,24 +434,49 @@ public class SalesExecutiveCallsController : ControllerBase
             }
         }
 
-        var call = new CallRecord
+        CallRecord? call = null;
+        var isNewRecord = false;
+        if (!string.IsNullOrWhiteSpace(dto.TwilioCallSid))
         {
-            CompanyId = companyId.Value,
-            AgentId = agentId.Value,
-            ContactName = dto.ContactName.Trim(),
-            ContactPhone = dto.ContactPhone.Trim(),
-            Direction = string.IsNullOrWhiteSpace(dto.Direction) ? "outbound" : dto.Direction.Trim().ToLower(),
-            Duration = effectiveDuration,
-            Disposition = effectiveDisposition,
-            Notes = rawNotes,
-            Reason = storedReason,
-            CallModule = normalizedModule,
-            LeadId = validLeadId,
-            CustomerId = validCustomerId,
-            TwilioCallSid = dto.TwilioCallSid,
-            Timestamp = DateTime.UtcNow,
-            CreatedAt = DateTime.UtcNow
-        };
+            call = await _context.CallRecords.FirstOrDefaultAsync(c =>
+                c.CompanyId == companyId.Value && c.TwilioCallSid == dto.TwilioCallSid, ct);
+        }
+
+        if (call == null)
+        {
+            isNewRecord = true;
+            call = new CallRecord
+            {
+                CompanyId = companyId.Value,
+                AgentId = agentId.Value,
+                ContactName = dto.ContactName.Trim(),
+                ContactPhone = dto.ContactPhone.Trim(),
+                Direction = string.IsNullOrWhiteSpace(dto.Direction) ? "outbound" : dto.Direction.Trim().ToLower(),
+                Duration = effectiveDuration,
+                Disposition = effectiveDisposition,
+                Notes = rawNotes,
+                Reason = storedReason,
+                CallModule = normalizedModule,
+                LeadId = validLeadId,
+                CustomerId = validCustomerId,
+                TwilioCallSid = dto.TwilioCallSid,
+                Timestamp = DateTime.UtcNow,
+                CreatedAt = DateTime.UtcNow
+            };
+        }
+        else
+        {
+            call.ContactName = string.IsNullOrWhiteSpace(call.ContactName) ? dto.ContactName.Trim() : call.ContactName;
+            call.ContactPhone = string.IsNullOrWhiteSpace(call.ContactPhone) ? dto.ContactPhone.Trim() : call.ContactPhone;
+            call.Direction = string.IsNullOrWhiteSpace(dto.Direction) ? call.Direction : dto.Direction.Trim().ToLower();
+            if (effectiveDuration > 0 || call.Duration == 0) call.Duration = effectiveDuration;
+            if (!string.IsNullOrWhiteSpace(effectiveDisposition)) call.Disposition = effectiveDisposition;
+            if (!string.IsNullOrWhiteSpace(rawNotes)) call.Notes = rawNotes;
+            if (!string.IsNullOrWhiteSpace(storedReason)) call.Reason = storedReason;
+            if (!string.IsNullOrWhiteSpace(normalizedModule)) call.CallModule = normalizedModule;
+            if (validLeadId.HasValue) call.LeadId = validLeadId;
+            if (validCustomerId.HasValue) call.CustomerId = validCustomerId;
+        }
 
         int? resolvedLeadId = dto.LeadId;
         if ((!resolvedLeadId.HasValue || resolvedLeadId.Value <= 0) && !string.IsNullOrWhiteSpace(dto.ContactPhone))
@@ -471,11 +497,13 @@ public class SalesExecutiveCallsController : ControllerBase
             }
         }
 
+        string? leadStatusBeforeUpdate = null;
         if (resolvedLeadId.HasValue && resolvedLeadId.Value > 0)
         {
             var lead = await _context.Leads.FirstOrDefaultAsync(l => l.Id == resolvedLeadId.Value && l.CompanyId == companyId.Value, ct);
             if (lead != null)
             {
+                leadStatusBeforeUpdate = lead.Status;
                 var dispo = dto.Disposition?.Trim() ?? string.Empty;
                 if (string.Equals(dispo, "Follow-up Required", StringComparison.OrdinalIgnoreCase) ||
                     string.Equals(dispo, "Follow Up Required", StringComparison.OrdinalIgnoreCase))
@@ -592,7 +620,16 @@ public class SalesExecutiveCallsController : ControllerBase
             }
         }
 
-        _context.CallRecords.Add(call);
+        if (string.IsNullOrWhiteSpace(call.LeadStatusAtCall))
+        {
+            call.LeadStatusAtCall = leadStatusBeforeUpdate 
+                ?? (!string.IsNullOrWhiteSpace(effectiveDisposition) ? effectiveDisposition : "Completed");
+        }
+
+        if (isNewRecord)
+        {
+            _context.CallRecords.Add(call);
+        }
         await _context.SaveChangesAsync(ct);
 
         try

@@ -372,6 +372,7 @@ export const OpportunitiesPage: React.FC = () => {
         const inv = investors.find(i => i.id === o.investorId);
         if (inv) initiateCall(inv.name, inv.phone, 'customer', inv.id, undefined, 'opportunities');
       },
+      hidden: () => isGhlAdmin,
     },
     {
       label: 'Edit',
@@ -854,7 +855,7 @@ export const OpportunitiesPage: React.FC = () => {
         const isConfirmed = Boolean(deal.investmentAmountConfirmed);
         return (
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }} onClick={e => e.stopPropagation()}>
-            {deal.phone && (
+            {!isGhlAdmin && deal.phone && (
               <button
                 type="button"
                 className="btn btn-sm btn-ghost btn-icon"
@@ -1273,7 +1274,7 @@ export const OpportunitiesPage: React.FC = () => {
           footer={
             <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', gap: 12 }}>
               <div>
-                {detailDeal.phone && (
+                {!isGhlAdmin && detailDeal.phone && (
                   <button
                     type="button"
                     className="btn btn-secondary btn-sm"

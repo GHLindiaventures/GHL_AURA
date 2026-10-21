@@ -2565,7 +2565,7 @@ const GhlIrmKycView: React.FC = () => {
             isGhlAdmin={isGhlAdmin}
             onShowToast={msg => showToast(msg)}
             onAssistedKyc={isGhlAdmin ? undefined : (d => startAssistedKycFlow(d))}
-            onCallInvestor={d => initiateCall(d.customerName, d.phone || '', 'customer', d.customerId || d.id, undefined, 'kyc')}
+            onCallInvestor={isGhlAdmin ? undefined : d => initiateCall(d.customerName, d.phone || '', 'customer', d.customerId || d.id, undefined, 'kyc')}
             // Only show "Advance to Opportunity" after KYC is fully completed (not available in Admin oversight mode)
             onAdvanceStage={!isGhlAdmin && normalizeLegacyKycStatus(deal.kycStatus, deal.verifiedBy) === 'Verified' ? d => handleAdvanceStage(d) : undefined}
           />
@@ -4725,7 +4725,7 @@ const GhlIrmKycView: React.FC = () => {
       />
 
       {/* Review Customer KYC Drawer */}
-      <KycReviewDrawer isOpen={!!reviewDeal} onClose={() => setReviewDeal(null)} deal={reviewDeal} onShowToast={showToast} onChangeKycStatus={handleStatusChange} />
+      <KycReviewDrawer isOpen={!!reviewDeal} onClose={() => setReviewDeal(null)} deal={reviewDeal} onShowToast={showToast} onChangeKycStatus={handleStatusChange} isReadOnly={isGhlAdmin} />
 
       {/* ── Assisted KYC Review & Consent Confirmation Modal ── */}
       <Modal

@@ -419,6 +419,7 @@ export const InvestorsPage: React.FC = () => {
       label: 'Call Customer',
       icon: <Phone size={14} color="#059669" style={{ marginRight: 6 }} />,
       onClick: inv => initiateCall(inv.name, inv.phone, 'customer', inv.id, undefined, 'investor_360'),
+      hidden: () => isGhlAdmin,
     },
     {
       label: 'View Investor 360',
