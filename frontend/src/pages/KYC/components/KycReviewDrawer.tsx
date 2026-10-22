@@ -23,6 +23,7 @@ import { Deal } from '../../../types';
 import { normalizeLegacyKycStatus } from '../../../services/kycService';
 import { saveDeal } from '../../../services/ghlApiService';
 import { getAuthHeaders } from '../../../utils/authHeaders';
+import { EXTERNAL_VERIFICATION_LINKS } from '../../../constants/externalLinks';
 import './KycLinkComponents.css';
 
 interface KycReviewDrawerProps {
@@ -588,8 +589,39 @@ export const KycReviewDrawer: React.FC<KycReviewDrawerProps> = ({
             <div className="kyc-link-field-grid">
               <div>
                 <div className="kyc-link-field-label">Permanent Account Number (PAN)</div>
-                <div className="kyc-link-field-val kyc-link-field-val-masked" style={{ color: '#0284c7' }}>
-                  {reviewData.identityDetails.panNumber}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <div className="kyc-link-field-val kyc-link-field-val-masked" style={{ color: '#0284c7' }}>
+                    {reviewData.identityDetails.panNumber}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    title="Verify PAN on Income Tax portal"
+                    aria-label="Verify PAN on Income Tax portal"
+                    onClick={() => {
+                      const cleanPan = liveKyc?.panNumber || reviewData.identityDetails.panNumber;
+                      const rawPan = cleanPan && cleanPan !== 'Not provided' && cleanPan !== '—' && cleanPan.toLowerCase() !== 'not specified' ? String(cleanPan).trim() : '';
+                      if (rawPan) {
+                        try {
+                          navigator.clipboard.writeText(rawPan);
+                          onShowToast('PAN copied. Paste it on the Income Tax portal.');
+                        } catch {}
+                      }
+                      window.open(EXTERNAL_VERIFICATION_LINKS.PAN, '_blank', 'noopener,noreferrer');
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '2px 8px',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      borderRadius: 6,
+                    }}
+                  >
+                    <ShieldCheck size={12} /> <span>Verify PAN</span>
+                  </button>
                 </div>
               </div>
               <div>
@@ -598,8 +630,31 @@ export const KycReviewDrawer: React.FC<KycReviewDrawerProps> = ({
               </div>
               <div>
                 <div className="kyc-link-field-label">Aadhaar (Masked UID)</div>
-                <div className="kyc-link-field-val kyc-link-field-val-masked" style={{ color: '#0284c7' }}>
-                  {reviewData.identityDetails.aadhaarNumber}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                  <div className="kyc-link-field-val kyc-link-field-val-masked" style={{ color: '#0284c7' }}>
+                    {reviewData.identityDetails.aadhaarNumber}
+                  </div>
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    title="Verify Aadhaar on UIDAI portal"
+                    aria-label="Verify Aadhaar on UIDAI portal"
+                    onClick={() => {
+                      window.open(EXTERNAL_VERIFICATION_LINKS.AADHAAR, '_blank', 'noopener,noreferrer');
+                    }}
+                    style={{
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 4,
+                      padding: '2px 8px',
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      borderRadius: 6,
+                    }}
+                  >
+                    <ShieldCheck size={12} /> <span>Verify Aadhaar</span>
+                  </button>
                 </div>
               </div>
               <div>

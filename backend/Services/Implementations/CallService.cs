@@ -26,6 +26,10 @@ public sealed class CallService(ApplicationDbContext context, ICurrentUserServic
 
     public async Task<ApiResponse<CallRecordDto>> LogAsync(LogCallDto request, CancellationToken cancellationToken)
     {
+        var role = (currentUser.Role ?? string.Empty).ToLowerInvariant();
+        if (role == "company_admin" || role == "admin" || role == "ghl_admin")
+            return ApiResponse<CallRecordDto>.FailureResult("Access denied: Admin roles cannot place or log calls.");
+
         if (!currentUser.UserId.HasValue || currentUser.UserId.Value <= 0)
             return ApiResponse<CallRecordDto>.FailureResult("Unauthorized: User ID is missing.");
         if (!currentUser.CompanyId.HasValue || currentUser.CompanyId.Value <= 0)
@@ -98,6 +102,10 @@ public sealed class CallService(ApplicationDbContext context, ICurrentUserServic
 
     public async Task<ApiResponse<CallRecordDto>> ProcessDispositionAsync(CallDispositionDto request, CancellationToken cancellationToken)
     {
+        var role = (currentUser.Role ?? string.Empty).ToLowerInvariant();
+        if (role == "company_admin" || role == "admin" || role == "ghl_admin")
+            return ApiResponse<CallRecordDto>.FailureResult("Access denied: Admin roles cannot submit call dispositions.");
+
         if (!currentUser.UserId.HasValue || currentUser.UserId.Value <= 0)
             return ApiResponse<CallRecordDto>.FailureResult("Unauthorized: User ID is missing.");
         if (!currentUser.CompanyId.HasValue || currentUser.CompanyId.Value <= 0)

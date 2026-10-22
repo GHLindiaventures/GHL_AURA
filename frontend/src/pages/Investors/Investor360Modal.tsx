@@ -42,6 +42,8 @@ import { useTheme } from '../../context/ThemeContext';
 import { getAuthHeaders } from '../../utils/authHeaders';
 import { apiUrl } from '../../utils/apiUrl';
 import { formatSmartScheduleDate } from '../../utils/dateUtils';
+import { useAuth } from '../../context/AuthContext';
+import { canPlaceCalls } from '../../utils/agentRoleUtils';
 import './Investor360Modal.css';
 
 interface Investor360ModalProps {
@@ -56,7 +58,7 @@ interface Investor360ModalProps {
   tenant?: any;
   isGhlAdmin?: boolean;
   onEditInvestor: (investor: Investor) => void;
-  onCallCustomer: (name: string, phone: string, entityId?: string) => void;
+  onCallCustomer?: (name: string, phone: string, entityId?: string) => void;
   isInline?: boolean;
 }
 
@@ -158,6 +160,7 @@ export const Investor360Modal: React.FC<Investor360ModalProps> = ({
   onCallCustomer,
   isInline = false,
 }) => {
+  const { user } = useAuth();
   const { theme } = useTheme();
   const isDark = theme === 'dark';
 
@@ -1264,7 +1267,7 @@ export const Investor360Modal: React.FC<Investor360ModalProps> = ({
             <Edit3 size={14} /> Edit Profile
           </button>
         )}
-        {!isGhlAdmin && (
+        {!isGhlAdmin && canPlaceCalls(user) && onCallCustomer && (
           <button
             className="iv-btn iv-btn-call"
             onClick={() => onCallCustomer(investor.name, investor.phone, investor.id)}
@@ -1303,7 +1306,7 @@ export const Investor360Modal: React.FC<Investor360ModalProps> = ({
                 <span>Edit Profile</span>
               </button>
             )}
-            {!isGhlAdmin && (
+            {!isGhlAdmin && canPlaceCalls(user) && onCallCustomer && (
               <button
                 className="iv-action-btn iv-action-call"
                 onClick={() => onCallCustomer(investor.name, investor.phone, investor.id)}

@@ -43,7 +43,7 @@ import { FilterBar } from '../../components/common/FilterBar';
 import { StatusChip } from '../../components/common/StatusChip';
 import { Drawer } from '../../components/common/Drawer';
 import { Modal } from '../../components/common/Modal';
-import { getAgentRoleInfo, getAssigningSalesAgentInfo } from '../../utils/agentRoleUtils';
+import { getAgentRoleInfo, getAssigningSalesAgentInfo, canPlaceCalls } from '../../utils/agentRoleUtils';
 import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawerContent';
 import './LeadsPage.css';
 
@@ -691,7 +691,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
       });
       if (hasPendingFollowup) return false;
     }
-    if (!isGhlAdmin && statusFilter !== 'All' && (lead.status as string) !== statusFilter) return false;
+    if (!isGhlAdmin && !isIrm && statusFilter !== 'All' && (lead.status as string) !== statusFilter) return false;
     // Agent filter is only shown for non-admin, non-GhlAdmin scoped views
     if (!isGhlAdmin && agentFilter !== 'All' && lead.assignedAgentName !== agentFilter) return false;
     if (capacityFilter !== 'All') {
@@ -1777,8 +1777,8 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
       },
     },
     ...(isIrm ? [assignedAgentColumn] : [statusColumn, sourceColumn]),
-    // Quick Call is hidden for Admin role (1.5)
-    ...(!isGhlAdmin ? [{
+    // Quick Call is hidden for Admin roles
+    ...(canPlaceCalls(user) ? [{
       key: 'quickCall',
       header: 'Quick Call',
       align: 'center' as const,
@@ -1900,7 +1900,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
                   onChange: setHandoverFilter,
                   options: handoverOptions
                 }] : []),
-                ...(isGhlAdmin ? [] : [{
+                ...(isGhlAdmin || isIrm ? [] : [{
                   key: 'status',
                   label: 'Status',
                   value: statusFilter,
@@ -1936,7 +1936,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
                 onChange: handleCustomDateChange,
               }}
               onClearAll={() => {
-                setStatusFilter('All');
+                if (!isIrm) setStatusFilter('All');
                 setAgentFilter('All');
                 setCapacityFilter('All');
                 setHandoverFilter('Mine');
@@ -2000,8 +2000,8 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
             >
               <Edit size={14} /> Edit Record
             </button>
-            {/* Call button hidden for Admin role (1.5) */}
-            {!isGhlAdmin && (
+            {/* Call button hidden for Admin roles */}
+            {canPlaceCalls(user) && (
               <button
                 className="btn btn-call"
                 onClick={() => {
@@ -2197,7 +2197,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
                 contactType="lead"
                 tenantId={tenant?.id}
                 tenantName={tenant?.name}
-                onCall={() => initiateCall(selectedLead.name, selectedLead.phone, 'lead', selectedLead.id, undefined, isIrm ? 'my_leads' : undefined)}
+                onCall={canPlaceCalls(user) ? () => initiateCall(selectedLead.name, selectedLead.phone, 'lead', selectedLead.id, undefined, isIrm ? 'my_leads' : undefined) : undefined}
                 sectionsOnly={['callRecordings']}
               />
             </>

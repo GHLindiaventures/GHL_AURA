@@ -302,18 +302,41 @@ public class SalesExecutiveCallsController : ControllerBase
         return Ok(ApiResponse<List<MessagingChannelStatusDto>>.SuccessResult(channels, "Messaging channels retrieved."));
     }
 
+    private bool IsAdminCaller()
+    {
+        var role = (_currentUser.Role ?? User.GetUserRole()).ToLowerInvariant();
+        if (role == "super_admin" || User.IsSuperAdmin()) return false;
+        return role == "company_admin" || role == "admin" || role == "ghl_admin" || User.IsGhlAdmin();
+    }
+
+    [HttpPost("start")]
+    [Authorize(Roles = "sales_executive,irm,super_admin")]
+    public async Task<ActionResult<ApiResponse<CallRecordResponseDto>>> StartCall(
+        [FromBody] LogCallDto dto,
+        CancellationToken ct = default)
+    {
+        if (IsAdminCaller())
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponse<CallRecordResponseDto>.FailureResult("Access denied: Admin roles cannot place or start calls."));
+        }
+
+        return await LogCall(dto, ct);
+    }
+
     [HttpPost]
+    [Authorize(Roles = "sales_executive,irm,super_admin")]
     public async Task<ActionResult<ApiResponse<CallRecordResponseDto>>> LogCall(
         [FromBody] LogCallDto dto,
         CancellationToken ct = default)
     {
-        var role = (_currentUser.Role ?? string.Empty).ToLowerInvariant();
-        if (User.IsGhlAdmin() || role == "ghl_admin")
+        if (IsAdminCaller())
         {
             return StatusCode(StatusCodes.Status403Forbidden,
-                ApiResponse<CallRecordResponseDto>.FailureResult("Access denied: GHL Admin has read-only access to IRM call records."));
+                ApiResponse<CallRecordResponseDto>.FailureResult("Access denied: Admin roles cannot place or log calls."));
         }
 
+        var role = (_currentUser.Role ?? string.Empty).ToLowerInvariant();
         var agentId = _currentUser.UserId;
         if (!agentId.HasValue || agentId.Value <= 0)
             return Unauthorized(ApiResponse<CallRecordResponseDto>.FailureResult("Unauthorized: User ID is missing."));
@@ -647,16 +670,18 @@ public class SalesExecutiveCallsController : ControllerBase
     }
 
     [HttpPost("disposition")]
+    [Authorize(Roles = "sales_executive,irm,super_admin")]
     public async Task<ActionResult<ApiResponse<CallRecordDto>>> ProcessDisposition(
         [FromBody] CallDispositionDto request,
         CancellationToken ct = default)
     {
-        var role = (_currentUser.Role ?? string.Empty).ToLowerInvariant();
-        if (User.IsGhlAdmin() || role == "ghl_admin")
+        if (IsAdminCaller())
         {
             return StatusCode(StatusCodes.Status403Forbidden,
-                ApiResponse<CallRecordDto>.FailureResult("Access denied: GHL Admin has read-only access to call disposition records."));
+                ApiResponse<CallRecordDto>.FailureResult("Access denied: Admin roles cannot submit call dispositions."));
         }
+
+        var role = (_currentUser.Role ?? string.Empty).ToLowerInvariant();
 
         if (role == "irm")
         {
@@ -724,12 +749,19 @@ public class SalesExecutiveCallsController : ControllerBase
     }
 
     [HttpPost("other/{callId:int}/move")]
+    [Authorize(Roles = "sales_executive,irm,super_admin")]
     public async Task<IActionResult> MoveOtherRecord(
         int callId,
         [FromQuery] string? targetModule,
         [FromServices] IIrmOtherService otherService,
         CancellationToken ct = default)
     {
+        if (IsAdminCaller())
+        {
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponse<object>.FailureResult("Access denied: Admin roles cannot move call records."));
+        }
+
         var companyId = _currentUser.CompanyId ?? User.GetCompanyId();
         var result = await otherService.MoveOtherRecordAsync(companyId, callId, targetModule, ct);
         if (!result.Success) return BadRequest(result);
@@ -788,17 +820,18 @@ public class SalesExecutiveCallsController : ControllerBase
     }
 
     [HttpPost("send-customer-message")]
+    [Authorize(Roles = "sales_executive,irm,super_admin")]
     public async Task<ActionResult<ApiResponse<SendCustomerMessageResponseDto>>> SendCustomerMessage(
         [FromBody] SendCustomerMessageRequestDto dto,
         CancellationToken ct = default)
     {
-        var role = (_currentUser.Role ?? string.Empty).ToLowerInvariant();
-        if (User.IsGhlAdmin() || role == "ghl_admin")
+        if (IsAdminCaller())
         {
             return StatusCode(StatusCodes.Status403Forbidden,
-                ApiResponse<SendCustomerMessageResponseDto>.FailureResult("Access denied: GHL Admin has read-only access to customer messaging records."));
+                ApiResponse<SendCustomerMessageResponseDto>.FailureResult("Access denied: Admin roles cannot send customer follow-up messages."));
         }
 
+        var role = (_currentUser.Role ?? string.Empty).ToLowerInvariant();
         var agentId = _currentUser.UserId;
         if (!agentId.HasValue || agentId.Value <= 0)
             return Unauthorized(ApiResponse<SendCustomerMessageResponseDto>.FailureResult("Unauthorized: User ID is missing."));

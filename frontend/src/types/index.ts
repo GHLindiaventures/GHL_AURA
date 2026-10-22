@@ -258,6 +258,7 @@ export interface Deal {
   investorType?: string;
   investmentRoute?: 'direct_aif' | 'debenture' | string;
   investmentAmountConfirmed?: boolean;
+  customFields?: Record<string, any>;
   kycStatus?: string;
   kycId?: number;
   customerKycStatus?: string;
