@@ -141,6 +141,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         { id: 'admin-dashboard', label: 'Platform Console', icon: <LayoutDashboard size={18} /> },
         { id: 'admin-companies', label: 'Companies (Tenants)', icon: <Building2 size={18} /> },
         { id: 'admin-users', label: 'Cross-Tenant Users', icon: <Users size={18} /> },
+        { id: 'admin-leads', label: 'Platform Leads', icon: <TrendingUp size={18} /> },
         { id: 'admin-converted-customers', label: 'Converted Customers', icon: <UserCheck size={18} /> },
         { id: 'admin-roles', label: 'Role Management', icon: <Shield size={18} /> },
         { id: 'admin-features', label: 'Feature Packages', icon: <Sparkles size={18} /> },
