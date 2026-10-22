@@ -876,11 +876,6 @@ using (var scope = app.Services.CreateScope())
             Console.WriteLine($"[Security Init Warning] {ex.Message}");
         }
     }
-
-    var helpMeDecide = db.Leads.Count(l => l.CustomFieldsJson != null && l.CustomFieldsJson.Contains("help me decide"));
-    var notConfirmed = db.Leads.Count(l => l.CustomFieldsJson != null && (l.CustomFieldsJson.Contains("\"assetClass\":\"") || l.CustomFieldsJson.Contains("\"preferredAssetClass\":\"")) && !l.CustomFieldsJson.Contains("\"irmPreferencesConfirmed\":true"));
-    Console.WriteLine($"[DIAGNOSTIC] Count with help me decide: {helpMeDecide}");
-    Console.WriteLine($"[DIAGNOSTIC] Count with asset class but not confirmed: {notConfirmed}");
 }
 
 app.UseForwardedHeaders(new ForwardedHeadersOptions

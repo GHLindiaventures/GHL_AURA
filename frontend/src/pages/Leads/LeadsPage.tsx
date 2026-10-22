@@ -14,6 +14,7 @@ import {
   Clock,
   ArrowRight,
   UserCheck,
+  RefreshCw,
 } from 'lucide-react';
 import { Lead, Customer, Deal, Followup, IrmProfile } from '../../types';
 import { useAuth } from '../../context/AuthContext';
@@ -106,6 +107,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
   const [customers, setCustomers] = useState<Customer[]>([]);
   const [allFollowups, setAllFollowups] = useState<any[]>([]);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [isRefreshing, setIsRefreshing] = useState(false);
 
   // Duplicate in Follow-up & Customer Resolution States
   interface DuplicateFollowupModalData {
@@ -569,7 +571,14 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
       console.error('Failed to load leads from API', err);
       setLeads([]);
       setLoadError(err?.message || 'Failed to load leads from server.');
+    } finally {
+      setIsRefreshing(false);
     }
+  };
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    await loadData();
   };
 
   useEffect(() => {
@@ -1843,6 +1852,15 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
         </div>
 
         <div className="leads-header-actions">
+          <button
+            className="btn btn-secondary"
+            onClick={handleManualRefresh}
+            disabled={isRefreshing}
+            title="Refresh leads list from server"
+          >
+            <RefreshCw size={14} className={isRefreshing ? 'animate-spin' : ''} />
+            <span>Refresh</span>
+          </button>
           <button
             className="btn btn-secondary"
             onClick={() => setIsImportModalOpen(true)}
