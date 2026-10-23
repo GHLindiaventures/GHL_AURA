@@ -5,6 +5,7 @@ import { AuthProvider } from './context/AuthContext';
 import { NavigationGuardProvider } from './context/NavigationGuardContext';
 import { CallProvider } from './context/CallContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { ToastProvider } from './context/ToastContext';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { sanitizeStoredKycData } from './utils/kycStorage';
 
@@ -68,21 +69,23 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ErrorBoundary>
       <ThemeProvider>
-        <Suspense fallback={<LoadingFallback />}>
-          {isCustomerKycRoute ? (
-            <CustomerKycApp />
-          ) : isResetPasswordRoute ? (
-            <ResetPasswordPage />
-          ) : (
-            <AuthProvider>
-              <NavigationGuardProvider>
-                <CallProvider>
-                  <App />
-                </CallProvider>
-              </NavigationGuardProvider>
-            </AuthProvider>
-          )}
-        </Suspense>
+        <ToastProvider>
+          <Suspense fallback={<LoadingFallback />}>
+            {isCustomerKycRoute ? (
+              <CustomerKycApp />
+            ) : isResetPasswordRoute ? (
+              <ResetPasswordPage />
+            ) : (
+              <AuthProvider>
+                <NavigationGuardProvider>
+                  <CallProvider>
+                    <App />
+                  </CallProvider>
+                </NavigationGuardProvider>
+              </AuthProvider>
+            )}
+          </Suspense>
+        </ToastProvider>
       </ThemeProvider>
     </ErrorBoundary>
   </StrictMode>,
