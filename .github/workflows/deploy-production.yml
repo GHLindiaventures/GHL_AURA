@@ -41,7 +41,7 @@ jobs:
 
             # 2. Apply Database Migrations
             echo "📊 Applying Database Migrations..."
-            dotnet ef database update --project backend/backend.csproj --no-build || true
+            dotnet ef database update --project backend/backend.csproj
 
             # 3. Publish Backend
             echo "⚙️ Publishing .NET Backend..."
@@ -49,7 +49,7 @@ jobs:
 
             # 4. Restart Backend Service
             echo "🔄 Restarting Production Backend Service..."
-            sudo systemctl restart salesapp-production-backend.service || sudo systemctl restart salesapp-backend.service || true
+            sudo systemctl restart salesapp-production-backend.service || sudo systemctl restart salesapp-backend.service
 
             # 5. Build React Frontend
             echo "🎨 Building React Frontend..."

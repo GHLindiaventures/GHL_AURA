@@ -1,0 +1,17 @@
+.git
+**/.git
+**/bin
+**/obj
+**/node_modules
+**/dist
+**/dist-ssr
+**/coverage
+**/.env
+**/.env.*
+!**/.env.example
+backend/appsettings.json
+backend/appsettings.*.json
+**/error.log
+backend/uploads
+backend/wwwroot/uploads
+GHL details

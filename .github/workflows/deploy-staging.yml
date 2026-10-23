@@ -9,6 +9,7 @@ jobs:
   deploy-staging:
     name: 🚀 Deploy to DigitalOcean Staging
     runs-on: ubuntu-latest
+    environment: staging
 
     steps:
       - name: 🔐 Connect via SSH & Deploy
@@ -40,12 +41,12 @@ jobs:
 
             # 2. Apply PostgreSQL Database Migrations (EF Core)
             echo "📊 Applying Database Migrations..."
-            dotnet ef database update --project backend/backend.csproj --no-build || true
+            dotnet ef database update --project backend/backend.csproj
 
             # 3. Publish & Restart .NET Backend Service
             echo "⚙️ Publishing .NET Backend..."
             dotnet publish backend/backend.csproj -c Release -o "$APP_DIR/backend_publish"
-            sudo systemctl restart salesapp-staging-backend.service || sudo systemctl restart salesapp-backend.service || true
+            sudo systemctl restart salesapp-staging-backend.service || sudo systemctl restart salesapp-backend.service
 
             # 4. Build Frontend (React 19 + Vite)
             echo "🎨 Building React Frontend..."

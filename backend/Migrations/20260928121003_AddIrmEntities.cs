@@ -95,7 +95,6 @@ namespace backend.Migrations
                         principalColumn: "Id");
                 });
 
-
             migrationBuilder.CreateTable(
                 name: "Consultations",
                 columns: table => new

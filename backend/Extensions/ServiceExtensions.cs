@@ -40,7 +40,11 @@ public static class ServiceExtensions
             }
             else
             {
-                options.UseNpgsql(connectionString);
+                options.UseNpgsql(connectionString, npgsql =>
+                    npgsql.EnableRetryOnFailure(
+                        maxRetryCount: 3,
+                        maxRetryDelay: TimeSpan.FromSeconds(5),
+                        errorCodesToAdd: new[] { "57P05" }));
             }
         });
 
