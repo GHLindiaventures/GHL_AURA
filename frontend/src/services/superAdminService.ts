@@ -11,6 +11,7 @@ import {
   SystemDiagnostics,
   BroadcastAnnouncement,
   PlatformMetrics,
+  PlatformLeadsResponse,
   GlobalConfig,
   SystemHealthReport,
   SpeechVocabulary,
@@ -2851,6 +2852,33 @@ export class SuperAdminService {
 
   getComplianceExportUrl(tenantId: string): string {
     return `${apiClient.getBaseUrl()}/super-admin/tenants/${tenantId}/compliance-export`;
+  }
+
+  // ── PLATFORM LEADS (Cross-Tenant Super Admin) ─────────────────────────────
+
+  async fetchPlatformLeads(params?: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    status?: string;
+    priority?: string;
+    tenantId?: number;
+    source?: string;
+    startDate?: string;
+    endDate?: string;
+    sortBy?: string;
+    sortOrder?: string;
+  }): Promise<PlatformLeadsResponse> {
+    const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+    const queryParams: Record<string, any> = { timeZone: tz, ...params };
+    Object.keys(queryParams).forEach(k => {
+      if (queryParams[k] === undefined || queryParams[k] === '' || queryParams[k] === null) {
+        delete queryParams[k];
+      }
+    });
+    const res = await apiClient.get<ApiResponse<PlatformLeadsResponse>>('/super-admin/leads', queryParams);
+    if (res && res.data) return res.data;
+    throw new Error('Failed to fetch platform leads');
   }
 }
 
