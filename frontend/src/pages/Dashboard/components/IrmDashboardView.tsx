@@ -284,22 +284,58 @@ export const IrmDashboardView: React.FC<IrmDashboardViewProps> = ({
   const allKycTargets = useMemo(() => {
     const map = new Map<string, { name: string; phone?: string; verified: boolean; inReview: boolean }>();
 
-    // From qualified KYC deals
+    // Collect keys of investors/leads that have graduated/moved forward past KYC (Opportunities, Converted, etc.)
+    const movedKeys = new Set<string>();
+
+    deals
+      .filter(d => isMine(d.assignedAgentId, d.assignedAgentName))
+      .forEach(d => {
+        const stage = (d.stage || '').toLowerCase().trim();
+        if (stage === 'investment_opportunity' || stage === 'opportunity' || stage === 'term_sheet' || stage === 'committed' || stage === 'converted' || stage === 'won' || stage === 'lost') {
+          const ph = (d.phone || '').replace(/\D/g, '').slice(-10);
+          if (ph) movedKeys.add(ph);
+          if (d.customerId) movedKeys.add(`cid:${d.customerId}`);
+        }
+      });
+
+    (irmSummary?.leads || []).forEach(l => {
+      const stage = (l.currentStage || '').toLowerCase().trim();
+      const status = (l.status || '').toLowerCase().trim();
+      if (stage === 'opportunities' || stage === 'converted' || stage === 'investor 360' || stage === 'archived' || status === 'converted') {
+        const ph = (l.phone || '').replace(/\D/g, '').slice(-10);
+        if (ph) movedKeys.add(ph);
+      }
+    });
+
+    scopedInvestors.forEach(i => {
+      const ph = (i.phone || '').replace(/\D/g, '').slice(-10);
+      if (ph) movedKeys.add(ph);
+      if (i.id) movedKeys.add(`cid:${i.id}`);
+    });
+
+    // From qualified KYC deals (only those currently active in qualified_investor stage)
     deals
       .filter(d => d.stage === 'qualified_investor' && isMine(d.assignedAgentId, d.assignedAgentName))
       .forEach(d => {
-        const key = (d.phone || '').replace(/\D/g, '').slice(-10) || String(d.id);
+        const ph = (d.phone || '').replace(/\D/g, '').slice(-10);
+        const cid = d.customerId ? `cid:${d.customerId}` : '';
+        if ((ph && movedKeys.has(ph)) || (cid && movedKeys.has(cid))) return;
+
+        const key = ph || String(d.id);
         const status = ((d as any).kycStatus || (d as any).customerKycStatus || '').toLowerCase();
         const isVer = status === 'verified' || status === 'approved';
         const isRev = status.includes('review') || status.includes('submitted');
         map.set(key, { name: d.customerName, phone: d.phone, verified: isVer, inReview: isRev });
       });
 
-    // From IRM leads in KYC stage (e.g. Rasheed Basha)
+    // From IRM leads in KYC stage (only those currently active in KYC stage)
     (irmSummary?.leads || [])
       .filter(l => l.currentStage === 'KYC')
       .forEach(l => {
-        const key = (l.phone || '').replace(/\D/g, '').slice(-10) || String(l.id);
+        const ph = (l.phone || '').replace(/\D/g, '').slice(-10);
+        if (ph && movedKeys.has(ph)) return;
+
+        const key = ph || String(l.id);
         const kStatus = (l.kycStatus || '').toLowerCase();
         const isVer = kStatus === 'verified' || kStatus === 'approved';
         const isRev = kStatus.includes('review') || kStatus.includes('submitted') || kStatus === 'in_progress';
@@ -311,9 +347,13 @@ export const IrmDashboardView: React.FC<IrmDashboardViewProps> = ({
         }
       });
 
-    // From live DB KYC records
+    // From live DB KYC records (ONLY if NOT moved forward past KYC)
     scopedKycs.forEach(k => {
-      const key = (k.phone || '').replace(/\D/g, '').slice(-10) || String(k.investorId || k.id);
+      const ph = (k.phone || '').replace(/\D/g, '').slice(-10);
+      const invId = k.investorId ? `cid:${k.investorId}` : '';
+      if ((ph && movedKeys.has(ph)) || (invId && movedKeys.has(invId))) return;
+
+      const key = ph || String(k.investorId || k.id);
       const s = (k.status || '').toLowerCase();
       const isVer = s === 'verified' || s === 'approved';
       const isRev = s.includes('review') || s.includes('submitted');
@@ -326,7 +366,7 @@ export const IrmDashboardView: React.FC<IrmDashboardViewProps> = ({
     });
 
     return Array.from(map.values());
-  }, [deals, irmSummary, scopedKycs, isMine]);
+  }, [deals, irmSummary, scopedKycs, scopedInvestors, isMine]);
 
   const totalKycTargetCount = allKycTargets.length;
   const verifiedKycsCount = allKycTargets.filter(k => k.verified).length;
