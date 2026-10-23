@@ -70,7 +70,6 @@ desktop.ini
 # Testing & Coverage
 coverage/
 .nyc_output/
-backend.Tests/
 
 # Temporary / Scratch files
 tmp/

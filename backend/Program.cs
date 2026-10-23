@@ -1020,3 +1020,5 @@ app.MapControllers();
 app.MapHub<backend.Hubs.PlatformHub>("/hubs/platform");
 
 app.Run();
+
+public partial class Program { }
