@@ -540,7 +540,10 @@ export const CompanyDocumentsPage: React.FC = () => {
                         title="Download file"
                         onClick={() => {
                           if (doc.fileUrl && doc.fileUrl !== '#') {
-                            if (!openDocumentLink(doc.fileUrl)) {
+                            const url = doc.fileUrl.trim();
+                            if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/')) {
+                              window.open(url, '_blank', 'noopener,noreferrer');
+                            } else {
                               showToast('error', 'Invalid document file URL.');
                             }
                           } else {

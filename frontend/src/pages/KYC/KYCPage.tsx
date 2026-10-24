@@ -22,6 +22,7 @@ import {
   Layers,
   Users,
   Edit2,
+  Edit3,
   Send,
   RefreshCw,
   UserCheck,
@@ -31,7 +32,9 @@ import {
   Copy,
   Sparkles,
   Check,
+  ExternalLink,
 } from 'lucide-react';
+import { EXTERNAL_VERIFICATION_LINKS } from '../../constants/externalLinks';
 import { SendKycLinkModal } from './components/SendKycLinkModal';
 import { KycStatusBadge } from './components/KycStatusBadge';
 import { KycStatusDropdown } from './components/KycStatusDropdown';
@@ -44,6 +47,7 @@ import { PERMISSIONS } from '../../constants/permissions';
 import { Deal, DealActivity, DocumentItem, Lead, Customer } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useCall } from '../../context/CallContext';
+import { canPlaceCalls } from '../../utils/agentRoleUtils';
 import { storageService } from '../../services/storageService';
 import {
   getDeals,
@@ -758,19 +762,6 @@ const GhlIrmKycView: React.FC = () => {
     };
   }, []);
 
-  // Browser Back button handling while in KYC flow
-  useEffect(() => {
-    if (viewMode === 'flow') {
-      window.history.pushState({ kycFlow: true }, '');
-      const handlePopState = () => {
-        handleExitFlow();
-      };
-      window.addEventListener('popstate', handlePopState);
-      return () => {
-        window.removeEventListener('popstate', handlePopState);
-      };
-    }
-  }, [viewMode]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -1063,6 +1054,20 @@ const GhlIrmKycView: React.FC = () => {
     setIsAssistedFlow(false);
   };
 
+  // Browser Back button handling while in KYC flow
+  useEffect(() => {
+    if (viewMode === 'flow') {
+      window.history.pushState({ kycFlow: true }, '');
+      const handlePopState = () => {
+        handleExitFlow();
+      };
+      window.addEventListener('popstate', handlePopState);
+      return () => {
+        window.removeEventListener('popstate', handlePopState);
+      };
+    }
+  }, [viewMode]);
+
   // Helper to open the 5-step wizard prefilled with deal info
   const startKycFlow = (deal?: Deal, targetStep?: 1 | 2 | 3 | 4 | 5, isAssisted?: boolean) => {
     const targetDeal = deal || selectedCustomerDeal || null;
@@ -1208,6 +1213,27 @@ const GhlIrmKycView: React.FC = () => {
 
   const startAssistedKycFlow = (deal: Deal, targetStep?: 1 | 2 | 3 | 4 | 5) => {
     startKycFlow(deal, targetStep, true);
+  };
+
+  const handleCorrectKycDetails = (deal: Deal) => {
+    // Determine the flagged step from flaggedSections or remarks
+    const flagged = (deal.flaggedSections || []).map(s => String(s).toLowerCase());
+    const remarks = String(deal.remarks || '').toLowerCase();
+    let targetStep: 1 | 2 | 3 | 4 | 5 = 2; // Default to identity (PAN/Aadhaar)
+
+    if (flagged.some(s => s.includes('bank')) || remarks.includes('bank') || remarks.includes('ifsc') || remarks.includes('account')) {
+      targetStep = 3;
+    } else if (flagged.some(s => s.includes('demat')) || remarks.includes('demat') || remarks.includes('dp')) {
+      targetStep = 4;
+    } else if (flagged.some(s => s.includes('nominee')) || remarks.includes('nominee')) {
+      targetStep = 5;
+    } else if (flagged.some(s => s.includes('pan') || s.includes('aadhaar') || s.includes('identity')) || remarks.includes('pan') || remarks.includes('aadhaar')) {
+      targetStep = 2;
+    } else if (flagged.some(s => s.includes('basic') || s.includes('personal'))) {
+      targetStep = 1;
+    }
+
+    startAssistedKycFlow(deal, targetStep);
   };
 
   /** Uploads a KYC document file to the server (once) and returns its stored URL. */
@@ -2220,18 +2246,53 @@ const GhlIrmKycView: React.FC = () => {
       header: 'KYC Status',
       width: '160px',
       render: deal => {
-        const custStatus = resolveCustomerKycStatus(deal);
+        const displayStatus = normalizeLegacyKycStatus(deal.kycStatus, deal.verifiedBy);
+        const isVerified = displayStatus === 'Verified';
+        const isWrong = displayStatus === 'Wrong';
+        const isPending = !isVerified && !isWrong;
+
         return (
-          <KycStatusDropdown
-            deal={deal}
-            customerKycStatus={custStatus}
-            hideArrow={isGhlAdmin}
-            disablePopup={isGhlAdmin}
-            onChange={(status, comment, flaggedSections, checklist) =>
-              handleStatusChange(deal, status, comment, flaggedSections, checklist)
-            }
-            onShowToast={(msg) => showToast(msg)}
-          />
+          <div style={{ display: 'inline-flex', flexDirection: 'column', gap: 2 }}>
+            <span
+              style={{
+                display: 'inline-flex',
+                alignItems: 'center',
+                gap: 5,
+                padding: '4px 10px',
+                borderRadius: 12,
+                fontSize: 11,
+                fontWeight: 700,
+                background: isVerified
+                  ? 'rgba(16, 185, 129, 0.15)'
+                  : isWrong
+                  ? 'rgba(239, 68, 68, 0.15)'
+                  : 'rgba(245, 158, 11, 0.15)',
+                color: isVerified
+                  ? '#10B981'
+                  : isWrong
+                  ? '#EF4444'
+                  : '#F59E0B',
+                border: isVerified
+                  ? '1px solid rgba(16, 185, 129, 0.35)'
+                  : isWrong
+                  ? '1px solid rgba(239, 68, 68, 0.35)'
+                  : '1px solid rgba(245, 158, 11, 0.35)',
+                whiteSpace: 'nowrap',
+                cursor: 'default',
+              }}
+              title={`KYC Status: ${displayStatus}`}
+            >
+              {isVerified && <ShieldCheck size={12} />}
+              {isWrong && <AlertCircle size={12} />}
+              {isPending && <Clock size={12} />}
+              <span>{displayStatus}</span>
+            </span>
+            {isVerified && deal.verifiedBy && (
+              <span style={{ fontSize: 9.5, color: 'var(--text-muted, #94a3b8)', marginTop: 1 }}>
+                by {deal.verifiedBy.split('@')[0]}
+              </span>
+            )}
+          </div>
         );
       },
     },
@@ -2392,26 +2453,22 @@ const GhlIrmKycView: React.FC = () => {
           );
         }
 
-        // IRM-verified: show professional Verified badge with checkmark
+        // IRM-verified: show prominent "Move to Opportunity" action button directly in the row
         if (status === 'Verified') {
           return (
-            <span
-              style={{
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 5,
-                padding: '3px 10px',
-                borderRadius: 20,
-                fontSize: 12,
-                fontWeight: 600,
-                backgroundColor: 'rgba(16,185,129,0.1)',
-                color: '#059669',
-                border: '1px solid rgba(16,185,129,0.3)',
+            <button
+              type="button"
+              className="kyc-advance-btn"
+              title="KYC Verified — Click to advance investor to Investment Opportunities stage"
+              onClick={(e) => {
+                e.stopPropagation();
+                e.preventDefault();
+                handleAdvanceStage(deal);
               }}
-              title="KYC verified by IRM"
             >
-              <CheckCircle size={12} /> Verified
-            </span>
+              <span>Move to Opportunity</span>
+              <ArrowRight size={13} />
+            </button>
           );
         }
 
@@ -2536,6 +2593,45 @@ const GhlIrmKycView: React.FC = () => {
           );
         }
 
+        // Needs Correction / Wrong: show prominent "Correct Details" button so it can be edited
+        if (status === 'Needs Correction' || deal.kycStatus === 'Wrong') {
+          return (
+            <div
+              className="kyc-stage-action-group"
+              onClick={e => e.stopPropagation()}
+              style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+            >
+              <button
+                type="button"
+                className="kyc-advance-btn"
+                style={{
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 6,
+                  padding: '5px 12px',
+                  borderRadius: 6,
+                  backgroundColor: 'rgba(239, 68, 68, 0.12)',
+                  color: '#dc2626',
+                  border: '1px solid rgba(239, 68, 68, 0.35)',
+                  fontSize: 11.5,
+                  fontWeight: 600,
+                  cursor: 'pointer',
+                  whiteSpace: 'nowrap',
+                }}
+                title="KYC marked Wrong — Click to edit and correct flagged details"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  e.preventDefault();
+                  handleCorrectKycDetails(deal);
+                }}
+              >
+                <Edit3 size={13} color="#dc2626" />
+                <span>Correct Details</span>
+              </button>
+            </div>
+          );
+        }
+
         const isResend = ['Link Sent', 'In Progress', 'Needs Correction', 'Rejected'].includes(status);
         const isIrmRole = user?.role?.code === 'irm';
 
@@ -2562,25 +2658,23 @@ const GhlIrmKycView: React.FC = () => {
       align: 'center',
       render: deal => {
         const kycStatus = getDynamicKycStatus(deal);
+        const resolvedCustomerStatus = resolveCustomerKycStatus(deal);
+        const isVerified =
+          normalizeLegacyKycStatus(deal.kycStatus, deal.verifiedBy) === 'Verified' ||
+          resolvedCustomerStatus === 'Verified' ||
+          deal.kycStatus === 'Verified';
+
         return (
           <KycRowActionsMenu
             deal={deal}
             isGhlAdmin={isGhlAdmin}
-            onOpenReview={d => {
-              const fDigits = (d.phone || '').replace(/\D/g, '').slice(-10);
-              const matchLead = leads.find(l => (d.customerId && l.id === d.customerId) || (l.phone && l.phone.replace(/\D/g, '').slice(-10) === fDigits));
-              const matchCust = customers.find(c => (d.customerId && c.id === d.customerId) || (c.phone && c.phone.replace(/\D/g, '').slice(-10) === fDigits));
-              const backendKyc = findBackendKyc(d, dbKycs, tenant?.id);
-              setProfileKycData(buildMergedProfileData(d, backendKyc, matchLead, matchCust));
-              setVerifyModalDeal(d);
-            }}
+            isVerified={isVerified}
             onShowToast={msg => showToast(msg)}
-            onViewProfile={d => handleOpenCustomerProfile(d)}
-            onEditKyc={isGhlAdmin ? undefined : (d => startKycFlow(d))}
-            onAssistedKyc={isGhlAdmin ? undefined : (d => startAssistedKycFlow(d))}
-            onCallInvestor={d => initiateCall(d.customerName, d.phone || '', 'customer', d.customerId || d.id, undefined, 'kyc')}
-            // Only show "Advance to Opportunity" after KYC is fully completed (not available in Admin oversight mode)
-            onAdvanceStage={!isGhlAdmin && normalizeLegacyKycStatus(deal.kycStatus, deal.verifiedBy) === 'Verified' ? d => handleAdvanceStage(d) : undefined}
+            onEditKyc={isGhlAdmin || isVerified ? undefined : (d => handleCorrectKycDetails(d))}
+            onAssistedKyc={isGhlAdmin || isVerified ? undefined : (d => startAssistedKycFlow(d))}
+            onCallInvestor={canPlaceCalls(user) ? d => initiateCall(d.customerName, d.phone || '', 'customer', d.customerId || d.id, undefined, 'kyc') : undefined}
+            // Also available in menu as fallback (not available in Admin oversight mode)
+            onAdvanceStage={!isGhlAdmin && isVerified ? d => handleAdvanceStage(d) : undefined}
           />
         );
       },
@@ -2643,7 +2737,7 @@ const GhlIrmKycView: React.FC = () => {
         const renderField = (
           label: string,
           value?: string | number | null,
-          options?: { copyable?: boolean; isDoc?: boolean; isMono?: boolean }
+          options?: { copyable?: boolean; isDoc?: boolean; isMono?: boolean; extraAction?: React.ReactNode }
         ) => {
           const valStr = value ? String(value).trim() : '';
           const hasVal = valStr && valStr !== '—' && valStr.toLowerCase() !== 'not provided' && valStr.toLowerCase() !== 'not specified';
@@ -2675,10 +2769,12 @@ const GhlIrmKycView: React.FC = () => {
                       {isCopied ? <Check size={11} color="#10b981" /> : <Copy size={11} />}
                     </button>
                   )}
+                  {options?.extraAction}
                 </div>
               ) : (
                 <div className="kyc-glass-empty-container">
                   <span className="kyc-glass-empty-pill">Not Specified</span>
+                  {options?.extraAction}
                 </div>
               )}
             </div>
@@ -2713,14 +2809,16 @@ const GhlIrmKycView: React.FC = () => {
               </div>
 
               <div className="kyc-glass-top-right">
-                <button
-                  type="button"
-                  className="kyc-glass-action-pill kyc-btn-call"
-                  onClick={() => initiateCall(deal.customerName, deal.phone || '', 'customer', deal.customerId || deal.id, undefined, 'kyc')}
-                  title={`Initiate direct phone consultation with ${deal.customerName}`}
-                >
-                  <Phone size={13} /> <span>Call Investor</span>
-                </button>
+                {canPlaceCalls(user) && (
+                  <button
+                    type="button"
+                    className="kyc-glass-action-pill kyc-btn-call"
+                    onClick={() => initiateCall(deal.customerName, deal.phone || '', 'customer', deal.customerId || deal.id, undefined, 'kyc')}
+                    title={`Initiate direct phone consultation with ${deal.customerName}`}
+                  >
+                    <Phone size={13} /> <span>Call Investor</span>
+                  </button>
+                )}
                 <button
                   type="button"
                   className="kyc-glass-action-pill kyc-btn-edit"
@@ -2742,7 +2840,6 @@ const GhlIrmKycView: React.FC = () => {
                   <div className="kyc-glass-avatar-box">
                     <div className="kyc-glass-avatar">
                       {initial}
-                      <span className="kyc-glass-avatar-ring" />
                     </div>
                   </div>
                   <div className="kyc-glass-hero-user">
@@ -2781,15 +2878,42 @@ const GhlIrmKycView: React.FC = () => {
                       </span>
                     </div>
                     <div className="kyc-glass-status-row">
-                      <KycStatusDropdown
-                        deal={deal}
-                        customerKycStatus={resolveCustomerKycStatus(deal)}
-                        disablePopup={true}
-                        onChange={(status, comment, flaggedSections, checklist) =>
-                          handleStatusChange(deal, status, comment, flaggedSections, checklist)
-                        }
-                        onShowToast={showToast}
-                      />
+                      <span
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: 5,
+                          padding: '4px 10px',
+                          borderRadius: 12,
+                          fontSize: 11,
+                          fontWeight: 700,
+                          background:
+                            normalizeLegacyKycStatus(deal.kycStatus, deal.verifiedBy) === 'Verified'
+                              ? 'rgba(16, 185, 129, 0.15)'
+                              : normalizeLegacyKycStatus(deal.kycStatus, deal.verifiedBy) === 'Wrong'
+                              ? 'rgba(239, 68, 68, 0.15)'
+                              : 'rgba(245, 158, 11, 0.15)',
+                          color:
+                            normalizeLegacyKycStatus(deal.kycStatus, deal.verifiedBy) === 'Verified'
+                              ? '#10B981'
+                              : normalizeLegacyKycStatus(deal.kycStatus, deal.verifiedBy) === 'Wrong'
+                              ? '#EF4444'
+                              : '#F59E0B',
+                          border:
+                            normalizeLegacyKycStatus(deal.kycStatus, deal.verifiedBy) === 'Verified'
+                              ? '1px solid rgba(16, 185, 129, 0.35)'
+                              : normalizeLegacyKycStatus(deal.kycStatus, deal.verifiedBy) === 'Wrong'
+                              ? '1px solid rgba(239, 68, 68, 0.35)'
+                              : '1px solid rgba(245, 158, 11, 0.35)',
+                          whiteSpace: 'nowrap',
+                          cursor: 'default',
+                        }}
+                      >
+                        {normalizeLegacyKycStatus(deal.kycStatus, deal.verifiedBy) === 'Verified' && <ShieldCheck size={12} />}
+                        {normalizeLegacyKycStatus(deal.kycStatus, deal.verifiedBy) === 'Wrong' && <AlertCircle size={12} />}
+                        {normalizeLegacyKycStatus(deal.kycStatus, deal.verifiedBy) === 'Pending' && <Clock size={12} />}
+                        <span>{normalizeLegacyKycStatus(deal.kycStatus, deal.verifiedBy)}</span>
+                      </span>
                       {deal.kycStatus === 'Verified' && (deal.verifiedBy || deal.verifiedAt) && (
                         <span className="kyc-glass-verified-stamp">
                           <CheckCircle size={12} /> Verified by {deal.verifiedBy ? deal.verifiedBy.split('@')[0] : 'IRM'}
@@ -2821,6 +2945,24 @@ const GhlIrmKycView: React.FC = () => {
                             <Copy size={10} />
                           </button>
                         )}
+                        <button
+                          type="button"
+                          className="kyc-glass-mini-copy"
+                          title="Verify PAN on Income Tax portal"
+                          aria-label="Verify PAN on Income Tax portal"
+                          onClick={() => {
+                            const rawPan = data.panNumber ? String(data.panNumber).trim() : '';
+                            if (rawPan && rawPan !== '—' && rawPan.toLowerCase() !== 'not specified' && rawPan.toLowerCase() !== 'not provided') {
+                              try {
+                                navigator.clipboard.writeText(rawPan);
+                                showToast('PAN copied. Paste it on the Income Tax portal.');
+                              } catch {}
+                            }
+                            window.open(EXTERNAL_VERIFICATION_LINKS.PAN, '_blank', 'noopener,noreferrer');
+                          }}
+                        >
+                          <ExternalLink size={10} />
+                        </button>
                       </div>
                     </div>
                     <div className="kyc-glass-metric-cell">
@@ -3037,7 +3179,31 @@ const GhlIrmKycView: React.FC = () => {
                     {renderField('Full Name', data.investorName || deal.customerName)}
                     {renderField('Email', data.email || deal.email, { copyable: true })}
                     {renderField('Phone', data.phone || deal.phone, { copyable: true, isMono: true })}
-                    {renderField('PAN Number', data.panNumber, { copyable: true, isMono: true })}
+                    {renderField('PAN Number', data.panNumber, {
+                      copyable: true,
+                      isMono: true,
+                      extraAction: (
+                        <button
+                          type="button"
+                          className="kyc-glass-verify-btn"
+                          title="Verify PAN on Income Tax portal"
+                          aria-label="Verify PAN on Income Tax portal"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            const rawPan = data.panNumber ? String(data.panNumber).trim() : '';
+                            if (rawPan && rawPan !== '—' && rawPan.toLowerCase() !== 'not specified' && rawPan.toLowerCase() !== 'not provided') {
+                              try {
+                                navigator.clipboard.writeText(rawPan);
+                                showToast('PAN copied. Paste it on the Income Tax portal.');
+                              } catch {}
+                            }
+                            window.open(EXTERNAL_VERIFICATION_LINKS.PAN, '_blank', 'noopener,noreferrer');
+                          }}
+                        >
+                          <ShieldCheck size={12} /> <span>Verify PAN</span>
+                        </button>
+                      ),
+                    })}
                     {renderField('City', data.city || getResolvedLocation(deal))}
                     {renderField('Date of Birth', data.dob)}
                     {renderField('Occupation', data.occupation)}
@@ -3068,7 +3234,24 @@ const GhlIrmKycView: React.FC = () => {
                   <div className="kyc-glass-fields-matrix">
                     {renderField('Name on Document', data.nameAsPerPan || data.investorName || deal.customerName)}
                     {renderField("Father's Name", data.fatherName)}
-                    {renderField('Aadhaar Number', data.aadhaarNumber, { copyable: true, isMono: true })}
+                    {renderField('Aadhaar Number', data.aadhaarNumber, {
+                      copyable: true,
+                      isMono: true,
+                      extraAction: (
+                        <button
+                          type="button"
+                          className="kyc-glass-verify-btn"
+                          title="Verify Aadhaar on UIDAI portal"
+                          aria-label="Verify Aadhaar on UIDAI portal"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            window.open(EXTERNAL_VERIFICATION_LINKS.AADHAAR, '_blank', 'noopener,noreferrer');
+                          }}
+                        >
+                          <ShieldCheck size={12} /> <span>Verify Aadhaar</span>
+                        </button>
+                      ),
+                    })}
                     {renderField('Permanent Address', data.address)}
                     {renderField('Courier Address', data.courierAddress || data.address)}
                     {renderField('City', data.city || getResolvedLocation(deal))}
@@ -4738,7 +4921,15 @@ const GhlIrmKycView: React.FC = () => {
       />
 
       {/* Review Customer KYC Drawer */}
-      <KycReviewDrawer isOpen={!!reviewDeal} onClose={() => setReviewDeal(null)} deal={reviewDeal} onShowToast={showToast} onChangeKycStatus={handleStatusChange} />
+      <KycReviewDrawer
+        isOpen={!!reviewDeal}
+        onClose={() => setReviewDeal(null)}
+        deal={reviewDeal}
+        onShowToast={showToast}
+        onChangeKycStatus={handleStatusChange}
+        isReadOnly={isGhlAdmin}
+        onEditKyc={handleCorrectKycDetails}
+      />
 
       {/* ── Assisted KYC Review & Consent Confirmation Modal ── */}
       <Modal
@@ -5113,14 +5304,16 @@ const OriginalKYCView: React.FC = () => {
       header: 'Stage Action',
       render: deal => (
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-          <button
-            type="button"
-            className="btn btn-sm btn-ghost btn-icon"
-            title={`Call ${deal.customerName}`}
-            onClick={() => initiateCall(deal.customerName, deal.phone || '', 'customer', deal.customerId || deal.id, undefined, 'kyc')}
-          >
-            <Phone size={14} color="#059669" />
-          </button>
+          {canPlaceCalls(user) && (
+            <button
+              type="button"
+              className="btn btn-sm btn-ghost btn-icon"
+              title={`Call ${deal.customerName}`}
+              onClick={() => initiateCall(deal.customerName, deal.phone || '', 'customer', deal.customerId || deal.id, undefined, 'kyc')}
+            >
+              <Phone size={14} color="#059669" />
+            </button>
+          )}
           <button
             type="button"
             className="kyc-advance-btn"
@@ -5140,11 +5333,15 @@ const OriginalKYCView: React.FC = () => {
       icon: <Eye size={14} style={{ marginRight: 6 }} />,
       onClick: deal => setSelectedDealForDetail(deal),
     },
-    {
-      label: 'Call Investor',
-      icon: <Phone size={14} color="#059669" style={{ marginRight: 6 }} />,
-      onClick: deal => initiateCall(deal.customerName, deal.phone || '', 'customer', deal.customerId || deal.id, undefined, 'kyc'),
-    },
+    ...(canPlaceCalls(user)
+      ? [
+          {
+            label: 'Call Investor',
+            icon: <Phone size={14} color="#059669" style={{ marginRight: 6 }} />,
+            onClick: (deal: Deal) => initiateCall(deal.customerName, deal.phone || '', 'customer', deal.customerId || deal.id, undefined, 'kyc'),
+          },
+        ]
+      : []),
     {
       label: 'Advance to Opportunity',
       icon: <ArrowRight size={14} color="var(--primary-600)" style={{ marginRight: 6 }} />,

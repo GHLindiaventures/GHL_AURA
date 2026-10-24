@@ -34,7 +34,6 @@ public class JaminBookingConfiguration : IEntityTypeConfiguration<JaminBooking>
 
         builder.Property(b => b.ApprovedDiscounts)
             .HasPrecision(18, 2);
-
         builder.Property(b => b.TotalPlotPrice)
             .HasPrecision(18, 2);
 
@@ -44,7 +43,6 @@ public class JaminBookingConfiguration : IEntityTypeConfiguration<JaminBooking>
         builder.Property(b => b.PaymentStatus)
             .HasMaxLength(50)
             .HasDefaultValue("Pending");
-
         builder.Property(b => b.PaymentMode)
             .HasMaxLength(100);
 
@@ -66,7 +64,6 @@ public class JaminBookingConfiguration : IEntityTypeConfiguration<JaminBooking>
 
         builder.Property(b => b.RefundAmount)
             .HasPrecision(18, 2);
-
         builder.Property(b => b.Notes)
             .HasMaxLength(2000);
 

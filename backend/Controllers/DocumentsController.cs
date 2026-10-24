@@ -21,7 +21,7 @@ namespace backend.Controllers
             ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx",
             ".txt", ".png", ".jpg", ".jpeg", ".webp"
         };
-        private const long MaxUploadSizeBytes = 25 * 1024 * 1024;
+        private const long MaxUploadSizeBytes = 25 * 1024 * 1024; // 25 MB
 
         public DocumentsController(ApplicationDbContext context, IWebHostEnvironment env)
         {
@@ -48,9 +48,43 @@ namespace backend.Controllers
             return new List<string> { target, target.ToLowerInvariant() };
         }
 
+        private async Task<bool> CheckPermissionAsync(string permission)
+        {
+            var userRole = User.FindFirstValue(ClaimTypes.Role) ?? User.FindFirstValue("role") ?? "";
+            if (userRole.Equals("super_admin", StringComparison.OrdinalIgnoreCase))
+            {
+                return true;
+            }
+
+            if (User.Claims.Any(c => c.Type == "permission" && c.Value == permission))
+            {
+                return true;
+            }
+
+            var userIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ?? User.FindFirstValue("userId");
+            if (int.TryParse(userIdClaim, out var uId))
+            {
+                var perms = await _context.Users
+                    .Where(u => u.Id == uId)
+                    .Select(u => u.Role.Permissions)
+                    .FirstOrDefaultAsync();
+
+                if (perms != null && perms.Contains(permission))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         [HttpGet]
         public async Task<IActionResult> GetDocuments([FromQuery] string entityType, [FromQuery] string? entityId)
         {
+            if (!await CheckPermissionAsync("documents.view"))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { success = false, message = "Access denied. Missing documents.view permission." });
+            }
             IQueryable<Document> query = _context.Documents;
 
             if (string.Equals(entityType, "company", StringComparison.OrdinalIgnoreCase))
@@ -104,6 +138,10 @@ namespace backend.Controllers
         [HttpPost]
         public async Task<IActionResult> UploadDocument([FromForm] CreateDocumentDto dto)
         {
+            if (!await CheckPermissionAsync("documents.manage"))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { success = false, message = "Access denied. Missing documents.manage permission." });
+            }
             var userName = User.FindFirstValue(ClaimTypes.Name) ?? "Unknown User";
             string? fileUrl = null;
 
@@ -140,10 +178,10 @@ namespace backend.Controllers
                     return BadRequest(new { success = false, message = "File size exceeds the 25 MB limit." });
                 }
 
-                var extension = Path.GetExtension(dto.File.FileName);
-                if (string.IsNullOrWhiteSpace(extension) || !AllowedExtensions.Contains(extension))
+                var ext = Path.GetExtension(dto.File.FileName);
+                if (string.IsNullOrWhiteSpace(ext) || !AllowedExtensions.Contains(ext))
                 {
-                    return BadRequest(new { success = false, message = "File extension is not allowed." });
+                    return BadRequest(new { success = false, message = $"File extension '{ext}' is not allowed for security reasons. Allowed formats: {string.Join(", ", AllowedExtensions)}" });
                 }
 
                 var uploadsFolder = Path.Combine(_env.WebRootPath ?? Path.Combine(Directory.GetCurrentDirectory(), "wwwroot"), "uploads");
@@ -152,7 +190,7 @@ namespace backend.Controllers
                     Directory.CreateDirectory(uploadsFolder);
                 }
 
-                var uniqueFileName = Guid.NewGuid().ToString("N") + extension;
+                var uniqueFileName = Guid.NewGuid().ToString("N") + ext;
                 var filePath = Path.Combine(uploadsFolder, uniqueFileName);
 
                 using (var stream = new FileStream(filePath, FileMode.Create))
@@ -217,6 +255,10 @@ namespace backend.Controllers
         [HttpDelete("{id}")]
         public async Task<IActionResult> DeleteDocument(string id)
         {
+            if (!await CheckPermissionAsync("documents.manage"))
+            {
+                return StatusCode(StatusCodes.Status403Forbidden, new { success = false, message = "Access denied. Missing documents.manage permission." });
+            }
             if (!int.TryParse(id, out var docId))
             {
                 return Ok(new { success = true, message = "Document removed successfully" });
@@ -225,18 +267,22 @@ namespace backend.Controllers
             var doc = await _context.Documents.FindAsync(docId);
             if (doc == null) return NotFound(new { success = false, message = "Document not found" });
 
+            // Enforce tenant isolation & ownership
             var userRole = User.FindFirstValue(ClaimTypes.Role) ?? User.FindFirstValue("role") ?? "";
-            if (!userRole.Equals("super_admin", StringComparison.OrdinalIgnoreCase))
+            var isSuperAdmin = userRole.Equals("super_admin", StringComparison.OrdinalIgnoreCase);
+
+            if (!isSuperAdmin)
             {
                 if (doc.IsPlatformShared)
                 {
-                    return StatusCode(StatusCodes.Status403Forbidden, new { success = false, message = "Platform-shared documents cannot be deleted by company users." });
+                    return StatusCode(StatusCodes.Status403Forbidden, new { success = false, message = "Access denied: Platform-shared documents cannot be deleted by company users." });
                 }
 
+                var userCompanyAliases = GetCompanyAliases(null);
                 if (string.Equals(doc.EntityType, "company", StringComparison.OrdinalIgnoreCase) &&
-                    !GetCompanyAliases(null).Contains((doc.EntityId ?? "").ToLowerInvariant()))
+                    !userCompanyAliases.Contains((doc.EntityId ?? "").ToLowerInvariant()))
                 {
-                    return StatusCode(StatusCodes.Status403Forbidden, new { success = false, message = "You cannot delete documents from another company." });
+                    return StatusCode(StatusCodes.Status403Forbidden, new { success = false, message = "Access denied: You cannot delete documents from another company." });
                 }
             }
 

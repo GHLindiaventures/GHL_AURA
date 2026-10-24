@@ -13,6 +13,7 @@ public class Lead
     public User? AssignedAgent { get; set; }
     public string? AssignedAgentName { get; set; }
 
+    // Multi-tenant compatibility
     [NotMapped]
     public int TenantId { get => CompanyId; set => CompanyId = value; }
 
@@ -39,6 +40,7 @@ public class Lead
     public string Priority { get; set; } = "Medium"; // Low, Medium, High, Urgent
     public string Notes { get; set; } = string.Empty;
 
+    // Jamin Bazaar / Website intake fields
     public string? TargetDevelopment { get; set; }
     public string? PreferredVisitDate { get; set; }
     public string? PreferredTimeSlot { get; set; }
@@ -46,7 +48,6 @@ public class Lead
     public string? WhatAreYouLookingFor { get; set; }
     public string? BudgetRange { get; set; }
     public string? ReadyToRegister { get; set; }
-
     // GHL Custom Fields in database table
     public string? AssetClass { get; set; }
     public string? Horizon { get; set; }
@@ -54,6 +55,7 @@ public class Lead
     public string? PreferredAssetClass { get; set; }
     public string? InvestorType { get; set; }
 
+    // GHL Custom Fields (e.g. investmentCapacity, assetClass, preferredAssetClass, horizon, dispositionReason)
     public string? CustomFieldsJson { get; set; }
 
     public DateTime? NextFollowupDate { get; set; }

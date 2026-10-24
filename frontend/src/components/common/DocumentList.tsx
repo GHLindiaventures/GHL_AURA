@@ -219,8 +219,9 @@ export const DocumentList: React.FC<DocumentListProps> = ({
               title="Download / Copy Link"
               onClick={() => {
                 if (doc.fileUrl) {
-                  if (openDocumentLink(doc.fileUrl)) {
-                    navigator.clipboard.writeText(doc.fileUrl);
+                  const url = doc.fileUrl.trim();
+                  if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/')) {
+                    window.open(url, '_blank', 'noopener,noreferrer');
                   } else {
                     alert('Invalid document file URL.');
                   }

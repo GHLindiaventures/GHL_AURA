@@ -257,7 +257,7 @@ public class IrmAllLeadsController : ControllerBase
                     stageDetails = $"Deal in '{matchedDeal.Stage}' stage";
                 }
             }
-            else if (matchedInvestor != null || (matchedKyc != null && matchedKyc.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase)))
+            else if ((matchedInvestor != null && matchedInvestor.Status != "Lead") || (matchedKyc != null && matchedKyc.Status.Equals("Approved", StringComparison.OrdinalIgnoreCase)))
             {
                 currentStage = "Investor 360";
                 kycStatus = "Approved";
@@ -314,9 +314,9 @@ public class IrmAllLeadsController : ControllerBase
             {
                 Id = l.Id,
                 CompanyId = l.CompanyId,
-                Name = l.Name,
+                Name = l.Name ?? string.Empty,
                 Phone = l.Phone,
-                Email = l.Email,
+                Email = l.Email ?? string.Empty,
                 Location = l.Location,
                 Source = l.Source,
                 Status = l.Status,

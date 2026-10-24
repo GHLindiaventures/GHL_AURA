@@ -269,6 +269,7 @@ export interface Deal {
   investorType?: string;
   investmentRoute?: 'direct_aif' | 'debenture' | string;
   investmentAmountConfirmed?: boolean;
+  customFields?: Record<string, any>;
   kycStatus?: string;
   kycId?: number;
   customerKycStatus?: string;
@@ -326,6 +327,7 @@ export interface CallRecord {
   callerType?: 'Agent' | 'IRM';
   connectVia?: 'Connect via Agent' | 'Connect via IRM';
   disposition: CallDisposition;
+  leadStatusAtCall?: string;
   timestamp: string;
   recordingUrl?: string;
   transcription?: string;
@@ -1199,4 +1201,114 @@ export interface PlatformTicket {
   createdAt: string;
   updatedAt: string;
   timeline: TicketTimelineEvent[];
+}
+
+// ── Enterprise Super Admin Types ────────────────────────────────────────────
+export interface ServerLogEntry {
+  id: string;
+  timestamp: string;
+  level: string;
+  method: string;
+  path: string;
+  requestPath?: string;
+  message: string;
+  stackTrace?: string;
+  source?: string;
+  exceptionType?: string;
+  ipAddress?: string;
+  statusCode?: number;
+}
+
+export interface TableSize {
+  tableName: string;
+  recordCount: number;
+  rowCount?: number;
+  sizeFormatted: string;
+  totalSize?: string;
+  dataSize?: string;
+  indexSize?: string;
+  sizeBytes: number;
+}
+
+export interface DatabaseRadar {
+  activeConnections: number;
+  idleConnections: number;
+  totalConnections: number;
+  maxPoolSize: number;
+  poolUtilizationPercent: number;
+  databaseEngine: string;
+  databaseName: string;
+  status: string;
+  blockedQueriesCount: number;
+  idleInTransaction?: number;
+  totalDatabaseSize?: string;
+  tableSizes: TableSize[];
+  checkedAt: string;
+}
+
+export interface BackgroundJobStatus {
+  id: string;
+  name: string;
+  description: string;
+  schedule: string;
+  status: 'Running' | 'Idle' | 'Failed' | string;
+  lastRunAt?: string;
+  nextRunAt?: string;
+  lastDurationMs: number;
+  durationMs?: number;
+  totalRunsCount: number;
+  processedItemsCount: number;
+  itemsProcessedLastRun?: number;
+  lastError?: string;
+  canTriggerManually: boolean;
+}
+
+export interface EmergencyLockdownStatus {
+  isActive: boolean;
+  reason?: string;
+  initiatedBy?: string;
+  initiatedAt?: string;
+  revokedSessionsCount?: number;
+}
+
+// ── Platform Cross-Tenant Leads ──────────────────────────────────────────
+export interface PlatformLead {
+  id: number;
+  tenantId: number;
+  tenantName: string;
+  name: string;
+  phone?: string;
+  email?: string;
+  status: string;
+  priority: string;
+  assignedAgentName?: string;
+  source?: string;
+  location?: string;
+  createdAt?: string;
+}
+
+export interface TenantLeadCount {
+  tenantId: number;
+  tenantName: string;
+  count: number;
+}
+
+export interface PlatformLeadSummary {
+  total: number;
+  newLeads: number;
+  interestedLeads: number;
+  convertedLeads: number;
+  notInterestedLeads: number;
+  thisMonthLeads: number;
+  lastMonthLeads: number;
+  byTenant: TenantLeadCount[];
+}
+
+export interface PlatformLeadsResponse {
+  items: PlatformLead[];
+  totalCount: number;
+  page: number;
+  pageSize: number;
+  totalPages: number;
+  summary: PlatformLeadSummary;
 }

@@ -20,7 +20,7 @@ public class KycService : IKycService
     private readonly ApplicationDbContext _db;
     private readonly ILogger<KycService> _logger;
     private readonly IIrmOtherService _otherService;
-    private readonly IConfiguration _config;
+    private readonly IConfiguration? _config;
 
     public KycService(
         IKycRepository kycRepo,
@@ -201,7 +201,7 @@ public class KycService : IKycService
             }
         }
 
-        var defaultBaseUrl = _config["SmtpSettings:ClientBaseUrl"] ?? "http://localhost:5173";
+        var defaultBaseUrl = _config?["SmtpSettings:ClientBaseUrl"] ?? "http://localhost:5173";
         string baseUrl = defaultBaseUrl;
         if (!string.IsNullOrWhiteSpace(dto.BaseUrl))
         {
@@ -973,33 +973,6 @@ public class KycService : IKycService
         }
 
         return ApiResponse<bool>.SuccessResponse(true, "KYC link has been revoked.");
-    }
-
-    public async Task<ApiResponse<SendKycLinkResponseDto>> ResendKycLinkAsync(int id, int companyId, int irmId, ResendKycLinkDto? dto, CancellationToken ct = default)
-    {
-        var kyc = await _kycRepo.GetByIdAsync(id, companyId, ct);
-        if (kyc == null)
-        {
-            kyc = await _kycRepo.GetByInvestorIdAsync(id, companyId, ct);
-        }
-        if (kyc == null)
-            return ApiResponse<SendKycLinkResponseDto>.ErrorResponse("KYC record not found");
-
-        if (kyc.Status == KycStatus.Approved)
-            return ApiResponse<SendKycLinkResponseDto>.ErrorResponse("This KYC has already been approved and verified.");
-
-        var sendDto = new SendKycLinkDto
-        {
-            InvestorId = kyc.InvestorId,
-            InvestorName = kyc.InvestorName,
-            Email = kyc.Email,
-            Phone = kyc.Phone,
-            ExpiryDays = dto?.ExpiryDays ?? 7,
-            ForceNewToken = true,
-            BaseUrl = dto?.BaseUrl
-        };
-
-        return await SendKycLinkAsync(companyId, irmId, sendDto, ct);
     }
 
     private static KycListDto MapToListDto(InvestorKyc k) => new()

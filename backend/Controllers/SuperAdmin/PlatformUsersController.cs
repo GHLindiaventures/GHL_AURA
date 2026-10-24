@@ -22,15 +22,18 @@ public class PlatformUsersController : ControllerBase
     private readonly ApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
     private readonly IHubContext<PlatformHub, IPlatformHubClient> _hubContext;
+    private readonly IJwtService _jwtService;
 
     public PlatformUsersController(
         ApplicationDbContext context,
         ICurrentUserService currentUser,
-        IHubContext<PlatformHub, IPlatformHubClient> hubContext)
+        IHubContext<PlatformHub, IPlatformHubClient> hubContext,
+        IJwtService jwtService)
     {
         _context = context;
         _currentUser = currentUser;
         _hubContext = hubContext;
+        _jwtService = jwtService;
     }
 
     /// <summary>
@@ -549,12 +552,115 @@ public class PlatformUsersController : ControllerBase
 
         return Ok(ApiResponse<object>.SuccessResult(new { tempPassword }, "Temporary password generated successfully."));
     }
-[HttpGet("~/api/super-admin/metrics")]
+
+    /// <summary>
+    /// Generates an authenticated impersonation session for Super Admin to log directly into any user account across any tenant.
+    /// Strictly restricted to Super Admin and audited with an immutable record.
+    /// </summary>
+    [HttpPost("{id}/impersonate")]
+    public async Task<ActionResult<ApiResponse<ImpersonateTenantResponseDto>>> ImpersonateUser(int id, CancellationToken ct = default)
+    {
+        var targetUser = await _context.Users
+            .Include(u => u.Role)
+            .Include(u => u.Company)
+            .FirstOrDefaultAsync(u => u.Id == id, ct);
+
+        if (targetUser == null)
+            return NotFound(ApiResponse<ImpersonateTenantResponseDto>.FailureResult($"User with ID {id} not found."));
+
+        if (targetUser.Status == UserStatus.Disabled)
+            return BadRequest(ApiResponse<ImpersonateTenantResponseDto>.FailureResult($"User '{targetUser.Name}' is disabled. Please activate the user account before impersonating."));
+
+        var token = _jwtService.GenerateToken(targetUser);
+        var actorEmail = _currentUser.Email ?? "Super Admin";
+
+        _context.AuditLogs.Add(new AuditLog
+        {
+            Action = "IMPERSONATE_USER",
+            EntityType = "User",
+            EntityId = targetUser.Id.ToString(),
+            CompanyId = targetUser.CompanyId,
+            ActorName = actorEmail,
+            ActorEmail = actorEmail,
+            Details = $"Super Admin initiated direct user impersonation session for '{targetUser.Name}' ({targetUser.Email}, Role: {targetUser.Role.Code}) in company '{(targetUser.Company?.Name ?? "Global/Platform")}'.",
+            Module = "Users",
+            Status = "success",
+            Timestamp = DateTime.UtcNow
+        });
+
+        await _context.SaveChangesAsync(ct);
+
+        var userDto = new backend.DTOs.Auth.UserDto
+        {
+            Id = targetUser.Id.ToString(),
+            Name = targetUser.Name,
+            Email = targetUser.Email,
+            Phone = targetUser.Phone,
+            Status = targetUser.Status.ToString(),
+            CompanyId = targetUser.CompanyId?.ToString() ?? "",
+            CompanySlug = targetUser.Company?.Slug ?? "",
+            CompanyName = targetUser.Company?.Name ?? "Global Platform",
+            LastLogin = targetUser.LastLoginAt?.ToString("o"),
+            Avatar = targetUser.AvatarUrl,
+            MustChangePassword = targetUser.MustChangePassword,
+            Role = new backend.DTOs.Auth.RoleDto
+            {
+                Id = targetUser.Role.Id.ToString(),
+                Name = targetUser.Role.Name,
+                Code = targetUser.Role.Code,
+                Permissions = targetUser.Role.Permissions ?? new List<string>()
+            }
+        };
+
+        var tenantDto = targetUser.Company != null ? new backend.DTOs.Auth.TenantDto
+        {
+            Id = targetUser.Company.Id.ToString(),
+            Name = targetUser.Company.Name,
+            Slug = targetUser.Company.Slug,
+            BrandColor = targetUser.Company.BrandColor,
+            Logo = targetUser.Company.Logo,
+            Tagline = targetUser.Company.Tagline,
+            EnabledFeatures = targetUser.Company.EnabledFeatures ?? new List<string>(),
+            Timezone = targetUser.Company.Timezone,
+            Currency = targetUser.Company.Currency,
+            BusinessHours = targetUser.Company.BusinessHours
+        } : new backend.DTOs.Auth.TenantDto
+        {
+            Id = "global",
+            Name = "Platform Global",
+            Slug = "global"
+        };
+
+        var targetRoute = targetUser.Role.Code == "sales_executive" ? "/leads" :
+                          targetUser.Role.Code == "irm" ? "/investors" : "/dashboard";
+
+        var responseDto = new ImpersonateTenantResponseDto
+        {
+            Token = token,
+            User = userDto,
+            Tenant = tenantDto,
+            OriginalAdminEmail = actorEmail,
+            IsImpersonated = true,
+            TargetRoute = targetRoute
+        };
+
+        return Ok(ApiResponse<ImpersonateTenantResponseDto>.SuccessResult(responseDto, $"Successfully started impersonation session for {targetUser.Name}."));
+    }
+
+    [HttpGet("~/api/super-admin/metrics")]
     [HttpGet("~/api/platform/metrics")]
     public async Task<ActionResult<ApiResponse<PlatformMetricsDto>>> GetPlatformMetrics(
         [FromQuery] string? timeZone = null,
+        [FromServices] Microsoft.Extensions.Caching.Memory.IMemoryCache? cache = null,
         CancellationToken ct = default)
     {
+        var tzKey = timeZone ?? "default";
+        var cacheKey = $"platform_metrics_{tzKey}";
+        if (cache != null && cache.TryGetValue(cacheKey, out PlatformMetricsDto? cached) && cached != null)
+        {
+            return Ok(ApiResponse<PlatformMetricsDto>.SuccessResult(cached));
+        }
+
         var (currentMonthStart, nextMonthStart, prevMonthStart) = GetMonthUtcRanges(timeZone);
 
         var totalTenants = await _context.Tenants.CountAsync(ct);
@@ -639,6 +745,11 @@ public class PlatformUsersController : ControllerBase
             SystemHealthScore = systemHealthScore
         };
 
+        if (cache != null)
+        {
+            cache.Set(cacheKey, metrics, TimeSpan.FromSeconds(10));
+        }
+
         return Ok(ApiResponse<PlatformMetricsDto>.SuccessResult(metrics));
     }
 
@@ -646,8 +757,16 @@ public class PlatformUsersController : ControllerBase
     [HttpGet("~/api/platform/metrics/calls-today")]
     public async Task<ActionResult<ApiResponse<CallsTodayMetricsDto>>> GetCallsTodayMetrics(
         [FromQuery] string? timeZone = null,
+        [FromServices] Microsoft.Extensions.Caching.Memory.IMemoryCache? cache = null,
         CancellationToken ct = default)
     {
+        var tzKey = timeZone ?? "default";
+        var cacheKey = $"calls_today_metrics_{tzKey}";
+        if (cache != null && cache.TryGetValue(cacheKey, out CallsTodayMetricsDto? cached) && cached != null)
+        {
+            return Ok(ApiResponse<CallsTodayMetricsDto>.SuccessResult(cached));
+        }
+
         var (callsToday, callsConnected, callsFailed, duration, successRate) = await CalculateCallsTodayAsync(timeZone, ct);
 
         var result = new CallsTodayMetricsDto
@@ -658,6 +777,11 @@ public class PlatformUsersController : ControllerBase
             TotalDurationSeconds = duration,
             SuccessRate = successRate
         };
+
+        if (cache != null)
+        {
+            cache.Set(cacheKey, result, TimeSpan.FromSeconds(5));
+        }
 
         return Ok(ApiResponse<CallsTodayMetricsDto>.SuccessResult(result));
     }
@@ -966,5 +1090,4 @@ public class PlatformUsersController : ControllerBase
 
         return (callsToday, callsConnected, callsFailed, totalDuration, successRate);
     }
-
 }

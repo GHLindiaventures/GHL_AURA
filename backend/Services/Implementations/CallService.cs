@@ -27,7 +27,11 @@ var items = await query.OrderByDescending(x => x.StartedAt).Skip((page - 1) * pa
 
     public async Task<ApiResponse<CallRecordDto>> LogAsync(LogCallDto request, CancellationToken cancellationToken)
     {
-if (!currentUser.UserId.HasValue || currentUser.UserId.Value <= 0)
+        var role = (currentUser.Role ?? string.Empty).ToLowerInvariant();
+        if (role == "company_admin" || role == "admin" || role == "ghl_admin")
+            return ApiResponse<CallRecordDto>.FailureResult("Access denied: Admin roles cannot place or log calls.");
+
+        if (!currentUser.UserId.HasValue || currentUser.UserId.Value <= 0)
             return ApiResponse<CallRecordDto>.FailureResult("Unauthorized: User ID is missing.");
         if (!currentUser.CompanyId.HasValue || currentUser.CompanyId.Value <= 0)
             return ApiResponse<CallRecordDto>.FailureResult("Unauthorized: Company ID is missing.");
@@ -60,14 +64,49 @@ if (!currentUser.UserId.HasValue || currentUser.UserId.Value <= 0)
             }
         }
 
-        var record = new CallRecord { CompanyId = currentUser.CompanyId.Value, AgentId = currentUser.UserId.Value, ContactName = request.ContactName, ContactPhone = request.ContactPhone, Direction = request.Direction.ToLowerInvariant(), Duration = request.Duration, Disposition = request.Disposition, Notes = request.Notes, Reason = request.Reason, CallModule = request.Module, LeadId = validLeadId, CustomerId = validCustomerId };
+        CallRecord? record = null;
+        var isNewRecord = false;
+        if (!string.IsNullOrWhiteSpace(request.TwilioCallSid))
+        {
+            record = await context.Set<CallRecord>().FirstOrDefaultAsync(x => x.CompanyId == currentUser.CompanyId.Value && x.TwilioCallSid == request.TwilioCallSid, cancellationToken);
+        }
 
-        context.Set<CallRecord>().Add(record); await context.SaveChangesAsync(cancellationToken);
+        if (record == null)
+        {
+            isNewRecord = true;
+            record = new CallRecord { CompanyId = currentUser.CompanyId.Value, AgentId = currentUser.UserId.Value, ContactName = request.ContactName, ContactPhone = request.ContactPhone, Direction = request.Direction.ToLowerInvariant(), Duration = request.Duration, Disposition = request.Disposition, Notes = request.Notes, Reason = request.Reason, CallModule = request.Module, LeadId = validLeadId, CustomerId = validCustomerId, TwilioCallSid = request.TwilioCallSid };
+        }
+        else
+        {
+            if (request.Duration > 0 || record.Duration == 0) record.Duration = request.Duration;
+            if (!string.IsNullOrWhiteSpace(request.Disposition)) record.Disposition = request.Disposition;
+            if (!string.IsNullOrWhiteSpace(request.Notes)) record.Notes = request.Notes;
+            if (!string.IsNullOrWhiteSpace(request.Reason)) record.Reason = request.Reason;
+            if (!string.IsNullOrWhiteSpace(request.Module)) record.CallModule = request.Module;
+            if (validLeadId.HasValue) record.LeadId = validLeadId;
+            if (validCustomerId.HasValue) record.CustomerId = validCustomerId;
+        }
+
+        if (validLeadId.HasValue && string.IsNullOrWhiteSpace(record.LeadStatusAtCall))
+        {
+            var lead = await context.Set<Lead>().FirstOrDefaultAsync(l => l.Id == validLeadId.Value && l.CompanyId == currentUser.CompanyId.Value, cancellationToken);
+            record.LeadStatusAtCall = lead?.Status ?? (!string.IsNullOrWhiteSpace(request.Disposition) ? request.Disposition : "Completed");
+        }
+
+        if (isNewRecord)
+        {
+            context.Set<CallRecord>().Add(record);
+        }
+        await context.SaveChangesAsync(cancellationToken);
         return ApiResponse<CallRecordDto>.SuccessResult(Map(record), "Call logged");
     }
 
     public async Task<ApiResponse<CallRecordDto>> ProcessDispositionAsync(CallDispositionDto request, CancellationToken cancellationToken)
     {
+        var role = (currentUser.Role ?? string.Empty).ToLowerInvariant();
+        if (role == "company_admin" || role == "admin" || role == "ghl_admin")
+            return ApiResponse<CallRecordDto>.FailureResult("Access denied: Admin roles cannot submit call dispositions.");
+
         if (!currentUser.UserId.HasValue || currentUser.UserId.Value <= 0)
             return ApiResponse<CallRecordDto>.FailureResult("Unauthorized: User ID is missing.");
         if (!currentUser.CompanyId.HasValue || currentUser.CompanyId.Value <= 0)
@@ -118,6 +157,11 @@ record = new CallRecord { CompanyId = currentUser.CompanyId.Value, AgentId = cur
             var lead = await context.Set<Lead>().FirstOrDefaultAsync(x => x.Id == request.LeadId && x.CompanyId == currentUser.CompanyId.Value, cancellationToken);
             if (lead != null)
             {
+                if (string.IsNullOrWhiteSpace(record.LeadStatusAtCall))
+                {
+                    record.LeadStatusAtCall = lead.Status;
+                }
+
                 if (request.Disposition is "Interested" or "Not Interested" or "Wrong Number")
                 {
                     lead.Status = request.Disposition == "Wrong Number" ? "Junk" : request.Disposition;
@@ -196,7 +240,7 @@ record = new CallRecord { CompanyId = currentUser.CompanyId.Value, AgentId = cur
                     ContactId = lead.Id.ToString(), 
                     ContactType = "lead", 
                     ContactName = lead.Name, 
-                    ContactPhone = lead.Phone, 
+                    ContactPhone = lead.Phone ?? string.Empty, 
                     ContactEmail = lead.Email,
                     ScheduledAt = request.FollowupAt ?? DateTime.UtcNow.AddDays(1), 
                     Notes = request.Notes ?? string.Empty,
@@ -221,7 +265,7 @@ record = new CallRecord { CompanyId = currentUser.CompanyId.Value, AgentId = cur
         return ApiResponse<CallRecordDto>.SuccessResult(Map(record), "Disposition processed");
     }
 
-private static CallRecordDto Map(CallRecord x) => new() { Id = x.Id, CompanyId = x.CompanyId, AgentId = x.AgentId, ContactName = x.ContactName, ContactPhone = x.ContactPhone, Direction = x.Direction, Duration = x.DurationSeconds, Disposition = x.Disposition, Notes = x.Notes, Reason = x.Reason, CallModule = x.CallModule, LeadId = x.LeadId, CustomerId = x.CustomerId, Timestamp = x.Timestamp, CreatedAt = x.CreatedAt };
+    private static CallRecordDto Map(CallRecord x) => new() { Id = x.Id, CompanyId = x.CompanyId, AgentId = x.AgentId, ContactName = x.ContactName, ContactPhone = x.ContactPhone, Direction = x.Direction, Duration = x.Duration, Disposition = x.Disposition, Notes = x.Notes, Reason = x.Reason, CallModule = x.CallModule, LeadId = x.LeadId, CustomerId = x.CustomerId, Timestamp = x.Timestamp, CreatedAt = x.CreatedAt, LeadStatusAtCall = x.LeadStatusAtCall, TwilioCallSid = x.TwilioCallSid };
 
     private static Dictionary<string, string> DeserializeCustomFields(string? json)
     {

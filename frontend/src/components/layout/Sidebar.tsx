@@ -35,10 +35,10 @@ import {
   Ticket,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
-import { storageService } from '../../services/storageService';
 import { getFollowups } from '../../services/ghlApiService';
 import { FEATURES } from '../../constants/features';
 import { PERMISSIONS } from '../../constants/permissions';
+import { canPlaceCalls } from '../../utils/agentRoleUtils';
 import './Sidebar.css';
 
 interface SidebarProps {
@@ -160,7 +160,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
   const companySections: NavSection[] = [
     {
       items: [
-        { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
+        { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} />, permission: PERMISSIONS.DASHBOARD_VIEW },
       ],
     },
     {
@@ -168,22 +168,24 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
       items: [
         { id: 'leads', label: 'Leads', icon: <Users size={18} />, feature: FEATURES.LEADS, permission: PERMISSIONS.LEADS_VIEW },
         ...(isGhlAdmin ? [
-          { id: 'assigned-leads', label: 'Assigned Leads', icon: <UserCheck size={18} />, feature: FEATURES.LEADS, permission: PERMISSIONS.LEADS_VIEW },
-          { id: 'pending-leads', label: 'Pending Leads', icon: <Clock size={18} />, feature: FEATURES.LEADS, permission: PERMISSIONS.LEADS_VIEW },
+          { id: 'assigned-leads', label: 'Assigned Leads', icon: <UserCheck size={18} />, feature: FEATURES.LEADS, permission: PERMISSIONS.LEADS_ASSIGNED_VIEW },
+          { id: 'pending-leads', label: 'Pending Leads', icon: <Clock size={18} />, feature: FEATURES.LEADS, permission: PERMISSIONS.LEADS_PENDING_VIEW },
         ] : []),
         { id: 'followups', label: 'Follow-ups', icon: <CalendarCheck size={18} />, feature: FEATURES.FOLLOWUPS, permission: PERMISSIONS.FOLLOWUPS_VIEW },
         { id: 'customers', label: 'Customers 360', icon: <Building2 size={18} />, feature: FEATURES.CUSTOMERS, permission: PERMISSIONS.CUSTOMERS_VIEW },
-        { id: 'converted-customers', label: 'Converted Customers', icon: <UserCheck size={18} />, feature: FEATURES.CUSTOMERS, permission: PERMISSIONS.CUSTOMERS_VIEW },
+        { id: 'converted-customers', label: 'Converted Customers', icon: <UserCheck size={18} />, feature: FEATURES.CUSTOMERS, permission: PERMISSIONS.CUSTOMERS_CONVERTED_VIEW },
         { id: 'pipeline', label: 'Pipeline', icon: <Kanban size={18} />, feature: FEATURES.DEALS, permission: PERMISSIONS.DEALS_VIEW },
         ...(isGhlAdmin ? [
-          { id: 'archived-leads', label: 'Archived Leads', icon: <Trash2 size={18} />, feature: FEATURES.LEADS, permission: PERMISSIONS.LEADS_VIEW }
+          { id: 'archived-leads', label: 'Archived Leads', icon: <Trash2 size={18} />, feature: FEATURES.LEADS, permission: PERMISSIONS.LEADS_ARCHIVED_VIEW }
         ] : []),
       ],
     },
     {
       header: 'Calling',
       items: [
-        { id: 'call-center', label: 'Call Center', icon: <PhoneCall size={18} />, feature: FEATURES.CALLS, permission: PERMISSIONS.CALLS_MAKE },
+        ...(canPlaceCalls(user) ? [
+          { id: 'call-center', label: 'Call Center', icon: <PhoneCall size={18} />, feature: FEATURES.CALLS, permission: PERMISSIONS.CALLS_MAKE },
+        ] : []),
         { id: 'call-history', label: 'Call History', icon: <History size={18} />, feature: FEATURES.CALLS, permission: PERMISSIONS.CALLS_VIEW },
       ],
     },
@@ -200,7 +202,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
       header: 'Investors', // GHL specific
       items: [
         { id: 'consultations', label: 'Consultations', icon: <Calendar size={18} />, feature: FEATURES.CONSULTATIONS, permission: PERMISSIONS.CONSULTATIONS_VIEW },
-        { id: 'kyc', label: 'KYC Leads', icon: <FileCheck size={18} />, feature: FEATURES.INVESTORS, permission: PERMISSIONS.INVESTORS_VIEW },
+        { id: 'kyc', label: 'KYC Leads', icon: <FileCheck size={18} />, feature: FEATURES.INVESTORS, permission: PERMISSIONS.KYC_VERIFY },
         { id: 'opportunities', label: 'Opportunities', icon: <Briefcase size={18} />, feature: FEATURES.INVESTMENT_OPPORTUNITIES, permission: PERMISSIONS.OPPORTUNITIES_VIEW },
         { id: 'investors', label: 'Investors 360', icon: <TrendingUp size={18} />, feature: FEATURES.INVESTORS, permission: PERMISSIONS.INVESTORS_VIEW },
       ],
@@ -209,34 +211,34 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
       header: 'Analytics',
       items: [
         { id: 'reports', label: 'Reports', icon: <BarChart3 size={18} />, feature: FEATURES.REPORTS, permission: PERMISSIONS.REPORTS_VIEW },
-        { id: 'notifications', label: 'Notifications', icon: <Bell size={18} /> },
+        { id: 'notifications', label: 'Notifications', icon: <Bell size={18} />, permission: PERMISSIONS.NOTIFICATIONS_VIEW },
       ],
     },
     {
       header: 'Administration',
       items: [
-        { id: 'company-documents', label: 'Company Documents', icon: <FolderArchive size={18} /> },
+        { id: 'company-documents', label: 'Company Documents', icon: <FolderArchive size={18} />, permission: PERMISSIONS.DOCUMENTS_VIEW },
         { id: 'company-users', label: 'Users', icon: <Users size={18} />, feature: FEATURES.USERS, permission: PERMISSIONS.USERS_VIEW },
         ...(isGhlAdmin ? [
-          { id: 'work-handover', label: 'Work Handover', icon: <UserCheck size={18} />, feature: FEATURES.USERS, permission: PERMISSIONS.USERS_VIEW }
+          { id: 'work-handover', label: 'Work Handover', icon: <UserCheck size={18} />, feature: FEATURES.USERS, permission: PERMISSIONS.WORK_HANDOVER_VIEW }
         ] : []),
-        { id: 'leave-requests', label: 'Leave Requests', icon: <CalendarOff size={18} />, feature: FEATURES.USERS, permission: PERMISSIONS.USERS_VIEW },
+        { id: 'leave-requests', label: 'Leave Requests', icon: <CalendarOff size={18} />, feature: FEATURES.USERS, permission: PERMISSIONS.LEAVE_REQUESTS_VIEW },
         { id: 'company-audit', label: 'Audit Logs', icon: <FileCheck size={18} />, feature: FEATURES.AUDIT_LOGS, permission: PERMISSIONS.AUDIT_VIEW },
       ],
     },
     {
       header: 'Settings',
       items: [
-        { id: 'call-settings', label: 'Call Settings', icon: <PhoneCall size={18} />, feature: FEATURES.CALLS, permission: PERMISSIONS.CALLS_VIEW },
+        { id: 'call-settings', label: 'Call Settings', icon: <PhoneCall size={18} />, feature: FEATURES.CALLS, permission: PERMISSIONS.CALL_SETTINGS_VIEW },
         { id: 'company-settings', label: 'Company Settings', icon: <Settings size={18} />, feature: FEATURES.COMPANY_SETTINGS, permission: PERMISSIONS.SETTINGS_VIEW },
       ],
     },
     {
       header: 'Help and Support',
       items: [
-        { id: 'support', label: 'Helpdesk & Support', icon: <Ticket size={18} /> },
-        { id: 'chat', label: 'Chat', icon: <MessageSquare size={18} />, badge: unreadChatCount > 0 ? unreadChatCount : undefined },
-        { id: 'smarty-ai', label: 'Smarty AI', icon: <Sparkles size={18} /> },
+        { id: 'support', label: 'Helpdesk & Support', icon: <Ticket size={18} />, permission: PERMISSIONS.SUPPORT_VIEW },
+        { id: 'chat', label: 'Chat', icon: <MessageSquare size={18} />, badge: unreadChatCount > 0 ? unreadChatCount : undefined, permission: PERMISSIONS.CHAT_VIEW },
+        { id: 'smarty-ai', label: 'Smarty AI', icon: <Sparkles size={18} />, permission: PERMISSIONS.SMARTY_AI },
       ],
     },
   ];
@@ -244,7 +246,16 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
   const ghlSalesExecSections: NavSection[] = [
     {
       items: [
-        { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
+        { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} />, permission: PERMISSIONS.DASHBOARD_VIEW },
+      ],
+    },
+    {
+      header: 'Operations',
+      items: [
+        { id: 'projects', label: 'Projects', icon: <MapPin size={18} />, feature: FEATURES.PROPERTIES, permission: PERMISSIONS.PROPERTIES_VIEW },
+        { id: 'plots', label: 'Plot Inventory', icon: <Grid size={18} />, feature: FEATURES.PROPERTIES, permission: PERMISSIONS.PROPERTIES_VIEW },
+        { id: 'site-visits', label: 'Site Visits', icon: <Calendar size={18} />, feature: FEATURES.SITE_VISITS, permission: PERMISSIONS.SITE_VISITS_VIEW },
+        { id: 'bookings', label: 'Bookings', icon: <CheckCircle size={18} />, feature: FEATURES.BOOKINGS, permission: PERMISSIONS.BOOKINGS_VIEW },
       ],
     },
     {
@@ -263,9 +274,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         { id: 'followups', label: 'Follow-ups', icon: <CalendarCheck size={18} />, feature: FEATURES.FOLLOWUPS, permission: PERMISSIONS.FOLLOWUPS_VIEW, badge: pendingFollowupsCount > 0 ? pendingFollowupsCount : undefined },
         { id: 'consultations', label: 'Consultations', icon: <Calendar size={18} />, feature: FEATURES.CONSULTATIONS, permission: PERMISSIONS.CONSULTATIONS_VIEW },
         { id: 'customers', label: 'Customers 360', icon: <Building2 size={18} />, feature: FEATURES.CUSTOMERS, permission: PERMISSIONS.CUSTOMERS_VIEW },
-        { id: 'company-documents', label: 'Collaterals & Docs', icon: <FolderArchive size={18} /> },
-        { id: 'not-interested', label: 'Not - Interested', icon: <XCircle size={18} /> },
-        { id: 'junk', label: 'Junk', icon: <Trash2 size={18} /> },
+        { id: 'company-documents', label: 'Collaterals & Docs', icon: <FolderArchive size={18} />, permission: PERMISSIONS.DOCUMENTS_VIEW },
+        { id: 'not-interested', label: 'Not - Interested', icon: <XCircle size={18} />, permission: PERMISSIONS.LEADS_VIEW },
+        { id: 'junk', label: 'Junk', icon: <Trash2 size={18} />, permission: PERMISSIONS.LEADS_VIEW },
       ],
     },
     {
@@ -279,23 +290,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
       header: 'Analytics',
       items: [
         { id: 'reports', label: 'Reports', icon: <BarChart3 size={18} />, feature: FEATURES.REPORTS, permission: PERMISSIONS.REPORTS_VIEW },
-        { id: 'notifications', label: 'Notifications', icon: <Bell size={18} /> },
+        { id: 'notifications', label: 'Notifications', icon: <Bell size={18} />, permission: PERMISSIONS.NOTIFICATIONS_VIEW },
       ],
     },
     {
       header: 'Help and Support',
       items: [
-        { id: 'support', label: 'Helpdesk & Support', icon: <Ticket size={18} /> },
-        { id: 'chat', label: 'Chat', icon: <MessageSquare size={18} />, badge: unreadChatCount > 0 ? unreadChatCount : undefined },
-        { id: 'smarty-ai', label: 'Smarty AI', icon: <Sparkles size={18} /> },
+        { id: 'support', label: 'Helpdesk & Support', icon: <Ticket size={18} />, permission: PERMISSIONS.SUPPORT_VIEW },
+        { id: 'chat', label: 'Chat', icon: <MessageSquare size={18} />, badge: unreadChatCount > 0 ? unreadChatCount : undefined, permission: PERMISSIONS.CHAT_VIEW },
+        { id: 'smarty-ai', label: 'Smarty AI', icon: <Sparkles size={18} />, permission: PERMISSIONS.SMARTY_AI },
       ],
     },
     {
       header: 'Settings',
       items: [
-        { id: 'leave-requests', label: 'Leave Requests', icon: <CalendarOff size={18} /> },
-        { id: 'call-settings', label: 'Call Settings', icon: <PhoneCall size={18} />, feature: FEATURES.CALLS, permission: PERMISSIONS.CALLS_VIEW },
-        { id: 'profile', label: 'Profile', icon: <UserIcon size={18} /> },
+        { id: 'leave-requests', label: 'Leave Requests', icon: <CalendarOff size={18} />, permission: PERMISSIONS.LEAVE_REQUESTS_VIEW },
+        { id: 'call-settings', label: 'Call Settings', icon: <PhoneCall size={18} />, feature: FEATURES.CALLS, permission: PERMISSIONS.CALL_SETTINGS_VIEW },
+        { id: 'profile', label: 'Profile', icon: <UserIcon size={18} />, permission: PERMISSIONS.PROFILE },
       ],
     },
   ];
@@ -304,7 +315,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
   const irmSections: NavSection[] = [
     {
       items: [
-        { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} /> },
+        { id: 'dashboard', label: 'Dashboard', icon: <LayoutDashboard size={18} />, permission: PERMISSIONS.DASHBOARD_VIEW },
       ],
     },
     {
@@ -313,11 +324,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         { id: 'all-leads', label: 'All Leads', icon: <Layers size={18} />, feature: FEATURES.LEADS, permission: PERMISSIONS.LEADS_VIEW },
         { id: 'leads', label: 'My Leads', icon: <Users size={18} />, feature: FEATURES.LEADS, permission: PERMISSIONS.LEADS_VIEW },
         { id: 'followups', label: 'Follow-up', icon: <CalendarCheck size={18} />, feature: FEATURES.FOLLOWUPS, permission: PERMISSIONS.FOLLOWUPS_VIEW },
-        { id: 'kyc', label: 'KYC', icon: <FileCheck size={18} />, feature: FEATURES.INVESTORS, permission: PERMISSIONS.INVESTORS_VIEW },
+        { id: 'kyc', label: 'KYC', icon: <FileCheck size={18} />, feature: FEATURES.INVESTORS, permission: PERMISSIONS.KYC_VERIFY },
         { id: 'opportunities', label: 'Opportunities', icon: <Briefcase size={18} />, feature: FEATURES.INVESTMENT_OPPORTUNITIES, permission: PERMISSIONS.OPPORTUNITIES_VIEW },
         { id: 'investors', label: 'Investor 360', icon: <TrendingUp size={18} />, feature: FEATURES.INVESTORS, permission: PERMISSIONS.INVESTORS_VIEW },
-        { id: 'company-documents', label: 'Collaterals & Docs', icon: <FolderArchive size={18} /> },
-        { id: 'irm-other', label: 'Other', icon: <FolderArchive size={18} /> },
+        { id: 'company-documents', label: 'Collaterals & Docs', icon: <FolderArchive size={18} />, permission: PERMISSIONS.DOCUMENTS_VIEW },
+        { id: 'irm-other', label: 'Other', icon: <FolderArchive size={18} />, permission: PERMISSIONS.DOCUMENTS_VIEW },
         ...(isGhlIrm ? [{ id: 'pipeline', label: 'Pipeline', icon: <Kanban size={18} />, feature: FEATURES.DEALS, permission: PERMISSIONS.DEALS_VIEW }] : []),
       ],
     },
@@ -332,23 +343,23 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
       header: 'Analytics',
       items: [
         { id: 'reports', label: 'Reports', icon: <BarChart3 size={18} />, feature: FEATURES.REPORTS, permission: PERMISSIONS.REPORTS_VIEW },
-        { id: 'notifications', label: 'Notifications', icon: <Bell size={18} /> },
+        { id: 'notifications', label: 'Notifications', icon: <Bell size={18} />, permission: PERMISSIONS.NOTIFICATIONS_VIEW },
       ],
     },
     {
       header: 'Help and Support',
       items: [
-        { id: 'support', label: 'Helpdesk & Support', icon: <Ticket size={18} /> },
-        { id: 'chat', label: 'Chat', icon: <MessageSquare size={18} />, badge: unreadChatCount > 0 ? unreadChatCount : undefined },
-        { id: 'smarty-ai', label: 'Smarty AI', icon: <Sparkles size={18} /> },
+        { id: 'support', label: 'Helpdesk & Support', icon: <Ticket size={18} />, permission: PERMISSIONS.SUPPORT_VIEW },
+        { id: 'chat', label: 'Chat', icon: <MessageSquare size={18} />, badge: unreadChatCount > 0 ? unreadChatCount : undefined, permission: PERMISSIONS.CHAT_VIEW },
+        { id: 'smarty-ai', label: 'Smarty AI', icon: <Sparkles size={18} />, permission: PERMISSIONS.SMARTY_AI },
       ],
     },
     {
       header: 'Settings',
       items: [
-        { id: 'leave-requests', label: 'Leave Requests', icon: <CalendarOff size={18} /> },
-        { id: 'call-settings', label: 'Call Settings', icon: <PhoneCall size={18} />, feature: FEATURES.CALLS, permission: PERMISSIONS.CALLS_VIEW },
-        { id: 'profile', label: 'Profile', icon: <UserIcon size={18} /> },
+        { id: 'leave-requests', label: 'Leave Requests', icon: <CalendarOff size={18} />, permission: PERMISSIONS.LEAVE_REQUESTS_VIEW },
+        { id: 'call-settings', label: 'Call Settings', icon: <PhoneCall size={18} />, feature: FEATURES.CALLS, permission: PERMISSIONS.CALL_SETTINGS_VIEW },
+        { id: 'profile', label: 'Profile', icon: <UserIcon size={18} />, permission: PERMISSIONS.PROFILE },
       ],
     },
   ];
@@ -358,7 +369,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
     return section.items.filter(item => {
       if (item.feature && !enabledFeatures.includes(item.feature)) return false;
       if (item.permission && !permissions.includes(item.permission)) {
-        if (isIrm && (item.permission === PERMISSIONS.LEADS_VIEW || item.permission === PERMISSIONS.FOLLOWUPS_VIEW || item.permission === PERMISSIONS.DEALS_VIEW)) {
+        if (isIrm && (item.permission === PERMISSIONS.LEADS_VIEW || item.permission === PERMISSIONS.FOLLOWUPS_VIEW || item.permission === PERMISSIONS.DEALS_VIEW || item.permission === PERMISSIONS.KYC_VERIFY)) {
           return true;
         }
         return false;
