@@ -762,19 +762,6 @@ const GhlIrmKycView: React.FC = () => {
     };
   }, []);
 
-  // Browser Back button handling while in KYC flow
-  useEffect(() => {
-    if (viewMode === 'flow') {
-      window.history.pushState({ kycFlow: true }, '');
-      const handlePopState = () => {
-        handleExitFlow();
-      };
-      window.addEventListener('popstate', handlePopState);
-      return () => {
-        window.removeEventListener('popstate', handlePopState);
-      };
-    }
-  }, [viewMode]);
 
   const showToast = (msg: string) => {
     setToastMessage(msg);
@@ -1066,6 +1053,20 @@ const GhlIrmKycView: React.FC = () => {
     setSelectedCustomerDeal(null);
     setIsAssistedFlow(false);
   };
+
+  // Browser Back button handling while in KYC flow
+  useEffect(() => {
+    if (viewMode === 'flow') {
+      window.history.pushState({ kycFlow: true }, '');
+      const handlePopState = () => {
+        handleExitFlow();
+      };
+      window.addEventListener('popstate', handlePopState);
+      return () => {
+        window.removeEventListener('popstate', handlePopState);
+      };
+    }
+  }, [viewMode]);
 
   // Helper to open the 5-step wizard prefilled with deal info
   const startKycFlow = (deal?: Deal, targetStep?: 1 | 2 | 3 | 4 | 5, isAssisted?: boolean) => {
@@ -1914,7 +1915,7 @@ const GhlIrmKycView: React.FC = () => {
 
     docsToSave.forEach(d => {
       const docItem: DocumentItem = {
-        id: `doc-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        id: `doc-${Date.now()}-${typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID().slice(0, 8) : Date.now().toString(36)}`,
         name: d.name,
         size: d.size,
         type: d.type,

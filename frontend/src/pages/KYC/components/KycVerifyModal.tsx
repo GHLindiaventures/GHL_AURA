@@ -522,14 +522,12 @@ export const KycVerifyModal: React.FC<KycVerifyModalProps> = ({
   onShowToast,
 }) => {
   const { user, permissions } = useAuth();
-  const canVerify =
-    permissions.includes(PERMISSIONS.KYC_VERIFY) ||
+  const canVerify = Boolean(
+    (permissions && Array.isArray(permissions) && permissions.includes(PERMISSIONS.KYC_VERIFY)) ||
     user?.role?.code === 'irm' ||
     user?.role?.code === 'company_admin' ||
-    user?.role?.code === 'super_admin' ||
-    user?.role?.code === 'sales_executive' ||
-    !permissions ||
-    permissions.length === 0;
+    user?.role?.code === 'super_admin'
+  );
 
   // Real submitted record fetched live from backend
   const [liveKycData, setLiveKycData] = useState<any | null>(null);
@@ -729,17 +727,60 @@ export const KycVerifyModal: React.FC<KycVerifyModalProps> = ({
       onShowToast(`No preview file available for ${doc.name}.`);
       return;
     }
-    const isPdf = doc.url.startsWith('data:application/pdf') || doc.url.toLowerCase().includes('.pdf');
-    const w = window.open('');
+    const cleanUrl = doc.url.trim();
+    const isAllowedScheme =
+      cleanUrl.startsWith('http://') ||
+      cleanUrl.startsWith('https://') ||
+      cleanUrl.startsWith('blob:') ||
+      cleanUrl.startsWith('data:application/pdf') ||
+      cleanUrl.startsWith('data:image/');
+    if (!isAllowedScheme) {
+      onShowToast('Invalid or unsafe document URL.');
+      return;
+    }
+
+    const isPdf = cleanUrl.startsWith('data:application/pdf') || cleanUrl.toLowerCase().includes('.pdf');
+    const w = window.open('', '_blank');
     if (w) {
-      if (isPdf) {
-        w.document.write(
-          `<title>${doc.name}</title><iframe src="${doc.url}" style="width:100%;height:100%;border:none;margin:0;position:fixed;top:0;left:0;right:0;bottom:0;"></iframe>`
-        );
-      } else {
-        w.document.write(
-          `<title>${doc.name}</title><div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#090d16;margin:0;"><img src="${doc.url}" style="max-width:92%;max-height:92vh;border-radius:10px;box-shadow:0 12px 36px rgba(0,0,0,0.6);" alt="${doc.name}" /></div>`
-        );
+      try {
+        w.opener = null;
+        w.document.title = doc.name;
+        w.document.body.style.margin = '0';
+        w.document.body.style.background = '#090d16';
+
+        if (isPdf) {
+          const iframe = w.document.createElement('iframe');
+          iframe.src = cleanUrl;
+          iframe.style.width = '100%';
+          iframe.style.height = '100%';
+          iframe.style.border = 'none';
+          iframe.style.position = 'fixed';
+          iframe.style.top = '0';
+          iframe.style.left = '0';
+          iframe.style.right = '0';
+          iframe.style.bottom = '0';
+          w.document.body.appendChild(iframe);
+        } else {
+          const container = w.document.createElement('div');
+          container.style.display = 'flex';
+          container.style.alignItems = 'center';
+          container.style.justifyContent = 'center';
+          container.style.minHeight = '100vh';
+          container.style.background = '#090d16';
+          container.style.margin = '0';
+
+          const img = w.document.createElement('img');
+          img.src = cleanUrl;
+          img.alt = doc.name;
+          img.style.maxWidth = '92%';
+          img.style.maxHeight = '92vh';
+          img.style.borderRadius = '10px';
+          img.style.boxShadow = '0 12px 36px rgba(0,0,0,0.6)';
+          container.appendChild(img);
+          w.document.body.appendChild(container);
+        }
+      } catch (err) {
+        console.error('Error rendering preview:', err);
       }
     }
   };

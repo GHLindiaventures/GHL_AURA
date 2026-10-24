@@ -413,12 +413,55 @@ export const CustomerKycApp: React.FC = () => {
   const handlePreviewDoc = (docKey: 'pan' | 'aadhaar' | 'bank' | 'demat') => {
     const doc = documents[docKey];
     if (!doc.dataUrl) return;
-    const w = window.open('');
+    const cleanUrl = doc.dataUrl.trim();
+    const isAllowedScheme =
+      cleanUrl.startsWith('http://') ||
+      cleanUrl.startsWith('https://') ||
+      cleanUrl.startsWith('blob:') ||
+      cleanUrl.startsWith('data:application/pdf') ||
+      cleanUrl.startsWith('data:image/');
+    if (!isAllowedScheme) return;
+
+    const w = window.open('', '_blank');
     if (w) {
-      if (doc.dataUrl.startsWith('data:application/pdf')) {
-        w.document.write(`<iframe src="${doc.dataUrl}" style="width:100%;height:100%;border:none;"></iframe>`);
-      } else {
-        w.document.write(`<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#0f172a;margin:0;"><img src="${doc.dataUrl}" style="max-width:90%;max-height:90vh;border-radius:8px;" alt="${doc.name}" /></div>`);
+      try {
+        w.opener = null;
+        w.document.title = doc.name;
+        w.document.body.style.margin = '0';
+        w.document.body.style.background = '#0f172a';
+
+        if (cleanUrl.startsWith('data:application/pdf') || cleanUrl.toLowerCase().includes('.pdf')) {
+          const iframe = w.document.createElement('iframe');
+          iframe.src = cleanUrl;
+          iframe.style.width = '100%';
+          iframe.style.height = '100%';
+          iframe.style.border = 'none';
+          iframe.style.position = 'fixed';
+          iframe.style.top = '0';
+          iframe.style.left = '0';
+          iframe.style.right = '0';
+          iframe.style.bottom = '0';
+          w.document.body.appendChild(iframe);
+        } else {
+          const container = w.document.createElement('div');
+          container.style.display = 'flex';
+          container.style.alignItems = 'center';
+          container.style.justifyContent = 'center';
+          container.style.minHeight = '100vh';
+          container.style.background = '#0f172a';
+          container.style.margin = '0';
+
+          const img = w.document.createElement('img');
+          img.src = cleanUrl;
+          img.alt = doc.name;
+          img.style.maxWidth = '90%';
+          img.style.maxHeight = '90vh';
+          img.style.borderRadius = '8px';
+          container.appendChild(img);
+          w.document.body.appendChild(container);
+        }
+      } catch (err) {
+        console.error('Error rendering preview:', err);
       }
     }
   };
