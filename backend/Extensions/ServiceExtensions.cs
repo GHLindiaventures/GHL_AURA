@@ -77,6 +77,14 @@ public static class ServiceExtensions
 
         // 2. Options pattern
         services.Configure<JwtSettings>(configuration.GetSection(JwtSettings.SectionName));
+        services.PostConfigure<JwtSettings>(options =>
+        {
+            var envSecret = configuration["JWT_SECRET_KEY"] ?? configuration["JwtSettings:SecretKey"];
+            if (!string.IsNullOrWhiteSpace(envSecret))
+            {
+                options.SecretKey = envSecret;
+            }
+        });
 
         // 3. Repositories
         services.AddScoped<IUserRepository, UserRepository>();

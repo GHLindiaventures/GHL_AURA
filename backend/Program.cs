@@ -105,6 +105,12 @@ using (var scope = app.Services.CreateScope())
     }
     var hasValidConnectionString = !string.IsNullOrWhiteSpace(connectionString) && !connectionString.Equals("InMemory", StringComparison.OrdinalIgnoreCase);
     var useInMemory = config.GetValue<bool>("UseInMemoryDatabase", !hasValidConnectionString) || !hasValidConnectionString;
+    var ensureCreatedForDevelopment = config.GetValue<bool>("Database:EnsureCreated");
+    if (ensureCreatedForDevelopment && !app.Environment.IsDevelopment())
+    {
+        throw new InvalidOperationException("Database:EnsureCreated is only supported in the Development environment.");
+    }
+
     var db = scope.ServiceProvider.GetRequiredService<backend.Data.ApplicationDbContext>();
     if (useInMemory)
     {
@@ -114,6 +120,11 @@ using (var scope = app.Services.CreateScope())
     else
     {
         Console.WriteLine($"[Database] Connected to persistent database provider: {db.Database.ProviderName}");
+        if (ensureCreatedForDevelopment)
+        {
+            db.Database.EnsureCreated();
+            Console.WriteLine("[Database] Development schema initialized from the current EF model; EF migrations are skipped.");
+        }
         try
         {
             db.Database.ExecuteSqlRaw(@"
@@ -1303,31 +1314,33 @@ using (var scope = app.Services.CreateScope())
             Console.WriteLine($"[Database IRM/GHL Schema Sync Warning] {ex.Message}");
         }
 
-        try
+        if (!ensureCreatedForDevelopment)
         {
-            var pendingMigrations = db.Database.GetPendingMigrations().ToList();
-            if (pendingMigrations.Any())
+            try
             {
-                Console.ForegroundColor = ConsoleColor.Yellow;
-                Console.WriteLine("================================================================================");
-                Console.WriteLine($"[WARNING] There are {pendingMigrations.Count} pending EF Core migration(s) not yet applied to the database:");
-                foreach (var m in pendingMigrations)
+                var pendingMigrations = db.Database.GetPendingMigrations().ToList();
+                if (pendingMigrations.Any())
                 {
-                    Console.WriteLine($"  - {m}");
+                    Console.ForegroundColor = ConsoleColor.Yellow;
+                    Console.WriteLine("================================================================================");
+                    Console.WriteLine($"[WARNING] There are {pendingMigrations.Count} pending EF Core migration(s) not yet applied to the database:");
+                    foreach (var m in pendingMigrations)
+                    {
+                        Console.WriteLine($"  - {m}");
+                    }
+                    Console.WriteLine("Run 'dotnet ef database update' in backend/ to apply pending migrations.");
+                    Console.WriteLine("================================================================================");
+                    Console.ResetColor();
                 }
-                Console.WriteLine("Run 'dotnet ef database update' in backend/ to apply pending migrations.");
-                Console.WriteLine("================================================================================");
-                Console.ResetColor();
+                else
+                {
+                    Console.WriteLine("[Database] All EF Core migrations are up to date.");
+                }
             }
-            else
+            catch (Exception ex)
             {
-                Console.WriteLine("[Database] All EF Core migrations are up to date.");
+                Console.WriteLine($"[Database Migration Check Warning] {ex.Message}");
             }
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine($"[Database Migration Check Warning] {ex.Message}");
-
         }
 
         try
@@ -1409,3 +1422,5 @@ app.MapControllers();
 app.MapHub<backend.Hubs.PlatformHub>("/hubs/platform");
 
 app.Run();
+
+public partial class Program { }
