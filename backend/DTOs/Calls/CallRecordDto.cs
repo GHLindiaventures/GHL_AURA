@@ -37,4 +37,3 @@ public class CallRecordDto
 public class CallRecordResponseDto : CallRecordDto
 {
 }
-

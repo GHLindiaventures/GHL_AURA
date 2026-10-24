@@ -71,24 +71,12 @@ public static class ServiceExtensions
                     // If parsing fails for any reason, use raw connection string
                 }
 
-                options.UseNpgsql(effectiveConnectionString, npgsql =>
-                    npgsql.EnableRetryOnFailure(
-                        maxRetryCount: 3,
-                        maxRetryDelay: TimeSpan.FromSeconds(5),
-                        errorCodesToAdd: new[] { "57P05" }));
+                options.UseNpgsql(effectiveConnectionString);
             }
         });
 
         // 2. Options pattern
         services.Configure<JwtSettings>(configuration.GetSection(JwtSettings.SectionName));
-        services.PostConfigure<JwtSettings>(options =>
-        {
-            var envSecret = configuration["JWT_SECRET_KEY"] ?? configuration["JwtSettings:SecretKey"];
-            if (!string.IsNullOrWhiteSpace(envSecret))
-            {
-                options.SecretKey = envSecret;
-            }
-        });
 
         // 3. Repositories
         services.AddScoped<IUserRepository, UserRepository>();
@@ -128,6 +116,7 @@ public static class ServiceExtensions
         services.AddScoped<IWorkHandoverService, WorkHandoverService>();
         services.AddScoped<ILeaveRequestService, LeaveRequestService>();
         services.AddScoped<ICompanyClock, CompanyClock>();
+
         // Jamin Bazaar Services
         services.AddScoped<backend.Services.Interfaces.Jamin.IJaminSiteVisitService, backend.Services.Implementations.Jamin.JaminSiteVisitService>();
         services.AddScoped<backend.Services.Interfaces.Jamin.IJaminLeadService, backend.Services.Implementations.Jamin.JaminLeadService>();
@@ -174,13 +163,6 @@ public static class ServiceExtensions
         // Background job: notify admins when a handover's PlannedEndAt has passed (never auto-reverts)
         services.AddHostedService<backend.Services.BackgroundJobs.HandoverDueDateCheckerService>();
         services.AddHostedService<backend.Services.BackgroundJobs.LeaveReminderBackgroundService>();
-
-        // Super Admin Platform Services
-        services.AddScoped<IPlatformTenantService, PlatformTenantService>();
-        services.AddScoped<IPlatformPackageService, PlatformPackageService>();
-        services.AddScoped<IPlatformCallConfigService, PlatformCallConfigService>();
-        services.AddScoped<IPlatformDashboardService, PlatformDashboardService>();
-        services.AddScoped<IPlatformSystemService, PlatformSystemService>();
 
         services.AddDev1Services();
 

@@ -280,7 +280,7 @@ namespace backend.Controllers
 
                 var userCompanyAliases = GetCompanyAliases(null);
                 if (string.Equals(doc.EntityType, "company", StringComparison.OrdinalIgnoreCase) &&
-                    !userCompanyAliases.Contains((doc.EntityId ?? "").ToLowerInvariant()))
+                    !userCompanyAliases.Contains(doc.EntityId.ToLowerInvariant()))
                 {
                     return StatusCode(StatusCodes.Status403Forbidden, new { success = false, message = "Access denied: You cannot delete documents from another company." });
                 }

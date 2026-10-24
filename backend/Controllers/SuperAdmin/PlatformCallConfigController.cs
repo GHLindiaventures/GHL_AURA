@@ -11,13 +11,11 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
-
 namespace backend.Controllers.SuperAdmin;
 
 [ApiController]
 [Authorize(Roles = "super_admin")]
 [Route("api/super-admin/call-config")]
-[Route("api/platform/call-config")]
 public class PlatformCallConfigController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
@@ -588,13 +586,12 @@ public class PlatformCallConfigController : ControllerBase
 
         await _context.SaveChangesAsync(ct);
         return Ok(ApiResponse<DidResponseDto>.SuccessResult(MapToDidResponseDto(did), "DID status updated."));
-
     }
 
     [HttpDelete("dids/{id}")]
     public async Task<ActionResult<ApiResponse<bool>>> DeleteDid(int id, CancellationToken ct = default)
     {
-var did = await _context.TenantDidMappings.FirstOrDefaultAsync(d => d.Id == id, ct);
+        var did = await _context.TenantDidMappings.FirstOrDefaultAsync(d => d.Id == id, ct);
         if (did == null)
             return NotFound(ApiResponse<bool>.FailureResult("DID hotline mapping not found."));
 
@@ -990,5 +987,4 @@ var did = await _context.TenantDidMappings.FirstOrDefaultAsync(d => d.Id == id, 
         await _context.SaveChangesAsync(ct);
     }
 }
-
 

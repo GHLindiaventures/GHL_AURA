@@ -786,216 +786,6 @@ public class PlatformUsersController : ControllerBase
         return Ok(ApiResponse<CallsTodayMetricsDto>.SuccessResult(result));
     }
 
-    [HttpGet("~/api/super-admin/leads")]
-    public async Task<ActionResult<ApiResponse<PlatformLeadsResponseDto>>> GetAllLeads(
-        [FromQuery] int page = 1,
-        [FromQuery] int pageSize = 20,
-        [FromQuery] string? search = null,
-        [FromQuery] string? status = null,
-        [FromQuery] string? priority = null,
-        [FromQuery] int? tenantId = null,
-        [FromQuery] string? source = null,
-        [FromQuery] string? startDate = null,
-        [FromQuery] string? endDate = null,
-        [FromQuery] string? sortBy = "createdAt",
-        [FromQuery] string? sortOrder = "desc",
-        [FromQuery] string? timeZone = null,
-        [FromServices] IMemoryCache? cache = null,
-        CancellationToken ct = default)
-    {
-        var safePageSize = Math.Clamp(pageSize, 1, 100);
-        var safePage = Math.Clamp(page, 1, int.MaxValue / safePageSize + 1);
-        var safeSearch = search?.Trim();
-        if (safeSearch?.Length > 200)
-        {
-            safeSearch = safeSearch[..200];
-        }
-
-        var cacheKey = $"platform_leads:{safePage}:{safePageSize}:{safeSearch}:{status}:{priority}:{tenantId}:{source}:{startDate}:{endDate}:{sortBy}:{sortOrder}:{timeZone}";
-        if (cache?.TryGetValue(cacheKey, out PlatformLeadsResponseDto? cachedResponse) == true && cachedResponse != null)
-        {
-            return Ok(ApiResponse<PlatformLeadsResponseDto>.SuccessResult(cachedResponse));
-        }
-
-        var query = _context.Leads.AsNoTracking();
-        if (!string.IsNullOrWhiteSpace(safeSearch))
-        {
-            var normalizedSearch = safeSearch.ToLowerInvariant();
-            query = query.Where(lead =>
-                lead.Name.ToLower().Contains(normalizedSearch) ||
-                lead.Email.ToLower().Contains(normalizedSearch) ||
-                lead.Phone.Contains(safeSearch) ||
-                lead.Location.ToLower().Contains(normalizedSearch));
-        }
-
-        if (!string.IsNullOrWhiteSpace(status))
-        {
-            query = query.Where(lead => lead.Status == status);
-        }
-
-        if (!string.IsNullOrWhiteSpace(priority))
-        {
-            query = query.Where(lead => lead.Priority == priority);
-        }
-
-        if (tenantId.HasValue)
-        {
-            query = query.Where(lead => lead.CompanyId == tenantId.Value);
-        }
-
-        if (!string.IsNullOrWhiteSpace(source))
-        {
-            query = query.Where(lead => lead.Source == source);
-        }
-
-        var timeZoneInfo = ResolveTimeZone(timeZone);
-        if (!string.IsNullOrWhiteSpace(startDate))
-        {
-            if (!DateOnly.TryParseExact(startDate, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsedStartDate))
-            {
-                return BadRequest(ApiResponse<PlatformLeadsResponseDto>.FailureResult("startDate must use yyyy-MM-dd format."));
-            }
-
-            var localStart = DateTime.SpecifyKind(parsedStartDate.ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified);
-            var utcStart = TimeZoneInfo.ConvertTimeToUtc(localStart, timeZoneInfo);
-            query = query.Where(lead => lead.CreatedAt >= utcStart);
-        }
-
-        if (!string.IsNullOrWhiteSpace(endDate))
-        {
-            if (!DateOnly.TryParseExact(endDate, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsedEndDate))
-            {
-                return BadRequest(ApiResponse<PlatformLeadsResponseDto>.FailureResult("endDate must use yyyy-MM-dd format."));
-            }
-
-            var localEndExclusive = DateTime.SpecifyKind(parsedEndDate.AddDays(1).ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified);
-            var utcEndExclusive = TimeZoneInfo.ConvertTimeToUtc(localEndExclusive, timeZoneInfo);
-            query = query.Where(lead => lead.CreatedAt < utcEndExclusive);
-        }
-
-        var totalCount = await query.CountAsync(ct);
-        var totalPages = (int)Math.Ceiling(totalCount / (double)safePageSize);
-        safePage = totalPages == 0 ? 1 : Math.Min(safePage, totalPages);
-
-        query = (sortBy?.ToLowerInvariant(), sortOrder?.ToLowerInvariant()) switch
-        {
-            ("name", "asc") => query.OrderBy(lead => lead.Name),
-            ("name", _) => query.OrderByDescending(lead => lead.Name),
-            ("status", "asc") => query.OrderBy(lead => lead.Status),
-            ("status", _) => query.OrderByDescending(lead => lead.Status),
-            ("priority", "asc") => query.OrderBy(lead => lead.Priority),
-            ("priority", _) => query.OrderByDescending(lead => lead.Priority),
-            ("tenant", "asc") => query.OrderBy(lead => lead.Company != null ? lead.Company.Name : string.Empty),
-            ("tenant", _) => query.OrderByDescending(lead => lead.Company != null ? lead.Company.Name : string.Empty),
-            ("createdat", "asc") => query.OrderBy(lead => lead.CreatedAt),
-            _ => query.OrderByDescending(lead => lead.CreatedAt)
-        };
-
-        var rawLeads = await query
-            .Skip((safePage - 1) * safePageSize)
-            .Take(safePageSize)
-            .Select(lead => new
-            {
-                lead.Id,
-                TenantId = lead.CompanyId,
-                TenantName = lead.Company != null ? lead.Company.Name : string.Empty,
-                lead.Name,
-                lead.Phone,
-                lead.Email,
-                lead.Status,
-                lead.Priority,
-                AssignedAgentName = lead.AssignedAgent != null ? lead.AssignedAgent.Name : null,
-                lead.Source,
-                lead.Location,
-                lead.CreatedAt
-            })
-            .ToListAsync(ct);
-
-        var items = rawLeads.Select(lead => new PlatformLeadDto
-        {
-            Id = lead.Id,
-            TenantId = lead.TenantId,
-            TenantName = string.IsNullOrEmpty(lead.TenantName) ? $"Tenant #{lead.TenantId}" : lead.TenantName,
-            Name = lead.Name,
-            Phone = lead.Phone,
-            Email = lead.Email,
-            Status = lead.Status,
-            Priority = lead.Priority,
-            AssignedAgentName = lead.AssignedAgentName,
-            Source = lead.Source,
-            Location = lead.Location,
-            CreatedAt = lead.CreatedAt.ToString("o")
-        }).ToList();
-
-        var summaryCacheKey = $"platform_leads_summary:{timeZone ?? "default"}";
-        PlatformLeadSummaryDto? summary = null;
-        if (cache?.TryGetValue(summaryCacheKey, out PlatformLeadSummaryDto? cachedSummary) == true)
-        {
-            summary = cachedSummary;
-        }
-
-        if (summary == null)
-        {
-            var (currentMonthStart, _, previousMonthStart) = GetMonthUtcRanges(timeZone);
-            var summaryCounts = await _context.Leads
-                .AsNoTracking()
-                .GroupBy(_ => 1)
-                .Select(group => new
-                {
-                    Total = group.Count(),
-                    NewLeads = group.Count(lead => lead.Status == "New"),
-                    InterestedLeads = group.Count(lead => lead.Status == "Interested"),
-                    ConvertedLeads = group.Count(lead => lead.Status == "Converted"),
-                    NotInterestedLeads = group.Count(lead => lead.Status == "Not Interested"),
-                    ThisMonthLeads = group.Count(lead => lead.CreatedAt >= currentMonthStart),
-                    LastMonthLeads = group.Count(lead => lead.CreatedAt >= previousMonthStart && lead.CreatedAt < currentMonthStart)
-                })
-                .FirstOrDefaultAsync(ct);
-
-            var tenantCounts = await _context.Leads
-                .AsNoTracking()
-                .GroupBy(lead => lead.CompanyId)
-                .Select(group => new { TenantId = group.Key, Count = group.Count() })
-                .ToListAsync(ct);
-            var tenantNames = await _context.Tenants
-                .AsNoTracking()
-                .Select(tenant => new { tenant.Id, tenant.Name })
-                .ToDictionaryAsync(tenant => tenant.Id, tenant => tenant.Name, ct);
-
-            summary = new PlatformLeadSummaryDto
-            {
-                Total = summaryCounts?.Total ?? 0,
-                NewLeads = summaryCounts?.NewLeads ?? 0,
-                InterestedLeads = summaryCounts?.InterestedLeads ?? 0,
-                ConvertedLeads = summaryCounts?.ConvertedLeads ?? 0,
-                NotInterestedLeads = summaryCounts?.NotInterestedLeads ?? 0,
-                ThisMonthLeads = summaryCounts?.ThisMonthLeads ?? 0,
-                LastMonthLeads = summaryCounts?.LastMonthLeads ?? 0,
-                ByTenant = tenantCounts.Select(item => new TenantLeadCountDto
-                {
-                    TenantId = item.TenantId,
-                    TenantName = tenantNames.TryGetValue(item.TenantId, out var name) ? name : $"Tenant #{item.TenantId}",
-                    Count = item.Count
-                }).OrderByDescending(item => item.Count).ToList()
-            };
-
-            cache?.Set(summaryCacheKey, summary, TimeSpan.FromSeconds(30));
-        }
-
-        var response = new PlatformLeadsResponseDto
-        {
-            Items = items,
-            TotalCount = totalCount,
-            Page = safePage,
-            PageSize = safePageSize,
-            TotalPages = Math.Max(1, totalPages),
-            Summary = summary
-        };
-
-        cache?.Set(cacheKey, response, TimeSpan.FromSeconds(10));
-        return Ok(ApiResponse<PlatformLeadsResponseDto>.SuccessResult(response));
-    }
-
     private static TimeZoneInfo ResolveTimeZone(string? timeZoneId)
     {
         TimeZoneInfo tz;
@@ -1069,25 +859,224 @@ public class PlatformUsersController : ControllerBase
         var (utcStart, utcEnd) = GetTodayUtcRange(timeZone);
 
         var callsToday = await _context.CallRecords
-            .CountAsync(c => c.StartedAt >= utcStart && c.StartedAt < utcEnd, ct);
+            .CountAsync(c => c.Timestamp >= utcStart && c.Timestamp < utcEnd, ct);
 
         var nonConnectedDispositions = new[] { "Failed", "No Answer", "No Response", "Missed", "Busy" };
 
         var callsFailed = await _context.CallRecords
-            .CountAsync(c => c.StartedAt >= utcStart && c.StartedAt < utcEnd
+            .CountAsync(c => c.Timestamp >= utcStart && c.Timestamp < utcEnd
                 && nonConnectedDispositions.Contains(c.Disposition), ct);
 
         var callsConnected = await _context.CallRecords
-            .CountAsync(c => c.StartedAt >= utcStart && c.StartedAt < utcEnd
+            .CountAsync(c => c.Timestamp >= utcStart && c.Timestamp < utcEnd
                 && !nonConnectedDispositions.Contains(c.Disposition)
-                && (c.DurationSeconds > 0 || (c.Disposition != null && c.Disposition != "")), ct);
+                && (c.Duration > 0 || (c.Disposition != null && c.Disposition != "")), ct);
 
         var totalDuration = await _context.CallRecords
-            .Where(c => c.StartedAt >= utcStart && c.StartedAt < utcEnd)
-            .SumAsync(c => c.DurationSeconds, ct);
+            .Where(c => c.Timestamp >= utcStart && c.Timestamp < utcEnd)
+            .SumAsync(c => c.Duration, ct);
 
         var successRate = callsToday > 0 ? Math.Round(((double)callsConnected / callsToday) * 100.0, 1) : 100.0;
 
         return (callsToday, callsConnected, callsFailed, totalDuration, successRate);
+    }
+
+    // ── CROSS-TENANT LEADS (Super Admin) ────────────────────────────────────────
+
+    /// <summary>
+    /// Returns paginated cross-tenant leads visible to the super admin.
+    /// </summary>
+    [HttpGet("~/api/super-admin/leads")]
+    public async Task<ActionResult<ApiResponse<PlatformLeadsResponseDto>>> GetAllLeads(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null,
+        [FromQuery] string? status = null,
+        [FromQuery] string? priority = null,
+        [FromQuery] int? tenantId = null,
+        [FromQuery] string? source = null,
+        [FromQuery] string? startDate = null,
+        [FromQuery] string? endDate = null,
+        [FromQuery] string? sortBy = "createdAt",
+        [FromQuery] string? sortOrder = "desc",
+        [FromQuery] string? timeZone = null,
+        [FromServices] Microsoft.Extensions.Caching.Memory.IMemoryCache? cache = null,
+        CancellationToken ct = default)
+    {
+        var cacheKey = $"leads_p{page}_s{pageSize}_{search ?? ""}_{status ?? ""}_{priority ?? ""}_{tenantId?.ToString() ?? ""}_{source ?? ""}_{startDate ?? ""}_{endDate ?? ""}_{sortBy ?? ""}_{sortOrder ?? ""}";
+        if (cache != null && cache.TryGetValue(cacheKey, out PlatformLeadsResponseDto? cachedResponse) && cachedResponse != null)
+        {
+            return Ok(ApiResponse<PlatformLeadsResponseDto>.SuccessResult(cachedResponse));
+        }
+
+        var query = _context.Leads
+            .AsNoTracking()
+            .Include(l => l.Company)
+            .Include(l => l.AssignedAgent)
+            .AsQueryable();
+
+        // Filters
+        if (!string.IsNullOrWhiteSpace(search))
+        {
+            var s = search.Trim().ToLower();
+            query = query.Where(l =>
+                l.Name.ToLower().Contains(s) ||
+                l.Email.ToLower().Contains(s) ||
+                l.Phone.Contains(s) ||
+                l.Location.ToLower().Contains(s));
+        }
+
+        if (!string.IsNullOrWhiteSpace(status))
+            query = query.Where(l => l.Status == status);
+
+        if (!string.IsNullOrWhiteSpace(priority))
+            query = query.Where(l => l.Priority == priority);
+
+        if (tenantId.HasValue)
+            query = query.Where(l => l.CompanyId == tenantId.Value);
+
+        if (!string.IsNullOrWhiteSpace(source))
+            query = query.Where(l => l.Source == source);
+
+        if (!string.IsNullOrWhiteSpace(startDate) && DateTime.TryParse(startDate, out var sd))
+            query = query.Where(l => l.CreatedAt >= sd.ToUniversalTime());
+
+        if (!string.IsNullOrWhiteSpace(endDate) && DateTime.TryParse(endDate, out var ed))
+            query = query.Where(l => l.CreatedAt <= ed.ToUniversalTime().AddDays(1));
+
+        // Total count matching query
+        var totalCount = await query.CountAsync(ct);
+
+        // Sorting
+        query = (sortBy?.ToLower(), sortOrder?.ToLower()) switch
+        {
+            ("name", "asc") => query.OrderBy(l => l.Name),
+            ("name", _) => query.OrderByDescending(l => l.Name),
+            ("status", "asc") => query.OrderBy(l => l.Status),
+            ("status", _) => query.OrderByDescending(l => l.Status),
+            ("priority", "asc") => query.OrderBy(l => l.Priority),
+            ("priority", _) => query.OrderByDescending(l => l.Priority),
+            ("tenant", "asc") => query.OrderBy(l => l.Company != null ? l.Company.Name : ""),
+            ("tenant", _) => query.OrderByDescending(l => l.Company != null ? l.Company.Name : ""),
+            ("createdat", "asc") => query.OrderBy(l => l.CreatedAt),
+            _ => query.OrderByDescending(l => l.CreatedAt)
+        };
+
+        var safePage = Math.Max(1, page);
+        var safePageSize = Math.Clamp(pageSize, 1, 100);
+        var totalPages = (int)Math.Ceiling(totalCount / (double)safePageSize);
+
+        var rawLeads = await query
+            .Skip((safePage - 1) * safePageSize)
+            .Take(safePageSize)
+            .Select(l => new
+            {
+                l.Id,
+                TenantId = l.CompanyId,
+                TenantName = l.Company != null ? l.Company.Name : "",
+                l.Name,
+                l.Phone,
+                l.Email,
+                l.Status,
+                l.Priority,
+                AssignedAgentName = l.AssignedAgent != null ? l.AssignedAgent.Name : null,
+                l.Source,
+                l.Location,
+                l.CreatedAt
+            })
+            .ToListAsync(ct);
+
+        var leads = rawLeads.Select(l => new PlatformLeadDto
+        {
+            Id = l.Id,
+            TenantId = l.TenantId,
+            TenantName = !string.IsNullOrEmpty(l.TenantName) ? l.TenantName : $"Tenant #{l.TenantId}",
+            Name = l.Name,
+            Phone = l.Phone,
+            Email = l.Email,
+            Status = l.Status,
+            Priority = l.Priority,
+            AssignedAgentName = l.AssignedAgentName,
+            Source = l.Source,
+            Location = l.Location,
+            CreatedAt = l.CreatedAt.ToString("o")
+        }).ToList();
+
+        // Cached summary metrics
+        var summaryCacheKey = "platform_leads_summary";
+        PlatformLeadSummaryDto? summary = null;
+        if (cache != null && cache.TryGetValue(summaryCacheKey, out PlatformLeadSummaryDto? cachedSummary) && cachedSummary != null)
+        {
+            summary = cachedSummary;
+        }
+        else
+        {
+            var (currentMonthStart, _, prevMonthStart) = GetMonthUtcRanges(timeZone);
+
+            var summaryAgg = await _context.Leads
+                .GroupBy(_ => 1)
+                .Select(g => new
+                {
+                    Total = g.Count(),
+                    NewLeads = g.Count(l => l.Status == "New"),
+                    InterestedLeads = g.Count(l => l.Status == "Interested"),
+                    ConvertedLeads = g.Count(l => l.Status == "Converted"),
+                    NotInterestedLeads = g.Count(l => l.Status == "Not Interested"),
+                    ThisMonthLeads = g.Count(l => l.CreatedAt >= currentMonthStart),
+                    LastMonthLeads = g.Count(l => l.CreatedAt >= prevMonthStart && l.CreatedAt < currentMonthStart)
+                })
+                .FirstOrDefaultAsync(ct);
+
+            var tenantCounts = await _context.Leads
+                .GroupBy(l => l.CompanyId)
+                .Select(g => new
+                {
+                    TenantId = g.Key,
+                    Count = g.Count()
+                })
+                .ToListAsync(ct);
+
+            var tenants = await _context.Tenants.AsNoTracking().Select(t => new { t.Id, t.Name }).ToListAsync(ct);
+            var tenantDict = tenants.ToDictionary(t => t.Id, t => t.Name);
+
+            summary = new PlatformLeadSummaryDto
+            {
+                Total = summaryAgg?.Total ?? 0,
+                NewLeads = summaryAgg?.NewLeads ?? 0,
+                InterestedLeads = summaryAgg?.InterestedLeads ?? 0,
+                ConvertedLeads = summaryAgg?.ConvertedLeads ?? 0,
+                NotInterestedLeads = summaryAgg?.NotInterestedLeads ?? 0,
+                ThisMonthLeads = summaryAgg?.ThisMonthLeads ?? 0,
+                LastMonthLeads = summaryAgg?.LastMonthLeads ?? 0,
+                ByTenant = tenantCounts.Select(tc => new TenantLeadCountDto
+                {
+                    TenantId = tc.TenantId,
+                    TenantName = tenantDict.TryGetValue(tc.TenantId, out var tn) ? tn : $"Tenant #{tc.TenantId}",
+                    Count = tc.Count
+                }).OrderByDescending(g => g.Count).ToList()
+            };
+
+            if (cache != null)
+            {
+                cache.Set(summaryCacheKey, summary, TimeSpan.FromSeconds(30));
+            }
+        }
+
+        var response = new PlatformLeadsResponseDto
+        {
+            Items = leads,
+            TotalCount = totalCount,
+            Page = safePage,
+            PageSize = safePageSize,
+            TotalPages = Math.Max(1, totalPages),
+            Summary = summary
+        };
+
+        if (cache != null)
+        {
+            cache.Set(cacheKey, response, TimeSpan.FromSeconds(10));
+        }
+
+        return Ok(ApiResponse<PlatformLeadsResponseDto>.SuccessResult(response));
     }
 }

@@ -101,12 +101,12 @@ public class SalesExecutiveCallsController : ControllerBase
 
         if (from.HasValue)
         {
-            query = query.Where(c => c.StartedAt >= from.Value.ToUniversalTime());
+            query = query.Where(c => c.Timestamp >= from.Value.ToUniversalTime());
         }
 
         if (to.HasValue)
         {
-            query = query.Where(c => c.StartedAt <= to.Value.ToUniversalTime());
+            query = query.Where(c => c.Timestamp <= to.Value.ToUniversalTime());
         }
 
         var totalCount = await query.CountAsync(ct);
@@ -114,8 +114,8 @@ public class SalesExecutiveCallsController : ControllerBase
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-var rawItems = await query
-            .OrderByDescending(c => c.StartedAt)
+        var rawItems = await query
+            .OrderByDescending(c => c.Timestamp)
             .Skip((page - 1) * pageSize)
             .Take(pageSize)
             .ToListAsync(ct);
@@ -139,7 +139,7 @@ var rawItems = await query
 
     [HttpGet("{id:int}")]
     public async Task<ActionResult<ApiResponse<CallRecordResponseDto>>> GetCallById(
-int id,
+        int id,
         CancellationToken ct = default)
     {
         var role = (_currentUser.Role ?? string.Empty).ToLowerInvariant();
@@ -300,7 +300,6 @@ int id,
         };
 
         return Ok(ApiResponse<List<MessagingChannelStatusDto>>.SuccessResult(channels, "Messaging channels retrieved."));
-
     }
 
     private bool IsAdminCaller()
@@ -658,7 +657,7 @@ int id,
 
         try
         {
-await _context.Entry(call).Reference(c => c.Agent).Query().Include(a => a.Role).LoadAsync(ct);
+            await _context.Entry(call).Reference(c => c.Agent).Query().Include(a => a.Role).LoadAsync(ct);
         }
         catch
         {
@@ -666,7 +665,6 @@ await _context.Entry(call).Reference(c => c.Agent).Query().Include(a => a.Role).
         }
 
         var response = MapToResponseDto(call);
-
 
         return Ok(ApiResponse<CallRecordResponseDto>.SuccessResult(response, "Call record logged successfully."));
     }

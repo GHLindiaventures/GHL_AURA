@@ -1,5 +1,3 @@
-using System.ComponentModel.DataAnnotations.Schema;
-
 namespace backend.Models.Entities;
 
 public class Lead
@@ -14,7 +12,7 @@ public class Lead
     public string? AssignedAgentName { get; set; }
 
     // Multi-tenant compatibility
-    [NotMapped]
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
     public int TenantId { get => CompanyId; set => CompanyId = value; }
 
     public DateTime? AssignedAt { get; set; }
@@ -36,7 +34,6 @@ public class Lead
     public string Location { get; set; } = string.Empty;
     public string Source { get; set; } = "Website Inbound";
     public string Status { get; set; } = "New"; // New, Contacted, Callback, Interested, Follow-up Required, Not Interested, Junk, Converted
-
     public string Priority { get; set; } = "Medium"; // Low, Medium, High, Urgent
     public string Notes { get; set; } = string.Empty;
 
@@ -48,18 +45,15 @@ public class Lead
     public string? WhatAreYouLookingFor { get; set; }
     public string? BudgetRange { get; set; }
     public string? ReadyToRegister { get; set; }
-    // GHL Custom Fields in database table
+    public string? InvestmentCapacity { get; set; }
     public string? AssetClass { get; set; }
     public string? Horizon { get; set; }
-    public string? InvestmentCapacity { get; set; }
-    public string? PreferredAssetClass { get; set; }
     public string? InvestorType { get; set; }
 
     // GHL Custom Fields (e.g. investmentCapacity, assetClass, preferredAssetClass, horizon, dispositionReason)
     public string? CustomFieldsJson { get; set; }
 
     public DateTime? NextFollowupDate { get; set; }
-
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
 

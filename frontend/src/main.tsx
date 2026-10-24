@@ -6,7 +6,6 @@ import { NavigationGuardProvider } from './context/NavigationGuardContext';
 import { CallProvider } from './context/CallContext';
 import { ThemeProvider } from './context/ThemeContext';
 import { ToastProvider } from './context/ToastContext';
-
 import { ErrorBoundary } from './components/common/ErrorBoundary';
 import { sanitizeStoredKycData } from './utils/kycStorage';
 

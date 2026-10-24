@@ -241,7 +241,7 @@ export const ConvertedCustomersPage: React.FC<ConvertedCustomersPageProps> = ({ 
     const encodedUri = encodeURI(csvContent);
     const link = document.createElement('a');
     link.setAttribute('href', encodedUri);
-    link.setAttribute('download', `GHL AURA_Converted_Customers_${new Date().toISOString().split('T')[0]}.csv`);
+    link.setAttribute('download', `NexusSales_Converted_Customers_${new Date().toISOString().split('T')[0]}.csv`);
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -282,7 +282,7 @@ export const ConvertedCustomersPage: React.FC<ConvertedCustomersPageProps> = ({ 
           </div>
 
           <p className="cc-subtitle">
-            Authoritative registry of legitimately converted customer accounts, committed contract values, and lifecycle milestones across GHL AURA.
+            Authoritative registry of legitimately converted customer accounts, committed contract values, and lifecycle milestones across NexusSales.
           </p>
         </div>
 

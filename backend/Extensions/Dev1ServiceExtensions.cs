@@ -13,10 +13,6 @@ public static class Dev1ServiceExtensions
         services.AddScoped<IExecutiveProfileService, ExecutiveProfileService>();
         services.AddScoped<IExecutiveReportService, ExecutiveReportService>();
         services.AddScoped<INotificationService, NotificationService>();
-        services.AddScoped<ILeadService, LeadService>();
-        services.AddScoped<IFollowupService, FollowupService>();
-        services.AddScoped<ICustomerService, CustomerService>();
-        services.AddScoped<IConsultationService, ConsultationService>();
         return services;
     }
 }

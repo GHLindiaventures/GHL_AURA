@@ -168,10 +168,10 @@ public class CustomerService : ICustomerService
             {
                 Id = cr.Id,
                 Direction = cr.Direction,
-                Duration = cr.DurationSeconds,
+                Duration = cr.Duration,
                 Disposition = cr.Disposition,
                 Notes = cr.Notes ?? string.Empty,
-                Timestamp = cr.StartedAt,
+                Timestamp = cr.Timestamp,
                 CallerName = cr.Agent?.Name ?? "Sales Executive",
                 CallerRole = callerRole,
                 LeadStatusAtCall = statusAtCall,

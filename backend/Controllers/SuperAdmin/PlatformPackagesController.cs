@@ -7,13 +7,11 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 
-
 namespace backend.Controllers.SuperAdmin;
 
 [ApiController]
 [Authorize(Roles = "super_admin")]
 [Route("api/super-admin/packages")]
-[Route("api/platform/packages")]
 public class PlatformPackagesController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
@@ -275,6 +273,5 @@ public class PlatformPackagesController : ControllerBase
             CreatedAt = p.CreatedAt,
             UpdatedAt = p.UpdatedAt
         };
-
     }
 }

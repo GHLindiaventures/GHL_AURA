@@ -50,7 +50,7 @@ namespace backend.Services.Ai.Tools
                 var clock = services.GetRequiredService<backend.Services.Interfaces.ICompanyClock>();
                 var tz = await clock.GetTimeZoneAsync(scope.CompanyId, ct);
                 var (from, to) = AiDateResolver.ResolveDateRange(args.DateFrom, args.DateTo, tz);
-                query = query.Where(c => c.StartedAt >= from && c.StartedAt <= to);
+                query = query.Where(c => c.Timestamp >= from && c.Timestamp <= to);
             }
 
             if (!string.IsNullOrEmpty(args.AgentName))
@@ -65,7 +65,7 @@ namespace backend.Services.Ai.Tools
             }
 
             var totalCount = await query.CountAsync(ct);
-            var results = await query.OrderByDescending(c => c.StartedAt).Take(limit).Select(c => new
+            var results = await query.OrderByDescending(c => c.Timestamp).Take(limit).Select(c => new
             {
                 c.Id,
                 c.Direction,

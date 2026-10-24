@@ -213,7 +213,7 @@ export const ChatPage: React.FC<{ onNavigate?: (route: string) => void }> = ({ o
             <div className="chat-no-conv-icon">
               <MessageSquare size={36} style={{ color: 'var(--primary-600)' }} />
             </div>
-            <h3>Welcome to GHL AURA Chat</h3>
+            <h3>Welcome to NexusSales Chat</h3>
             <p>Connect with your team, share documents with granular permissions, and launch instant WebRTC calls.</p>
             <div style={{ display: 'flex', gap: 10, marginTop: 12 }}>
               <button className="btn btn-primary" onClick={() => setShowNewModal(true)}>

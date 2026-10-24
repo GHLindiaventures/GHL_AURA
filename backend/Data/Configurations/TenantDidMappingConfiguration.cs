@@ -13,11 +13,10 @@ public class TenantDidMappingConfiguration : IEntityTypeConfiguration<TenantDidM
         builder.HasKey(d => d.Id);
 
         builder.Property(d => d.PhoneNumber)
-            .HasMaxLength(32)
+            .HasMaxLength(64)
             .IsRequired();
 
-        builder.HasIndex(d => d.PhoneNumber)
-            .IsUnique();
+        builder.HasIndex(d => d.PhoneNumber);
 
         builder.Property(d => d.RoutingStrategy)
             .HasMaxLength(64)
@@ -27,18 +26,15 @@ public class TenantDidMappingConfiguration : IEntityTypeConfiguration<TenantDidM
             .HasMaxLength(128)
             .HasDefaultValue("Inbound Sales Queue");
 
-        builder.Property(d => d.EnableRecording)
-            .HasDefaultValue(true);
-
-        builder.Property(d => d.EnableAiWhisper)
-            .HasDefaultValue(true);
-
         builder.Property(d => d.Status)
             .HasMaxLength(32)
             .HasDefaultValue("Online");
 
         builder.Property(d => d.ChannelsCount)
             .HasDefaultValue(8);
+
+        builder.Property(d => d.Notes)
+            .HasMaxLength(512);
 
         builder.Property(d => d.AllocatedAt)
             .HasDefaultValueSql("NOW()");
@@ -47,9 +43,8 @@ public class TenantDidMappingConfiguration : IEntityTypeConfiguration<TenantDidM
             .HasDefaultValueSql("NOW()");
 
         builder.HasOne(d => d.Tenant)
-            .WithMany()
+            .WithMany(t => t.DidMappings)
             .HasForeignKey(d => d.TenantId)
-            .OnDelete(DeleteBehavior.SetNull)
-            .IsRequired(false);
+            .OnDelete(DeleteBehavior.SetNull);
     }
 }

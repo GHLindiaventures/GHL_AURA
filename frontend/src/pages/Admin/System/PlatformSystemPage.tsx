@@ -491,7 +491,7 @@ export const PlatformSystemPage: React.FC = () => {
       link.href = url;
       link.setAttribute(
         'download',
-        `GHL AURA_Platform_Backup_Snapshot_${new Date().toISOString().slice(0, 10)}.json`
+        `NexusSales_Platform_Backup_Snapshot_${new Date().toISOString().slice(0, 10)}.json`
       );
       document.body.appendChild(link);
       link.click();
@@ -1000,7 +1000,7 @@ export const PlatformSystemPage: React.FC = () => {
                         className="form-control"
                         value={configForm.platformName || ''}
                         onChange={e => setConfigForm({ ...configForm, platformName: e.target.value })}
-                        placeholder="e.g. GHL AURA Enterprise"
+                        placeholder="e.g. NexusSales Enterprise"
                         required
                       />
                       <div className="config-help-text">Displayed on login screens, page headers, and system communications.</div>
@@ -1148,7 +1148,7 @@ export const PlatformSystemPage: React.FC = () => {
                       <div>
                         <span className="telemetry-item-label">Authorized Sender Identity</span>
                         <div style={{ fontSize: '14px', fontWeight: 600, color: '#ffffff', marginTop: '2px' }}>
-                          {globalConfig?.smtpSenderName || 'GHL AURA Compliance'} &lt;{globalConfig?.smtpSenderEmail || 'studymail.zero@gmail.com'}&gt;
+                          {globalConfig?.smtpSenderName || 'NexusSales Compliance'} &lt;{globalConfig?.smtpSenderEmail || 'studymail.zero@gmail.com'}&gt;
                         </div>
                         <div className="config-help-text">Credentials are securely managed in backend environment configuration.</div>
                       </div>

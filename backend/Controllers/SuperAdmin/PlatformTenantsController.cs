@@ -13,13 +13,11 @@ using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
 
-
 namespace backend.Controllers.SuperAdmin;
 
 [ApiController]
 [Authorize(Roles = "super_admin")]
 [Route("api/super-admin/tenants")]
-[Route("api/platform/tenants")]
 public class PlatformTenantsController : ControllerBase
 {
     private readonly ApplicationDbContext _context;
@@ -40,6 +38,7 @@ public class PlatformTenantsController : ControllerBase
     }
 
     [HttpGet]
+    [HttpGet("~/api/platform/tenants")]
     public async Task<ActionResult<ApiResponse<List<TenantResponseDto>>>> GetAllTenants(CancellationToken ct = default)
     {
         var tenants = await _context.Tenants
@@ -716,7 +715,7 @@ public class PlatformTenantsController : ControllerBase
             LegalName = t.LegalName ?? t.Name,
             Industry = t.Industry ?? "Commercial Real Estate",
             SubscriptionPlan = t.SubscriptionPlan ?? "Starter CRM Tier",
-            LeadSla = t.LeadSla,
+            LeadSla = t.LeadSla ?? 30,
             CallEnabled = t.CallEnabled,
             RecordingEnabled = t.RecordingEnabled,
             TranscriptionEnabled = t.TranscriptionEnabled,
@@ -724,6 +723,5 @@ public class PlatformTenantsController : ControllerBase
             CreatedAt = t.CreatedAt,
             UpdatedAt = t.UpdatedAt
         };
-
     }
 }

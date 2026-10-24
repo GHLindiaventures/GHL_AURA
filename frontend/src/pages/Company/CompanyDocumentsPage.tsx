@@ -30,7 +30,6 @@ import { apiClient } from '../../services/apiClient';
 import { isMockMode } from '../../config/environment';
 import { Modal } from '../../components/common/Modal';
 import { superAdminService } from '../../services/superAdminService';
-import { openDocumentLink } from '../../utils/documentPreview';
 import './CompanyDocumentsPage.css';
 
 const COMPANY_CATEGORIES = [

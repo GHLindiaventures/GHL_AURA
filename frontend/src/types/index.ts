@@ -1072,47 +1072,6 @@ export interface PlatformMetrics {
   systemHealthScore: number;
 }
 
-export interface PlatformLead {
-  id: number;
-  tenantId: number;
-  tenantName: string;
-  name: string;
-  phone?: string;
-  email?: string;
-  status: string;
-  priority: string;
-  assignedAgentName?: string;
-  source?: string;
-  location?: string;
-  createdAt?: string;
-}
-
-export interface TenantLeadCount {
-  tenantId: number;
-  tenantName: string;
-  count: number;
-}
-
-export interface PlatformLeadSummary {
-  total: number;
-  newLeads: number;
-  interestedLeads: number;
-  convertedLeads: number;
-  notInterestedLeads: number;
-  thisMonthLeads: number;
-  lastMonthLeads: number;
-  byTenant: TenantLeadCount[];
-}
-
-export interface PlatformLeadsResponse {
-  items: PlatformLead[];
-  totalCount: number;
-  page: number;
-  pageSize: number;
-  totalPages: number;
-  summary: PlatformLeadSummary;
-}
-
 export * from './kanban';
 
 // ── Speech AI Vocabulary Tuning ─────────────────────────────────────────────
@@ -1312,3 +1271,4 @@ export interface PlatformLeadsResponse {
   totalPages: number;
   summary: PlatformLeadSummary;
 }
+

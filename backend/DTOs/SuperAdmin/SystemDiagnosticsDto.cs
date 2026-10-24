@@ -18,7 +18,7 @@ public class SystemDiagnosticsDto
     public string LastBackupAt { get; set; } = string.Empty;
     public bool DatabaseConnected { get; set; } = true;
     public string ServerTimeUtc { get; set; } = string.Empty;
-    public string AppVersion { get; set; } = "GHL AURA Enterprise v2.4";
+    public string AppVersion { get; set; } = "NexusSales Enterprise v2.4";
     public string? TrunkStatus { get; set; }
     public string? TrunkTestStatus { get; set; }
     public string? TrunkLastTestedAt { get; set; }

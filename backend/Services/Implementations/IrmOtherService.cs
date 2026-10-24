@@ -166,7 +166,7 @@ public class IrmOtherService : IIrmOtherService
             query = query.Where(c => coveredAgentIds.Contains(c.AgentId));
         }
         var allCalls = await query
-            .OrderByDescending(c => c.StartedAt)
+            .OrderByDescending(c => c.Timestamp)
             .ToListAsync(ct);
 
         if (allCalls.Count == 0) return matcher;
@@ -190,7 +190,7 @@ public class IrmOtherService : IIrmOtherService
 
             if (relevantCalls.Count == 0) continue;
 
-            var latestCall = relevantCalls.OrderByDescending(c => c.StartedAt).First();
+            var latestCall = relevantCalls.OrderByDescending(c => c.Timestamp).First();
             if (string.Equals(latestCall.Disposition?.Trim(), "Other", StringComparison.OrdinalIgnoreCase))
             {
                 foreach (var p in cluster.PhoneKeys) matcher.PhoneKeys.Add(p);
@@ -229,7 +229,7 @@ public class IrmOtherService : IIrmOtherService
 
         var allCalls = await _context.CallRecords.AsNoTracking()
             .Where(c => c.CompanyId == companyId)
-            .OrderByDescending(c => c.StartedAt)
+            .OrderByDescending(c => c.Timestamp)
             .ToListAsync(ct);
 
         var clusters = ClusterCalls(allCalls);
@@ -249,7 +249,7 @@ public class IrmOtherService : IIrmOtherService
                     continue;
                 }
 
-                var latestCall = grp.OrderByDescending(c => c.StartedAt).First();
+                var latestCall = grp.OrderByDescending(c => c.Timestamp).First();
 
                 if (string.Equals(latestCall.Disposition?.Trim(), "Other", StringComparison.OrdinalIgnoreCase))
                 {

@@ -1914,11 +1914,8 @@ const GhlIrmKycView: React.FC = () => {
     }
 
     docsToSave.forEach(d => {
-      const documentId = `doc-${Date.now()}-${typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
-        ? crypto.randomUUID().slice(0, 8)
-        : Date.now().toString(36)}`;
       const docItem: DocumentItem = {
-        id: documentId,
+        id: `doc-${Date.now()}-${typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID().slice(0, 8) : Date.now().toString(36)}`,
         name: d.name,
         size: d.size,
         type: d.type,

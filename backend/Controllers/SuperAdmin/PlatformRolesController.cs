@@ -1,4 +1,3 @@
-
 using backend.Data;
 using backend.DTOs.Common;
 using backend.DTOs.SuperAdmin;
@@ -11,12 +10,11 @@ namespace backend.Controllers.SuperAdmin;
 
 [ApiController]
 [Authorize(Roles = "super_admin,company_admin")]
-
 [Route("api/super-admin/roles")]
 [Route("api/platform/roles")]
 public class PlatformRolesController : ControllerBase
 {
-private readonly ApplicationDbContext _context;
+    private readonly ApplicationDbContext _context;
 
     public PlatformRolesController(ApplicationDbContext context)
     {
@@ -67,13 +65,12 @@ private readonly ApplicationDbContext _context;
             .Select(g => new { RoleId = g.Key, Count = g.Count() })
             .ToDictionaryAsync(x => x.RoleId, x => x.Count);
 
-
         var result = roles.Select(r => new PlatformRoleDto
         {
             Id = r.Id.ToString(),
             Name = r.Name,
             Code = r.Code,
-Description = r.Description,
+            Description = r.Description,
             IsSystemRole = r.IsSystemRole,
             IsActive = r.IsActive,
             Permissions = r.Permissions ?? new List<string>(),
@@ -81,13 +78,12 @@ Description = r.Description,
             CreatedBy = r.CreatedBy,
             CreatedAt = r.CreatedAt.ToString("o"),
             UpdatedAt = r.UpdatedAt?.ToString("o")
-
         }).ToList();
 
         return Ok(ApiResponse<List<PlatformRoleDto>>.SuccessResult(result));
     }
 
-/// <summary>
+    /// <summary>
     /// Retrieves a single role by Id or Code.
     /// </summary>
     [HttpGet("{id}")]
@@ -111,13 +107,12 @@ Description = r.Description,
 
         var usersCount = await _context.Users.CountAsync(u => u.RoleId == role.Id);
 
-
         var dto = new PlatformRoleDto
         {
             Id = role.Id.ToString(),
             Name = role.Name,
             Code = role.Code,
-Description = role.Description,
+            Description = role.Description,
             IsSystemRole = role.IsSystemRole,
             IsActive = role.IsActive,
             Permissions = role.Permissions ?? new List<string>(),
@@ -125,13 +120,12 @@ Description = role.Description,
             CreatedBy = role.CreatedBy,
             CreatedAt = role.CreatedAt.ToString("o"),
             UpdatedAt = role.UpdatedAt?.ToString("o")
-
         };
 
         return Ok(ApiResponse<PlatformRoleDto>.SuccessResult(dto));
     }
 
-/// <summary>
+    /// <summary>
     /// Creates a new custom role with specified permissions.
     /// </summary>
     [HttpPost]
@@ -162,12 +156,11 @@ Description = role.Description,
         if (existingCode)
         {
             return BadRequest(ApiResponse<PlatformRoleDto>.FailureResult($"A role with the code '{cleanCode}' already exists."));
-
         }
 
         var newRole = new Role
         {
-Name = req.Name.Trim(),
+            Name = req.Name.Trim(),
             Code = cleanCode,
             Description = req.Description?.Trim(),
             IsSystemRole = false,
@@ -188,20 +181,18 @@ Name = req.Name.Trim(),
             Details = $"Super Admin created custom role: \"{newRole.Name}\" ({cleanCode}) with {newRole.Permissions.Count} privileges.",
             ActorName = "Super Admin",
             ActorEmail = "admin@platform.com",
-
             Module = "Roles",
             Status = "success"
         });
 
-await _context.SaveChangesAsync();
-
+        await _context.SaveChangesAsync();
 
         var resultDto = new PlatformRoleDto
         {
             Id = newRole.Id.ToString(),
             Name = newRole.Name,
             Code = newRole.Code,
-Description = newRole.Description,
+            Description = newRole.Description,
             IsSystemRole = newRole.IsSystemRole,
             IsActive = newRole.IsActive,
             Permissions = newRole.Permissions,
@@ -576,7 +567,6 @@ Description = newRole.Description,
         };
 
         return Ok(ApiResponse<List<PermissionGroupDto>>.SuccessResult(groups));
-
     }
 
     private static List<string> GetAllKnownPermissionKeys()

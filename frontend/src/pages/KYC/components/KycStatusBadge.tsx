@@ -147,6 +147,7 @@ export const KycStatusBadge: React.FC<KycStatusBadgeProps> = ({ status }) => {
   }
 };
 
+
 export const getMockCustomerKycStatus = (dealId: string, currentStatus?: string): CustomerKycStatus => {
   return getKycStatusFromService(dealId, currentStatus);
 };

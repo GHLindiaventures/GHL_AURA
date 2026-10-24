@@ -30,9 +30,5 @@ public class PlatformSettingConfiguration : IEntityTypeConfiguration<PlatformSet
 
         builder.Property(s => s.UpdatedAt)
             .HasDefaultValueSql("NOW()");
-
-        builder.Ignore(s => s.MaintenanceModeEnabled);
-        builder.Ignore(s => s.MaintenanceMessage);
-        builder.Ignore(s => s.BypassSecret);
     }
 }

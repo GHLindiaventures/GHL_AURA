@@ -13,7 +13,7 @@ public class SubscriptionPackageConfiguration : IEntityTypeConfiguration<Subscri
         builder.HasKey(p => p.Id);
 
         builder.Property(p => p.Name)
-            .HasMaxLength(128)
+            .HasMaxLength(150)
             .IsRequired();
 
         builder.Property(p => p.Code)
@@ -24,34 +24,29 @@ public class SubscriptionPackageConfiguration : IEntityTypeConfiguration<Subscri
             .IsUnique();
 
         builder.Property(p => p.Description)
-            .HasMaxLength(512);
+            .HasMaxLength(500);
 
         builder.Property(p => p.Tier)
             .HasMaxLength(32)
             .HasDefaultValue("Growth");
 
         builder.Property(p => p.PriceMonthly)
-            .HasColumnType("numeric(12,2)")
-            .HasDefaultValue(0m);
+            .HasPrecision(18, 2)
+            .IsRequired();
 
         builder.Property(p => p.Currency)
-            .HasMaxLength(8)
+            .HasMaxLength(16)
             .HasDefaultValue("₹");
 
-        builder.Property(p => p.MaxUsers)
-            .HasDefaultValue(25);
-
-        builder.Property(p => p.MaxStorageGb)
-            .HasDefaultValue(100);
-
         builder.Property(p => p.Features)
-            .HasColumnType("jsonb");
-
-        builder.Property(p => p.IsActive)
-            .HasDefaultValue(true);
+            .HasColumnType("text[]")
+            .IsRequired();
 
         builder.Property(p => p.IsPopular)
             .HasDefaultValue(false);
+
+        builder.Property(p => p.IsActive)
+            .HasDefaultValue(true);
 
         builder.Property(p => p.CreatedAt)
             .HasDefaultValueSql("NOW()");

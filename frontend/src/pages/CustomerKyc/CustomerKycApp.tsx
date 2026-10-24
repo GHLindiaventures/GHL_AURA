@@ -1,5 +1,4 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { openDocumentPreview } from '../../utils/documentPreview';
 import {
   ShieldCheck,
   Lock,

@@ -22,13 +22,6 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddUserSecrets<Program>(optional: true);
 
 
-// DigitalOcean App Platform & container port binding support (reads $PORT or configuration)
-var port = Environment.GetEnvironmentVariable("PORT") ?? builder.Configuration["PORT"];
-if (!string.IsNullOrEmpty(port))
-{
-    builder.WebHost.UseUrls($"http://0.0.0.0:{port}");
-}
-
 // 1. Add Controllers
 builder.Services.AddControllers()
     .AddJsonOptions(options =>
@@ -67,13 +60,12 @@ builder.Services.AddSwaggerGen(c =>
 {
     c.SwaggerDoc("v1", new OpenApiInfo
     {
-        Title = "GHL Aura Platform API",
+        Title = "NexusSales Platform API",
         Version = "v1",
-        Description = "GHL India Ventures - Multi-Tenant CRM & Calling Engine API"
+        Description = "Customer Sales Executive Management Platform & Real-Time Calling Engine API"
     });
 
     c.CustomSchemaIds(type => type.FullName?.Replace("+", ".") ?? type.Name);
-    c.ResolveConflictingActions(apiDescriptions => apiDescriptions.First());
 
     c.AddSecurityDefinition("Bearer", new OpenApiSecurityScheme
     {
@@ -113,12 +105,6 @@ using (var scope = app.Services.CreateScope())
     }
     var hasValidConnectionString = !string.IsNullOrWhiteSpace(connectionString) && !connectionString.Equals("InMemory", StringComparison.OrdinalIgnoreCase);
     var useInMemory = config.GetValue<bool>("UseInMemoryDatabase", !hasValidConnectionString) || !hasValidConnectionString;
-    var ensureCreatedForDevelopment = config.GetValue<bool>("Database:EnsureCreated");
-    if (ensureCreatedForDevelopment && !app.Environment.IsDevelopment())
-    {
-        throw new InvalidOperationException("Database:EnsureCreated is only supported in the Development environment.");
-    }
-
     var db = scope.ServiceProvider.GetRequiredService<backend.Data.ApplicationDbContext>();
     if (useInMemory)
     {
@@ -128,12 +114,6 @@ using (var scope = app.Services.CreateScope())
     else
     {
         Console.WriteLine($"[Database] Connected to persistent database provider: {db.Database.ProviderName}");
-        if (ensureCreatedForDevelopment)
-        {
-            db.Database.EnsureCreated();
-            Console.WriteLine("[Database] Development schema initialized from the current EF model; EF migrations are skipped.");
-        }
-
         try
         {
             db.Database.ExecuteSqlRaw(@"
@@ -447,61 +427,11 @@ using (var scope = app.Services.CreateScope())
                     ALTER TABLE followups ALTER COLUMN ""Priority"" DROP NOT NULL;
                     ALTER TABLE followups ALTER COLUMN ""Priority"" SET DEFAULT 'Medium';
 
-IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'consultations') THEN
-                        ALTER TABLE consultations ALTER COLUMN ""InvestorId"" DROP NOT NULL;
-                    END IF;
-
                     IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'Leads' AND column_name = 'AssignedAgentId') THEN
                         ALTER TABLE ""Leads"" ALTER COLUMN ""AssignedAgentId"" DROP NOT NULL;
                     ELSIF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'leads' AND column_name = 'AssignedAgentId') THEN
                         ALTER TABLE leads ALTER COLUMN ""AssignedAgentId"" DROP NOT NULL;
                     END IF;
-
-                    -- Ensure leads columns exist
-                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'leads') THEN
-                        ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""AssetClass"" text;
-                        ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""Horizon"" text;
-                        ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""InvestmentCapacity"" text;
-                        ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""Location"" text;
-                        ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""Notes"" text;
-                        ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""PreferredAssetClass"" text;
-                        ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""Source"" text;
-                        ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""CustomFieldsJson"" text;
-                        ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""NextFollowupDate"" timestamp with time zone;
-                    END IF;
-                    IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'Leads') THEN
-                        ALTER TABLE ""Leads"" ADD COLUMN IF NOT EXISTS ""AssetClass"" text;
-                        ALTER TABLE ""Leads"" ADD COLUMN IF NOT EXISTS ""Horizon"" text;
-                        ALTER TABLE ""Leads"" ADD COLUMN IF NOT EXISTS ""InvestmentCapacity"" text;
-                        ALTER TABLE ""Leads"" ADD COLUMN IF NOT EXISTS ""Location"" text;
-                        ALTER TABLE ""Leads"" ADD COLUMN IF NOT EXISTS ""Notes"" text;
-                        ALTER TABLE ""Leads"" ADD COLUMN IF NOT EXISTS ""PreferredAssetClass"" text;
-                        ALTER TABLE ""Leads"" ADD COLUMN IF NOT EXISTS ""Source"" text;
-                        ALTER TABLE ""Leads"" ADD COLUMN IF NOT EXISTS ""CustomFieldsJson"" text;
-                        ALTER TABLE ""Leads"" ADD COLUMN IF NOT EXISTS ""NextFollowupDate"" timestamp with time zone;
-                    END IF;
-
-                    -- Ensure ghl_deals table exists
-                    CREATE TABLE IF NOT EXISTS ghl_deals (
-                        ""Id"" SERIAL PRIMARY KEY,
-                        ""CompanyId"" INTEGER NOT NULL,
-                        ""AssignedAgentId"" INTEGER NOT NULL DEFAULT 1,
-                        ""CustomerId"" INTEGER NOT NULL DEFAULT 0,
-                        ""Title"" VARCHAR(200) NOT NULL DEFAULT '',
-                        ""CustomerName"" VARCHAR(150) NOT NULL DEFAULT '',
-                        ""Stage"" VARCHAR(100) NOT NULL DEFAULT 'new',
-                        ""Value"" NUMERIC(18,2) NOT NULL DEFAULT 0,
-                        ""ExpectedCloseDate"" VARCHAR(100) NOT NULL DEFAULT '',
-                        ""Notes"" TEXT NOT NULL DEFAULT '',
-                        ""LostReason"" TEXT,
-                        ""InvestorType"" VARCHAR(50),
-                        ""InvestmentRange"" VARCHAR(100),
-                        ""PreferredAssetClass"" VARCHAR(100),
-                        ""Priority"" VARCHAR(50) NOT NULL DEFAULT 'Medium',
-                        ""StageEnteredAt"" TIMESTAMPTZ,
-                        ""CreatedAt"" TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-                        ""UpdatedAt"" TIMESTAMPTZ
-                    );
 
                     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'call_records') THEN
                         ALTER TABLE call_records ADD COLUMN IF NOT EXISTS ""TwilioCallSid"" character varying(64) NULL;
@@ -528,7 +458,6 @@ IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'consultat
                     LEFT JOIN roles r ON r.""Id"" = u.""RoleId""
                     WHERE f.""AssignedAgentId"" = u.""Id""
                       AND (f.""AssignedToName"" IS NULL OR f.""AssignedToName"" = '' OR f.""AssignedToRole"" IS NULL OR f.""AssignedToRole"" = '');
-
                 END $$;
             ";
             db.Database.ExecuteSqlRaw(sql);
@@ -1218,7 +1147,6 @@ IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'consultat
             Console.WriteLine($"[Role Permissions Patch Warning] {ex.Message}");
         }
 
-// Inbuilt lead seeding removed: all leads come from DB via API / frontend creation.
         // Startup deduplication & cleanup for followups table
         try
         {
@@ -1375,39 +1303,31 @@ IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'consultat
             Console.WriteLine($"[Database IRM/GHL Schema Sync Warning] {ex.Message}");
         }
 
-        if (db.Database.IsNpgsql())
+        try
         {
-            backend.Data.JaminSchemaInitializer.Apply(db);
-            Console.WriteLine("[Database] Jamin schema initialized or verified.");
+            var pendingMigrations = db.Database.GetPendingMigrations().ToList();
+            if (pendingMigrations.Any())
+            {
+                Console.ForegroundColor = ConsoleColor.Yellow;
+                Console.WriteLine("================================================================================");
+                Console.WriteLine($"[WARNING] There are {pendingMigrations.Count} pending EF Core migration(s) not yet applied to the database:");
+                foreach (var m in pendingMigrations)
+                {
+                    Console.WriteLine($"  - {m}");
+                }
+                Console.WriteLine("Run 'dotnet ef database update' in backend/ to apply pending migrations.");
+                Console.WriteLine("================================================================================");
+                Console.ResetColor();
+            }
+            else
+            {
+                Console.WriteLine("[Database] All EF Core migrations are up to date.");
+            }
         }
-
-        if (!ensureCreatedForDevelopment)
+        catch (Exception ex)
         {
-            try
-            {
-                var pendingMigrations = db.Database.GetPendingMigrations().ToList();
-                if (pendingMigrations.Any())
-                {
-                    Console.ForegroundColor = ConsoleColor.Yellow;
-                    Console.WriteLine("================================================================================");
-                    Console.WriteLine($"[WARNING] There are {pendingMigrations.Count} pending EF Core migration(s) not yet applied to the database:");
-                    foreach (var m in pendingMigrations)
-                    {
-                        Console.WriteLine($"  - {m}");
-                    }
-                    Console.WriteLine("Run 'dotnet ef database update' in backend/ to apply pending migrations.");
-                    Console.WriteLine("================================================================================");
-                    Console.ResetColor();
-                }
-                else
-                {
-                    Console.WriteLine("[Database] All EF Core migrations are up to date.");
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine($"[Database Migration Check Warning] {ex.Message}");
-            }
+            Console.WriteLine($"[Database Migration Check Warning] {ex.Message}");
+
         }
 
         try
@@ -1425,7 +1345,6 @@ IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'consultat
         {
             Console.WriteLine($"[Security Init Warning] {ex.Message}");
         }
-
     }
 }
 
@@ -1443,7 +1362,7 @@ app.UseMiddleware<ExceptionHandlingMiddleware>();
 app.UseSwagger();
 app.UseSwaggerUI(c =>
 {
-    c.SwaggerEndpoint("/swagger/v1/swagger.json", "GHL Aura API v1");
+    c.SwaggerEndpoint("/swagger/v1/swagger.json", "NexusSales API v1");
     c.RoutePrefix = "swagger";
 });
 
@@ -1490,5 +1409,3 @@ app.MapControllers();
 app.MapHub<backend.Hubs.PlatformHub>("/hubs/platform");
 
 app.Run();
-
-public partial class Program { }

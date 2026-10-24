@@ -12,7 +12,6 @@ namespace backend.Controllers.SuperAdmin
     [ApiController]
     [Authorize(Roles = "super_admin")]
     [Route("api/super-admin/documents")]
-    [Route("api/platform/documents")]
     public class PlatformDocumentsController : ControllerBase
     {
         private readonly ApplicationDbContext _context;
@@ -193,7 +192,7 @@ namespace backend.Controllers.SuperAdmin
                 Directory.CreateDirectory(uploadsFolder);
             }
 
-            var uniqueFileName = "platform_" + Guid.NewGuid().ToString("N") + ext;
+            var uniqueFileName = "platform_" + Guid.NewGuid().ToString("N") + Path.GetExtension(dto.File.FileName);
             var filePath = Path.Combine(uploadsFolder, uniqueFileName);
 
             using (var stream = new FileStream(filePath, FileMode.Create))

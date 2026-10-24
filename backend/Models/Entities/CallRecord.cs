@@ -16,13 +16,13 @@ public class CallRecord
     public string ContactName { get; set; } = string.Empty;
     public string ContactPhone { get; set; } = string.Empty;
     public string Direction { get; set; } = "outbound"; // "inbound" | "outbound"
-    public int DurationSeconds { get; set; }
+    public int Duration { get; set; } // seconds
 
     [NotMapped]
-    public int Duration
+    public int DurationSeconds
     {
-        get => DurationSeconds;
-        set => DurationSeconds = value;
+        get => Duration;
+        set => Duration = value;
     }
 
     public string Disposition { get; set; } = string.Empty;
@@ -61,13 +61,13 @@ public class CallRecord
     public int? LeadId { get; set; }
     public int? CustomerId { get; set; }
 
-    public DateTime StartedAt { get; set; } = DateTime.UtcNow;
+    public DateTime Timestamp { get; set; } = DateTime.UtcNow;
 
     [NotMapped]
-    public DateTime Timestamp
+    public DateTime StartedAt
     {
-        get => StartedAt;
-        set => StartedAt = value;
+        get => Timestamp;
+        set => Timestamp = value;
     }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;

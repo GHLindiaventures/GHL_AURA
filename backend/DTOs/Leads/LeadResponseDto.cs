@@ -19,7 +19,6 @@ public class LeadResponseDto
     public string Notes { get; set; } = string.Empty;
 
     public Dictionary<string, string> CustomFields { get; set; } = new();
-    public string? DispositionReason => CustomFields != null && CustomFields.TryGetValue("dispositionReason", out var reason) ? reason : null;
 
     public DateTime? NextFollowupDate { get; set; }
     public DateTime? AssignedAt { get; set; }

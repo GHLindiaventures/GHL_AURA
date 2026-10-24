@@ -13,18 +13,12 @@ public static class AuthenticationExtensions
         var jwtSettings = configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>() 
                           ?? throw new InvalidOperationException("JwtSettings section is missing in configuration.");
 
-
-        var secret = configuration["JWT_SECRET_KEY"] 
-                     ?? configuration["JwtSettings:SecretKey"] 
-                     ?? jwtSettings.SecretKey;
-
-        if (string.IsNullOrWhiteSpace(secret))
+        if (string.IsNullOrWhiteSpace(jwtSettings.SecretKey) || jwtSettings.SecretKey.Length < 32)
         {
-            throw new InvalidOperationException("JWT SecretKey is not configured. Please set JWT_SECRET_KEY or JwtSettings:SecretKey.");
+            throw new InvalidOperationException("JwtSettings:SecretKey must be at least 32 characters long. Set it via the JwtSettings__SecretKey environment variable or a backend/.env file.");
         }
 
-        var key = Encoding.UTF8.GetBytes(secret);
-
+        var key = Encoding.UTF8.GetBytes(jwtSettings.SecretKey);
 
         services.AddAuthentication(options =>
         {
@@ -39,13 +33,12 @@ public static class AuthenticationExtensions
             {
                 ValidateIssuerSigningKey = true,
                 IssuerSigningKey = new SymmetricSecurityKey(key),
-                ValidateIssuer = !string.IsNullOrWhiteSpace(jwtSettings.Issuer),
+                ValidateIssuer = true,
                 ValidIssuer = jwtSettings.Issuer,
-                ValidateAudience = !string.IsNullOrWhiteSpace(jwtSettings.Audience),
+                ValidateAudience = true,
                 ValidAudience = jwtSettings.Audience,
                 ValidateLifetime = true,
-                ClockSkew = TimeSpan.Zero,
-                RoleClaimType = System.Security.Claims.ClaimTypes.Role
+                ClockSkew = TimeSpan.Zero
             };
             options.Events = new JwtBearerEvents
             {

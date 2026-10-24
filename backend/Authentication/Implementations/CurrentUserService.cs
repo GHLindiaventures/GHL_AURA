@@ -40,7 +40,8 @@ public class CurrentUserService : ICurrentUserService
     public string? Email => User?.FindFirst(ClaimTypes.Email)?.Value;
 
     public string? Name => User?.FindFirst(ClaimTypes.Name)?.Value ?? User?.FindFirst("name")?.Value;
-public backend.Models.Entities.User? ValidatedUser
+
+    public backend.Models.Entities.User? ValidatedUser
     {
         get
         {
@@ -51,6 +52,4 @@ public backend.Models.Entities.User? ValidatedUser
             return null;
         }
     }
-
 }
-

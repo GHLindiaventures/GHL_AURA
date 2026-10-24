@@ -5,7 +5,6 @@ import { FileText, FileImage, FileSpreadsheet, Trash2, File, Share2, Mail, Messa
 import { DocumentItem } from '../../types';
 import { EmptyState } from './EmptyState';
 import { useAuth } from '../../context/AuthContext';
-import { openDocumentLink } from '../../utils/documentPreview';
 import './DocumentList.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -218,6 +217,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
               className="document-action-btn download-btn"
               title="Download / Copy Link"
               onClick={() => {
+                navigator.clipboard.writeText(doc.fileUrl || '');
                 if (doc.fileUrl) {
                   const url = doc.fileUrl.trim();
                   if (url.startsWith('http://') || url.startsWith('https://') || url.startsWith('/')) {

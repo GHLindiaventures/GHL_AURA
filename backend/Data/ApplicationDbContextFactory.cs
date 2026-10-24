@@ -10,10 +10,9 @@ public class ApplicationDbContextFactory : IDesignTimeDbContextFactory<Applicati
     {
         var configuration = new ConfigurationBuilder()
             .SetBasePath(Directory.GetCurrentDirectory())
-            .AddJsonFile("appsettings.json", optional: true)
+            .AddJsonFile("appsettings.json", optional: false)
             .AddJsonFile("appsettings.Development.json", optional: true)
             .AddUserSecrets<ApplicationDbContextFactory>(optional: true)
-            .AddEnvironmentVariables()
             .Build();
 
         var connectionString = configuration.GetConnectionString("DefaultConnection");
@@ -23,11 +22,7 @@ public class ApplicationDbContextFactory : IDesignTimeDbContextFactory<Applicati
         }
 
         var builder = new DbContextOptionsBuilder<ApplicationDbContext>();
-        builder.UseNpgsql(connectionString!, npgsql =>
-            npgsql.EnableRetryOnFailure(
-                maxRetryCount: 3,
-                maxRetryDelay: TimeSpan.FromSeconds(5),
-                errorCodesToAdd: new[] { "57P05" }));
+        builder.UseNpgsql(connectionString!);
 
         return new ApplicationDbContext(builder.Options);
     }

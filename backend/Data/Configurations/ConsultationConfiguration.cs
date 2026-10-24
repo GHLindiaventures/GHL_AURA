@@ -21,7 +21,8 @@ public class ConsultationConfiguration : IEntityTypeConfiguration<Consultation>
             .HasMaxLength(50)
             .IsRequired();
 
-builder.Property(c => c.Status).IsRequired();
+        builder.Property(c => c.Status)
+            .IsRequired();
 
         builder.Property(c => c.CreatedAt)
             .HasDefaultValueSql("NOW()");
@@ -36,9 +37,6 @@ builder.Property(c => c.Status).IsRequired();
             .WithMany()
             .HasForeignKey(c => c.ConsultantId)
             .OnDelete(DeleteBehavior.Restrict);
-
-        builder.Property(c => c.InvestorId)
-            .IsRequired(false);
 
         builder.HasOne(c => c.Investor)
             .WithMany(i => i.Consultations)

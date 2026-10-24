@@ -92,7 +92,7 @@ public class LeadService : ILeadService
 
         if (role == "irm" && agentId.HasValue)
         {
-var irmIdStr = agentId.Value.ToString();
+            var irmIdStr = agentId.Value.ToString();
             // In IRM My Leads, show leads assigned to this IRM
             query = query.Where(l => l.AssignedAgentId == agentId.Value ||
                                       (l.CustomFieldsJson != null &&
@@ -102,7 +102,6 @@ var irmIdStr = agentId.Value.ToString();
         else if (role == "sales_executive" && agentId.HasValue)
         {
             query = query.Where(l => l.AssignedAgentId == agentId.Value || l.AssignedById == agentId.Value);
-
         }
 
         return query;
@@ -131,21 +130,6 @@ var irmIdStr = agentId.Value.ToString();
         if (role == "sales_executive" && agentId.HasValue)
         {
             query = query.Where(l => l.AssignedAgentId == agentId.Value || l.AssignedById == agentId.Value);
-        }
-        else if (role == "irm" && agentId.HasValue)
-        {
-            var strId = agentId.Value.ToString();
-            var irmUser = await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == agentId.Value, ct);
-            var irmName = irmUser?.Name;
-
-            query = query.Where(l =>
-                l.AssignedAgentId == agentId.Value ||
-                (l.CustomFieldsJson != null && (
-                    l.CustomFieldsJson.Contains("\"assignedIrmId\":\"" + strId + "\"") ||
-                    l.CustomFieldsJson.Contains("\"assignedIrmId\":" + strId) ||
-                    (irmName != null && l.CustomFieldsJson.Contains("\"assignedIrmName\":\"" + irmName + "\""))
-                ))
-            );
         }
 
         return await query.FirstOrDefaultAsync(ct);
@@ -405,7 +389,7 @@ var irmIdStr = agentId.Value.ToString();
 
     public async Task<ApiResponse<LeadResponseDto>> CreateLeadAsync(CreateLeadDto dto, CancellationToken ct = default)
     {
-var role = _currentUser.Role;
+        var role = _currentUser.Role;
 
         int companyId;
         if (role == "super_admin")
@@ -459,7 +443,6 @@ var role = _currentUser.Role;
         }
 
 
-
         // Build Custom Fields Dictionary for GHL
         var customFields = dto.AdditionalCustomFields ?? new Dictionary<string, string>();
         
@@ -475,18 +458,16 @@ var role = _currentUser.Role;
         if (normPref != null) customFields["preferredAssetClass"] = normPref;
 
         if (!string.IsNullOrWhiteSpace(dto.Horizon)) customFields["horizon"] = dto.Horizon;
-if (!string.IsNullOrWhiteSpace(dto.InvestmentAmount)) customFields["investmentAmount"] = dto.InvestmentAmount.Trim();
-
+        if (!string.IsNullOrWhiteSpace(dto.InvestmentAmount)) customFields["investmentAmount"] = dto.InvestmentAmount.Trim();
 
         if (dto.AssignedIrmId.HasValue) customFields["assignedIrmId"] = dto.AssignedIrmId.Value.ToString();
         if (dto.AssignedIrmName != null) customFields["assignedIrmName"] = dto.AssignedIrmName.Trim();
         if (dto.AssignedIrmAt != null) customFields["assignedIrmAt"] = dto.AssignedIrmAt.Trim();
         else if (dto.AssignedIrmId.HasValue || dto.AssignedIrmName != null)
         {
-if (!customFields.ContainsKey("assignedIrmAt"))
+            if (!customFields.ContainsKey("assignedIrmAt"))
                 customFields["assignedIrmAt"] = DateTime.UtcNow.ToString("o");
         }
-
 
         // Canonical Customer Duplicate Check: check normalized phone (last 10 digits) and normalized email
         var normPhone = NormalizePhone(dto.Phone);
@@ -926,14 +907,14 @@ if (!customFields.ContainsKey("assignedIrmAt"))
         if (dto.Priority != null) lead.Priority = dto.Priority.Trim();
         if (dto.Notes != null) lead.Notes = dto.Notes.Trim();
         if (dto.NextFollowupDate.HasValue) lead.NextFollowupDate = dto.NextFollowupDate.Value;
-if (dto.AssignedAgentId.HasValue && lead.AssignedAgentId != dto.AssignedAgentId.Value)
+        
+        if (dto.AssignedAgentId.HasValue && lead.AssignedAgentId != dto.AssignedAgentId.Value)
         {
             var oldAgentId = lead.AssignedAgentId;
             var newAgentId = dto.AssignedAgentId.Value;
             lead.AssignedAgentId = newAgentId;
             lead.AssignedById = _currentUser.UserId;
             lead.AssignedAt = DateTime.UtcNow;
-
 
 
             if (_currentUser.UserId.HasValue)
@@ -1005,7 +986,7 @@ if (dto.AssignedAgentId.HasValue && lead.AssignedAgentId != dto.AssignedAgentId.
         
         if (dto.Horizon != null) customFields["horizon"] = dto.Horizon;
         if (dto.DispositionReason != null) customFields["dispositionReason"] = dto.DispositionReason;
-var existingIrmId = customFields.TryGetValue("assignedIrmId", out var prevIrmId) ? prevIrmId : null;
+        var existingIrmId = customFields.TryGetValue("assignedIrmId", out var prevIrmId) ? prevIrmId : null;
         var existingIrmName = customFields.TryGetValue("assignedIrmName", out var prevIrmName) ? prevIrmName : null;
 
         bool irmChanged = (dto.AssignedIrmId.HasValue && dto.AssignedIrmId.Value.ToString() != existingIrmId) ||
@@ -1030,7 +1011,6 @@ var existingIrmId = customFields.TryGetValue("assignedIrmId", out var prevIrmId)
             customFields.Remove("assignedIrmName");
             customFields.Remove("assignedIrmAt");
         }
-
         if (dto.AdditionalCustomFields != null)
         {
             foreach (var kvp in dto.AdditionalCustomFields)
@@ -1041,10 +1021,6 @@ var existingIrmId = customFields.TryGetValue("assignedIrmId", out var prevIrmId)
         lead.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync(ct);
-        if (dto.AssignedAgentId.HasValue)
-        {
-            await _context.Entry(lead).Reference(l => l.AssignedAgent).LoadAsync(ct);
-        }
 
         if (isNewCustomer && newCustomer?.HandoverId.HasValue == true)
         {
@@ -1091,8 +1067,7 @@ var existingIrmId = customFields.TryGetValue("assignedIrmId", out var prevIrmId)
             customer = new Customer
             {
                 CompanyId = companyId,
-AssignedAgentId = agentId ?? _currentUser.UserId ?? throw new InvalidOperationException("User ID is required"),
-
+                AssignedAgentId = agentId ?? _currentUser.UserId ?? throw new InvalidOperationException("User ID is required"),
                 Name = lead.Name,
                 Phone = lead.Phone,
                 Email = lead.Email,
@@ -1218,10 +1193,9 @@ AssignedAgentId = agentId ?? _currentUser.UserId ?? throw new InvalidOperationEx
         var freshFollowup = new Followup
         {
             CompanyId = lead.CompanyId,
-AssignedAgentId = targetAgentId,
+            AssignedAgentId = targetAgentId,
             AssignedToName = agentUser?.Name ?? string.Empty,
             AssignedToRole = agentUser?.Role?.Code ?? "sales_executive",
-
             ContactId = lead.Id.ToString(),
             ContactType = "lead",
             ContactName = lead.Name,
@@ -1244,7 +1218,6 @@ AssignedAgentId = targetAgentId,
     private static LeadResponseDto MapToDto(Lead lead)
     {
         var customFields = DeserializeCustomFields(lead.CustomFieldsJson);
-
         int? assignedIrmId = null;
         if (customFields.TryGetValue("assignedIrmId", out var irmIdStr) && int.TryParse(irmIdStr, out var parsedIrmId))
         {
@@ -1254,7 +1227,7 @@ AssignedAgentId = targetAgentId,
         string? assignedIrmName = customFields.TryGetValue("assignedIrmName", out var iname) ? iname : null;
         string? assignedIrmAt = customFields.TryGetValue("assignedIrmAt", out var iat) ? iat : null;
 
-var agentRole = lead.AssignedAgent?.Role?.Code;
+        var agentRole = lead.AssignedAgent?.Role?.Code;
         int? salesExecId = null;
         string? salesExecName = null;
         DateTime? salesExecAt = null;
@@ -1297,13 +1270,12 @@ var agentRole = lead.AssignedAgent?.Role?.Code;
             returnedAt = parsedRetAt;
         }
 
-
         return new LeadResponseDto
         {
             Id = lead.Id,
             CompanyId = lead.CompanyId,
             AssignedAgentId = lead.AssignedAgentId,
-AssignedAgentName = lead.AssignedAgent?.Name,
+            AssignedAgentName = lead.AssignedAgent?.Name,
             AssignedAgentRole = agentRole,
             AssignedSalesExecutiveId = salesExecId,
             AssignedSalesExecutiveName = salesExecName,
@@ -1323,7 +1295,6 @@ AssignedAgentName = lead.AssignedAgent?.Name,
                 : (lead.CustomFieldsJson != null && lead.CustomFieldsJson.Contains("qualifiedByAgentName")
                     ? DeserializeCustomFields(lead.CustomFieldsJson).GetValueOrDefault("qualifiedByAgentName")
                     : (agentRole == "irm" ? "Created by IRM" : null)),
-
             Name = lead.Name,
             Phone = lead.Phone,
             Email = lead.Email,

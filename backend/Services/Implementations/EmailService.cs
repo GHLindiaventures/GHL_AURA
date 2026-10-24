@@ -47,7 +47,7 @@ public class EmailService : IEmailService
           <tr>
             <td style=""background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); padding: 32px 40px; text-align: left; border-bottom: 3px solid #0284c7;"">
               <div style=""display: inline-block; background-color: #0284c7; color: #ffffff; font-weight: 800; font-size: 14px; padding: 4px 10px; border-radius: 6px; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 8px;"">
-                GHL Aura Platform
+                NexusSales Platform
               </div>
               <h1 style=""margin: 0; color: #ffffff; font-size: 22px; font-weight: 700; letter-spacing: -0.5px;"">
                 GHL India Ventures
@@ -154,7 +154,7 @@ public class EmailService : IEmailService
           <tr>
             <td style=""background: linear-gradient(135deg, #0f172a 0%, #1e293b 100%); padding: 28px 36px; text-align: left; border-bottom: 3px solid #0284c7;"">
               <div style=""display: inline-block; background-color: #0284c7; color: #ffffff; font-weight: 800; font-size: 12px; padding: 3px 8px; border-radius: 4px; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 6px;"">
-                GHL Aura Security
+                NexusSales Security
               </div>
               <h1 style=""margin: 0; color: #ffffff; font-size: 20px; font-weight: 700;"">
                 GHL India Ventures
@@ -339,7 +339,7 @@ public class EmailService : IEmailService
         var effectiveHost = (!string.IsNullOrWhiteSpace(cfg.Host) ? cfg.Host : (Environment.GetEnvironmentVariable("SMTP_HOST") ?? Environment.GetEnvironmentVariable("SmtpSettings__Host")))?.Trim() ?? "smtp.gmail.com";
         var portVal = Environment.GetEnvironmentVariable("SMTP_PORT") ?? Environment.GetEnvironmentVariable("SmtpSettings__Port");
         var effectivePort = int.TryParse(portVal, out var p) && p > 0 ? p : (cfg.Port > 0 ? cfg.Port : 587);
-        var senderDisplayName = (!string.IsNullOrWhiteSpace(cfg.SenderName) ? cfg.SenderName : (Environment.GetEnvironmentVariable("SMTP_SENDER_NAME") ?? Environment.GetEnvironmentVariable("SmtpSettings__SenderName")))?.Trim() ?? "GHL Aura IRM Compliance";
+        var senderDisplayName = (!string.IsNullOrWhiteSpace(cfg.SenderName) ? cfg.SenderName : (Environment.GetEnvironmentVariable("SMTP_SENDER_NAME") ?? Environment.GetEnvironmentVariable("SmtpSettings__SenderName")))?.Trim() ?? "NexusSales IRM Compliance";
 
         // If Username is empty but SenderEmail is provided (or vice-versa), unify them
         if (string.IsNullOrWhiteSpace(effectiveUsername) && !string.IsNullOrWhiteSpace(effectiveSender))

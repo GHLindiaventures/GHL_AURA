@@ -16,49 +16,48 @@ public class LeadConfiguration : IEntityTypeConfiguration<Lead>
             .HasMaxLength(150)
             .IsRequired();
 
-        builder.Property(l => l.Email)
-            .HasMaxLength(256);
-
         builder.Property(l => l.Phone)
             .HasMaxLength(50)
             .IsRequired();
 
-        builder.Property(l => l.Status)
-            .HasMaxLength(50)
-            .HasDefaultValue("New")
-            .IsRequired();
+        builder.Property(l => l.Email)
+            .HasMaxLength(255);
+
+        builder.Property(l => l.NormalizedPhone)
+            .HasMaxLength(20);
+
+        builder.Property(l => l.NormalizedEmail)
+            .HasMaxLength(255);
+
+        builder.Property(l => l.IsDuplicate)
+            .HasDefaultValue(false);
+
+        builder.Property(l => l.Location)
+            .HasMaxLength(255);
 
         builder.Property(l => l.Source)
             .HasMaxLength(100)
-            .HasDefaultValue("Website Inbound")
-            .IsRequired();
+            .HasDefaultValue("Website Inbound");
+
+        builder.Property(l => l.Status)
+            .HasMaxLength(50)
+            .HasDefaultValue("New");
 
         builder.Property(l => l.Priority)
             .HasMaxLength(50)
-            .HasDefaultValue("Medium")
-            .IsRequired();
+            .HasDefaultValue("Medium");
 
         builder.Property(l => l.CreatedAt)
             .HasDefaultValueSql("NOW()");
 
-        builder.Property(l => l.Location)
-            .HasMaxLength(150);
+        // Tenant-scoped filtered unique indexes on normalized identifiers (safe when existing duplicates exist)
+        builder.HasIndex(l => new { l.CompanyId, l.NormalizedPhone })
+            .HasFilter("\"IsDuplicate\" = false AND \"NormalizedPhone\" IS NOT NULL AND \"NormalizedPhone\" <> ''")
+            .IsUnique();
 
-        builder.Property(l => l.InvestmentCapacity)
-            .HasMaxLength(50);
-
-        builder.Property(l => l.Notes)
-            .HasColumnType("text");
-
-        builder.Property(l => l.CustomFieldsJson)
-            .HasColumnType("jsonb");
-
-        // Indexes for performance
-        builder.HasIndex(l => l.CompanyId);
-        builder.HasIndex(l => l.Status);
-        builder.HasIndex(l => l.CreatedAt);
-        builder.HasIndex(l => new { l.CompanyId, l.Status });
-        builder.HasIndex(l => new { l.CompanyId, l.Phone });
+        builder.HasIndex(l => new { l.CompanyId, l.NormalizedEmail })
+            .HasFilter("\"IsDuplicate\" = false AND \"NormalizedEmail\" IS NOT NULL AND \"NormalizedEmail\" <> ''")
+            .IsUnique();
 
         // Relationships
         builder.HasOne(l => l.Company)
@@ -66,14 +65,11 @@ public class LeadConfiguration : IEntityTypeConfiguration<Lead>
             .HasForeignKey(l => l.CompanyId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        builder.Property(l => l.AssignedAgentId)
-            .IsRequired(false);
-
         builder.HasOne(l => l.AssignedAgent)
             .WithMany()
             .HasForeignKey(l => l.AssignedAgentId)
             .IsRequired(false)
-            .OnDelete(DeleteBehavior.SetNull);
+            .OnDelete(DeleteBehavior.Restrict);
 
         builder.HasOne(l => l.AssignedBy)
             .WithMany()

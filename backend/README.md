@@ -1,16 +1,16 @@
-# GHL AURA Backend - Authentication & Architecture Documentation
+# NexusSales Backend - Authentication & Architecture Documentation
 
-**Platform:** GHL AURA Multi-Tenant CRM  
+**Platform:** NexusSales Multi-Tenant CRM  
 **Module:** Authentication & Multi-Tenancy Core  
 **Stack:** ASP.NET Core 8 Web API, Entity Framework Core 8, PostgreSQL, JWT Bearer Auth, FluentValidation  
-**Author / Team:** GHL India Engineering Team  
-**Date:** October 2026  
+**Author / Team:** Sales Rep App Engineering Team  
+**Date:** September 2026  
 
 ---
 
 ## 1. Executive Summary
 
-This document provides a comprehensive technical overview of the **Authentication and Tenant Core Backend** implemented for the **GHL AURA** platform. 
+This document provides a comprehensive technical overview of the **Authentication and Tenant Core Backend** implemented for the **NexusSales** platform. 
 
 The backend has been developed from scratch as a modular, production-ready ASP.NET Core 8 Web API, strictly adhering to the frontend data contracts and business requirements. It manages:
 - Multi-tenant data segregation with integer-based primary/foreign keys (`1, 2, 3...`)
@@ -98,8 +98,6 @@ All entities use **auto-incrementing integer IDs (`1, 2, 3...`)**:
 erDiagram
     TENANTS ||--o{ USERS : "has members"
     ROLES ||--o{ USERS : "defines permissions"
-
-    hello
 
     TENANTS {
         int Id PK "Auto-increment (1, 2...)"
@@ -320,8 +318,6 @@ dotnet ef database update
 **Warning:** Be sure your `ASPNETCORE_ENVIRONMENT` is set to `Development` before running this locally (e.g. `$env:ASPNETCORE_ENVIRONMENT="Development"`). Some migrations execute logic that behaves differently in non-dev environments (like disabling demo users).
 
 The backend startup checks will log a warning banner if any migrations are pending.
-
-Jamin project, plot, booking, payment, and site-visit tables are initialized idempotently when the backend starts with PostgreSQL. This initializer only creates or adjusts the required schema; it does not run pending EF migrations or delete/seed application data. The database user must have permission to create tables, alter columns, and create indexes.
 
 4. Run the API:
    ```bash

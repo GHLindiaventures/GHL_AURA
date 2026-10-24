@@ -17,11 +17,10 @@ public sealed class CallService(ApplicationDbContext context, ICurrentUserServic
         var query = context.Set<CallRecord>().AsNoTracking().Where(x => x.CompanyId == currentUser.CompanyId && x.AgentId == currentUser.UserId);
         if (!string.IsNullOrWhiteSpace(direction)) query = query.Where(x => x.Direction == direction.ToLower());
         if (!string.IsNullOrWhiteSpace(disposition)) query = query.Where(x => x.Disposition == disposition);
-        if (from.HasValue) query = query.Where(x => x.StartedAt >= from.Value.ToUniversalTime());
-        if (to.HasValue) query = query.Where(x => x.StartedAt <= to.Value.ToUniversalTime());
+        if (from.HasValue) query = query.Where(x => x.Timestamp >= from.Value.ToUniversalTime());
+        if (to.HasValue) query = query.Where(x => x.Timestamp <= to.Value.ToUniversalTime());
         var total = await query.CountAsync(cancellationToken);
-var items = await query.OrderByDescending(x => x.StartedAt).Skip((page - 1) * pageSize).Take(pageSize).Select(x => new CallRecordDto { Id = x.Id, CompanyId = x.CompanyId, AgentId = x.AgentId, ContactName = x.ContactName, ContactPhone = x.ContactPhone, Direction = x.Direction, Duration = x.DurationSeconds, Disposition = x.Disposition, Notes = x.Notes, Reason = x.Reason, CallModule = x.CallModule, LeadId = x.LeadId, CustomerId = x.CustomerId, Timestamp = x.Timestamp, CreatedAt = x.CreatedAt }).ToListAsync(cancellationToken);
-
+        var items = await query.OrderByDescending(x => x.Timestamp).Skip((page - 1) * pageSize).Take(pageSize).Select(x => new CallRecordDto { Id = x.Id, CompanyId = x.CompanyId, AgentId = x.AgentId, ContactName = x.ContactName, ContactPhone = x.ContactPhone, Direction = x.Direction, Duration = x.Duration, Disposition = x.Disposition, Notes = x.Notes, Reason = x.Reason, CallModule = x.CallModule, LeadId = x.LeadId, CustomerId = x.CustomerId, Timestamp = x.Timestamp, CreatedAt = x.CreatedAt }).ToListAsync(cancellationToken);
         return new PagedResult<CallRecordDto> { Items = items, Page = page, PageSize = pageSize, TotalCount = total };
     }
 
@@ -143,8 +142,7 @@ var items = await query.OrderByDescending(x => x.StartedAt).Skip((page - 1) * pa
         CallRecord? record = request.CallId.HasValue ? await context.Set<CallRecord>().FirstOrDefaultAsync(x => x.Id == request.CallId && x.CompanyId == currentUser.CompanyId.Value && x.AgentId == currentUser.UserId.Value, cancellationToken) : null;
         if (record == null)
         {
-record = new CallRecord { CompanyId = currentUser.CompanyId.Value, AgentId = currentUser.UserId.Value, ContactName = request.ContactName, ContactPhone = request.ContactPhone, Direction = request.Direction.ToLowerInvariant(), Duration = request.Duration, LeadId = validLeadId, CustomerId = validCustomerId };
-
+            record = new CallRecord { CompanyId = currentUser.CompanyId.Value, AgentId = currentUser.UserId.Value, ContactName = request.ContactName, ContactPhone = request.ContactPhone, Direction = request.Direction.ToLowerInvariant(), Duration = request.Duration, LeadId = validLeadId, CustomerId = validCustomerId };
             context.Set<CallRecord>().Add(record);
         }
         record.Disposition = request.Disposition; 
@@ -279,5 +277,4 @@ record = new CallRecord { CompanyId = currentUser.CompanyId.Value, AgentId = cur
             return new Dictionary<string, string>();
         }
     }
-
 }

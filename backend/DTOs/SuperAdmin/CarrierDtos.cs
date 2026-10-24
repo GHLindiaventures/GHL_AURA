@@ -45,6 +45,14 @@ public class UpdateCarrierSettingsRequestDto
     public string? Status { get; set; }
 }
 
+public class CarrierTestResultDto
+{
+    public bool Success { get; set; }
+    public int LatencyMs { get; set; }
+    public string Message { get; set; } = string.Empty;
+    public DateTime TestedAt { get; set; } = DateTime.UtcNow;
+}
+
 public class SimulateCallRequestDto
 {
     public string PhoneNumber { get; set; } = string.Empty;

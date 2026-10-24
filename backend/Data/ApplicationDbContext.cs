@@ -58,7 +58,6 @@ public class ApplicationDbContext : DbContext
     // ── Super Admin Platform Management Entities ─────────────────────────────
     public DbSet<SubscriptionPackage> SubscriptionPackages => Set<SubscriptionPackage>();
     public DbSet<CarrierSettings> CarrierSettings => Set<CarrierSettings>();
-    public DbSet<PlatformCarrierSettings> PlatformCarrierSettings => Set<PlatformCarrierSettings>();
     public DbSet<TenantDidMapping> TenantDidMappings => Set<TenantDidMapping>();
     public DbSet<BroadcastAnnouncement> BroadcastAnnouncements => Set<BroadcastAnnouncement>();
     public DbSet<PlatformSetting> PlatformSettings => Set<PlatformSetting>();
@@ -139,7 +138,7 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<JaminBooking>(entity =>
         {
             entity.ToTable("jamin_bookings");
-            entity.HasIndex(booking => new { booking.CompanyId, booking.PlotId })
+            entity.HasIndex(b => new { b.CompanyId, b.PlotId })
                 .HasDatabaseName("IX_jamin_bookings_CompanyId_PlotId_Active")
                 .HasFilter("\"PlotId\" IS NOT NULL AND \"Status\" IN ('Hold', 'Pending Verification', 'Booking Pending Verification', 'Token Paid', 'Token Verified', 'Agreement Signed', 'Registration Completed')")
                 .IsUnique();
@@ -148,34 +147,18 @@ public class ApplicationDbContext : DbContext
         modelBuilder.Entity<JaminPayment>(entity =>
         {
             entity.ToTable("jamin_payments");
-            entity.Property(payment => payment.Amount).HasPrecision(18, 2);
-            entity.Property(payment => payment.PaymentType).HasMaxLength(50);
-            entity.Property(payment => payment.PaymentMode).HasMaxLength(100);
-            entity.Property(payment => payment.TransactionReference).HasMaxLength(200);
-            entity.Property(payment => payment.Status).HasMaxLength(50);
-            entity.Property(payment => payment.VerifiedByName).HasMaxLength(150);
-            entity.Property(payment => payment.ReceiptNumber).HasMaxLength(100);
-            entity.Property(payment => payment.Notes).HasMaxLength(2000);
-            entity.HasOne(payment => payment.Booking)
-                .WithMany(booking => booking.Payments)
-                .HasForeignKey(payment => payment.BookingId)
+            entity.HasOne(p => p.Booking)
+                .WithMany(b => b.Payments)
+                .HasForeignKey(p => p.BookingId)
                 .OnDelete(DeleteBehavior.Restrict);
-            entity.HasOne(payment => payment.Customer)
-                .WithMany(customer => customer.Payments)
-                .HasForeignKey(payment => payment.CustomerId)
+            entity.HasOne(p => p.Customer)
+                .WithMany(c => c.Payments)
+                .HasForeignKey(p => p.CustomerId)
                 .OnDelete(DeleteBehavior.SetNull);
-            entity.HasOne(payment => payment.Company)
+            entity.HasOne(p => p.Company)
                 .WithMany()
-                .HasForeignKey(payment => payment.CompanyId)
+                .HasForeignKey(p => p.CompanyId)
                 .OnDelete(DeleteBehavior.Cascade);
-            entity.HasOne(payment => payment.Lead)
-                .WithMany()
-                .HasForeignKey(payment => payment.LeadId)
-                .OnDelete(DeleteBehavior.SetNull);
-            entity.HasOne(payment => payment.VerifiedByUser)
-                .WithMany()
-                .HasForeignKey(payment => payment.VerifiedByUserId)
-                .OnDelete(DeleteBehavior.SetNull);
         });
 
         // Handover relationships on entities
@@ -391,14 +374,7 @@ public class ApplicationDbContext : DbContext
                 Timezone = "Asia/Kolkata (IST)",
                 Currency = "₹ INR",
                 BusinessHours = "10:00 AM - 06:30 PM IST",
-LegalName = "GHL India Advisory Trust Private Limited",
-                Industry = "Commercial Real Estate & AIF",
-                Status = "Active",
                 SubscriptionPlan = "Wealth Advisory Enterprise Suite",
-                LeadSla = 15,
-                CallEnabled = true,
-                RecordingEnabled = true,
-                TranscriptionEnabled = true,
                 IsActive = true,
                 IsProtected = true,
                 CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
@@ -419,14 +395,7 @@ LegalName = "GHL India Advisory Trust Private Limited",
                 Timezone = "Asia/Kolkata (IST)",
                 Currency = "₹ INR",
                 BusinessHours = "10:00 AM - 06:30 PM IST",
-LegalName = "Jamin Bazaar Plotted Communities Private Limited",
-                Industry = "Plotted Real Estate & Farmland",
-                Status = "Active",
-                SubscriptionPlan = "Plotted Land Operations Pro",
-                LeadSla = 30,
-                CallEnabled = true,
-                RecordingEnabled = true,
-                TranscriptionEnabled = true,
+                SubscriptionPlan = "Wealth Advisory Enterprise Suite",
                 IsActive = true,
                 IsProtected = true,
                 CreatedAt = new DateTime(2026, 1, 1, 0, 0, 0, DateTimeKind.Utc)
@@ -586,78 +555,11 @@ LegalName = "Jamin Bazaar Plotted Communities Private Limited",
             }
         );
 
-
-        // 8. Tenant Virtual DIDs (IDs 1, 2, 3)
-        modelBuilder.Entity<TenantDidMapping>().HasData(
-            new TenantDidMapping
-            {
-                Id = 1,
-                PhoneNumber = "+91 80 4700 8001",
-                TenantId = 1,
-                RoutingStrategy = "Skill/Priority",
-                QueueName = "HNW Wealth Advisory Queue",
-                EnableRecording = true,
-                EnableAiWhisper = true,
-                Status = "Online",
-                ChannelsCount = 8,
-                AllocatedAt = new DateTime(2026, 1, 10, 10, 0, 0, DateTimeKind.Utc),
-                Notes = "Primary inbound trunk for HNW wealth consultations"
-            },
-            new TenantDidMapping
-            {
-                Id = 2,
-                PhoneNumber = "+91 80 4700 8002",
-                TenantId = 2,
-                RoutingStrategy = "Round-Robin",
-                QueueName = "Plotted Enclaves Telecallers",
-                EnableRecording = true,
-                EnableAiWhisper = true,
-                Status = "Online",
-                ChannelsCount = 12,
-                AllocatedAt = new DateTime(2026, 1, 15, 14, 30, 0, DateTimeKind.Utc),
-                Notes = "Buyer inquiry hotline for gated community layouts"
-            },
-            new TenantDidMapping
-            {
-                Id = 3,
-                PhoneNumber = "+91 80 4700 8003",
-                TenantId = null,
-                RoutingStrategy = "Round-Robin",
-                QueueName = "Available DID Reserve",
-                EnableRecording = false,
-                EnableAiWhisper = false,
-                Status = "Reserved",
-                ChannelsCount = 4,
-                AllocatedAt = new DateTime(2026, 2, 1, 9, 0, 0, DateTimeKind.Utc),
-                Notes = "Spare DID number for next enterprise onboarding"
-            }
-        );
-
-        // 9. Platform Carrier Settings (ID 1)
-        modelBuilder.Entity<PlatformCarrierSettings>().HasData(
-            new PlatformCarrierSettings
-            {
-                Id = 1,
-                PrimaryCarrier = "Twilio Elastic SIP Trunking (Mumbai AP-South)",
-                SecondaryCarrier = "Exotel Cloud Gateway (Failover Redundant)",
-                SipRealm = "sip.trunk.nexusplatform.io:5060",
-                WebRtcGatewayUrl = "wss://webrtc.nexusplatform.io/gateway",
-                RecordingRetentionDays = 180,
-                MaxConcurrentChannels = 100,
-                EmergencyRoutingEnabled = true,
-                WhisperAiModel = "OpenAI Whisper-Large-v3 (Self-Hosted on GPU cluster)",
-                LastTestedAt = new DateTime(2026, 9, 26, 10, 0, 0, DateTimeKind.Utc),
-                TestStatus = "Success",
-                UpdatedAt = new DateTime(2026, 9, 26, 10, 0, 0, DateTimeKind.Utc)
-            }
-        );
-
-        // 11. Platform Setting (ID 1)
         modelBuilder.Entity<PlatformSetting>().HasData(
             new PlatformSetting
             {
                 Id = 1,
-Key = "maintenance_mode",
+                Key = "maintenance_mode",
                 Value = "{\"enabled\":false,\"message\":\"Platform under scheduled maintenance.\",\"bypassSecret\":\"nexus-admin-2026\"}",
                 Description = "Global platform maintenance mode switch",
                 UpdatedBy = "Super Admin",
@@ -726,6 +628,5 @@ Key = "maintenance_mode",
             b.HasIndex(x => x.TicketId);
             b.HasIndex(x => x.CreatedAt);
         });
-
     }
 }
