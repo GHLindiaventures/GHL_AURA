@@ -39,6 +39,12 @@ public class ApplicationDbContext : DbContext
     /// <summary>Immutable audit log of every create/update/delete action across all tenants.</summary>
     public DbSet<AuditLog> AuditLogs => Set<AuditLog>();
 
+    public DbSet<SiteVisit> SiteVisits => Set<SiteVisit>();
+    public DbSet<JaminProject> JaminProjects => Set<JaminProject>();
+    public DbSet<JaminPlot> JaminPlots => Set<JaminPlot>();
+    public DbSet<JaminBooking> JaminBookings => Set<JaminBooking>();
+    public DbSet<JaminPayment> JaminPayments => Set<JaminPayment>();
+
     // ── Super Admin Platform Management Entities ─────────────────────────────
     public DbSet<SubscriptionPackage> SubscriptionPackages => Set<SubscriptionPackage>();
     public DbSet<CarrierSettings> CarrierSettings => Set<CarrierSettings>();
@@ -119,6 +125,47 @@ public class ApplicationDbContext : DbContext
 
         // Apply entity configurations
         modelBuilder.ApplyConfigurationsFromAssembly(typeof(ApplicationDbContext).Assembly);
+
+        modelBuilder.Entity<JaminBooking>(entity =>
+        {
+            entity.HasIndex(booking => new { booking.CompanyId, booking.PlotId })
+                .HasDatabaseName("IX_jamin_bookings_CompanyId_PlotId_Active")
+                .HasFilter("\"PlotId\" IS NOT NULL AND \"Status\" IN ('Hold', 'Pending Verification', 'Booking Pending Verification', 'Token Paid', 'Token Verified', 'Agreement Signed', 'Registration Completed')")
+                .IsUnique();
+        });
+
+        modelBuilder.Entity<JaminPayment>(entity =>
+        {
+            entity.ToTable("jamin_payments");
+            entity.Property(payment => payment.Amount).HasPrecision(18, 2);
+            entity.Property(payment => payment.PaymentType).HasMaxLength(50);
+            entity.Property(payment => payment.PaymentMode).HasMaxLength(100);
+            entity.Property(payment => payment.TransactionReference).HasMaxLength(200);
+            entity.Property(payment => payment.Status).HasMaxLength(50);
+            entity.Property(payment => payment.VerifiedByName).HasMaxLength(150);
+            entity.Property(payment => payment.ReceiptNumber).HasMaxLength(100);
+            entity.Property(payment => payment.Notes).HasMaxLength(2000);
+            entity.HasOne(payment => payment.Booking)
+                .WithMany(booking => booking.Payments)
+                .HasForeignKey(payment => payment.BookingId)
+                .OnDelete(DeleteBehavior.Restrict);
+            entity.HasOne(payment => payment.Customer)
+                .WithMany(customer => customer.Payments)
+                .HasForeignKey(payment => payment.CustomerId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(payment => payment.Company)
+                .WithMany()
+                .HasForeignKey(payment => payment.CompanyId)
+                .OnDelete(DeleteBehavior.Cascade);
+            entity.HasOne(payment => payment.Lead)
+                .WithMany()
+                .HasForeignKey(payment => payment.LeadId)
+                .OnDelete(DeleteBehavior.SetNull);
+            entity.HasOne(payment => payment.VerifiedByUser)
+                .WithMany()
+                .HasForeignKey(payment => payment.VerifiedByUserId)
+                .OnDelete(DeleteBehavior.SetNull);
+        });
 
         // Handover relationships on entities
         modelBuilder.Entity<Lead>(b =>

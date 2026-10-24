@@ -23,6 +23,7 @@ import { Deal } from '../../../types';
 import { normalizeLegacyKycStatus } from '../../../services/kycService';
 import { saveDeal } from '../../../services/ghlApiService';
 import { getAuthHeaders } from '../../../utils/authHeaders';
+import { openDocumentPreview } from '../../../utils/documentPreview';
 import './KycLinkComponents.css';
 
 interface KycReviewDrawerProps {
@@ -397,15 +398,9 @@ export const KycReviewDrawer: React.FC<KycReviewDrawerProps> = ({
 
   const handleViewDoc = (doc: { name: string; url?: string }) => {
     if (doc.url) {
-      const w = window.open('');
-      if (w) {
-        if (doc.url.startsWith('data:application/pdf')) {
-          w.document.write(`<iframe src="${doc.url}" style="width:100%;height:100%;border:none;"></iframe>`);
-        } else {
-          w.document.write(
-            `<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#0f172a;margin:0;"><img src="${doc.url}" style="max-width:90%;max-height:90vh;border-radius:8px;" alt="${doc.name}" /></div>`
-          );
-        }
+      const result = openDocumentPreview(doc.url, doc.name);
+      if (result !== 'opened') {
+        onShowToast(result === 'invalid-url' ? 'Invalid or unsafe document URL.' : 'Unable to open document preview.');
       }
     } else {
       onShowToast(`Viewing ${doc.name}`);

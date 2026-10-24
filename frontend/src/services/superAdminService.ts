@@ -11,6 +11,7 @@ import {
   SystemDiagnostics,
   BroadcastAnnouncement,
   PlatformMetrics,
+  PlatformLeadsResponse,
   GlobalConfig,
   SystemHealthReport,
   SpeechVocabulary,
@@ -2711,6 +2712,32 @@ export class SuperAdminService {
     const res = await apiClient.delete<ApiResponse<any>>(`/super-admin/documents/${id}`);
     window.dispatchEvent(new Event('nexus_storage_updated'));
     return res.success;
+  }
+
+  async fetchPlatformLeads(params?: {
+    page?: number;
+    pageSize?: number;
+    search?: string;
+    status?: string;
+    priority?: string;
+    tenantId?: number;
+    source?: string;
+    startDate?: string;
+    endDate?: string;
+    sortBy?: string;
+    sortOrder?: string;
+  }): Promise<PlatformLeadsResponse> {
+    const queryParams: Record<string, string | number> = {
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    };
+    Object.entries(params ?? {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== null && value !== '') {
+        queryParams[key] = value;
+      }
+    });
+    const response = await apiClient.get<ApiResponse<PlatformLeadsResponse>>('/super-admin/leads', queryParams);
+    if (response?.data) return response.data;
+    throw new Error('Failed to fetch platform leads');
   }
 }
 

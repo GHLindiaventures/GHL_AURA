@@ -5,6 +5,7 @@ import { FileText, FileImage, FileSpreadsheet, Trash2, File, Share2, Mail, Messa
 import { DocumentItem } from '../../types';
 import { EmptyState } from './EmptyState';
 import { useAuth } from '../../context/AuthContext';
+import { openDocumentLink } from '../../utils/documentPreview';
 import './DocumentList.css';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -197,7 +198,7 @@ export const DocumentList: React.FC<DocumentListProps> = ({
               title="Share via WhatsApp"
               onClick={() => {
                 const text = encodeURIComponent(`Hi, here is the document you requested: ${doc.name}\n${doc.fileUrl || ''}`);
-                window.open(`https://wa.me/?text=${text}`, '_blank');
+                window.open(`https://wa.me/?text=${text}`, '_blank', 'noopener,noreferrer');
               }}
             >
               <MessageSquare size={16} color="#25D366" />
@@ -217,9 +218,12 @@ export const DocumentList: React.FC<DocumentListProps> = ({
               className="document-action-btn download-btn"
               title="Download / Copy Link"
               onClick={() => {
-                navigator.clipboard.writeText(doc.fileUrl || '');
                 if (doc.fileUrl) {
-                  window.open(doc.fileUrl, '_blank');
+                  if (openDocumentLink(doc.fileUrl)) {
+                    navigator.clipboard.writeText(doc.fileUrl);
+                  } else {
+                    alert('Invalid document file URL.');
+                  }
                 } else {
                   alert('This is a mock document metadata log. No actual file was uploaded yet.');
                 }

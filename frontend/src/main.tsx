@@ -6,6 +6,7 @@ import { AuthProvider } from './context/AuthContext';
 import { NavigationGuardProvider } from './context/NavigationGuardContext';
 import { CallProvider } from './context/CallContext';
 import { ThemeProvider } from './context/ThemeContext';
+import { ToastProvider } from './context/ToastContext';
 import { CustomerKycApp } from './pages/CustomerKyc/CustomerKycApp';
 import { ResetPasswordPage } from './pages/Auth/ResetPasswordPage';
 import { ErrorBoundary } from './components/common/ErrorBoundary';
@@ -31,7 +32,9 @@ createRoot(document.getElementById('root')!).render(
           <NavigationGuardProvider>
             <ThemeProvider>
               <CallProvider>
-                <App />
+                <ToastProvider>
+                  <App />
+                </ToastProvider>
               </CallProvider>
             </ThemeProvider>
           </NavigationGuardProvider>

@@ -97,6 +97,11 @@ public static class ServiceExtensions
         services.AddScoped<IWorkHandoverService, WorkHandoverService>();
         services.AddScoped<ILeaveRequestService, LeaveRequestService>();
         services.AddScoped<ICompanyClock, CompanyClock>();
+        services.AddScoped<backend.Services.Interfaces.Jamin.IJaminSiteVisitService, backend.Services.Implementations.Jamin.JaminSiteVisitService>();
+        services.AddScoped<backend.Services.Interfaces.Jamin.IJaminLeadService, backend.Services.Implementations.Jamin.JaminLeadService>();
+        services.AddScoped<backend.Services.Interfaces.Jamin.IJaminProjectService, backend.Services.Implementations.Jamin.JaminProjectService>();
+        services.AddScoped<backend.Services.Interfaces.Jamin.IJaminPlotService, backend.Services.Implementations.Jamin.JaminPlotService>();
+        services.AddScoped<backend.Services.Interfaces.Jamin.IJaminBookingService, backend.Services.Implementations.Jamin.JaminBookingService>();
 
         // AI Services
         services.Configure<backend.Services.Ai.AiSettings>(configuration.GetSection("Ai"));

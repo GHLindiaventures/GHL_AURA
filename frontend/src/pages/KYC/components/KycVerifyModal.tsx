@@ -24,6 +24,7 @@ import { useAuth } from '../../../context/AuthContext';
 import { PERMISSIONS } from '../../../constants/permissions';
 import { isMockMode } from '../../../config/environment';
 import { getAuthHeaders } from '../../../utils/authHeaders';
+import { openDocumentPreview } from '../../../utils/documentPreview';
 import './KycVerifyModal.css';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -455,14 +456,12 @@ export const KycVerifyModal: React.FC<KycVerifyModalProps> = ({
   onShowToast,
 }) => {
   const { user, permissions } = useAuth();
-  const canVerify =
-    permissions.includes(PERMISSIONS.KYC_VERIFY) ||
+  const canVerify = Boolean(
+    (permissions && Array.isArray(permissions) && permissions.includes(PERMISSIONS.KYC_VERIFY)) ||
     user?.role?.code === 'irm' ||
     user?.role?.code === 'company_admin' ||
-    user?.role?.code === 'super_admin' ||
-    user?.role?.code === 'sales_executive' ||
-    !permissions ||
-    permissions.length === 0;
+    user?.role?.code === 'super_admin'
+  );
 
   // Real submitted record fetched live from backend
   const [liveKycData, setLiveKycData] = useState<any | null>(null);
@@ -612,18 +611,15 @@ export const KycVerifyModal: React.FC<KycVerifyModalProps> = ({
       onShowToast(`No preview file available for ${doc.name}.`);
       return;
     }
-    const isPdf = doc.url.startsWith('data:application/pdf') || doc.url.toLowerCase().includes('.pdf');
-    const w = window.open('');
-    if (w) {
-      if (isPdf) {
-        w.document.write(
-          `<title>${doc.name}</title><iframe src="${doc.url}" style="width:100%;height:100%;border:none;margin:0;position:fixed;top:0;left:0;right:0;bottom:0;"></iframe>`
-        );
-      } else {
-        w.document.write(
-          `<title>${doc.name}</title><div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#090d16;margin:0;"><img src="${doc.url}" style="max-width:92%;max-height:92vh;border-radius:10px;box-shadow:0 12px 36px rgba(0,0,0,0.6);" alt="${doc.name}" /></div>`
-        );
-      }
+    const result = openDocumentPreview(doc.url, doc.name, {
+      backgroundColor: '#090d16',
+      maxWidth: '92%',
+      maxHeight: '92vh',
+      borderRadius: '10px',
+      boxShadow: '0 12px 36px rgba(0,0,0,0.6)',
+    });
+    if (result !== 'opened') {
+      onShowToast(result === 'invalid-url' ? 'Invalid or unsafe document URL.' : 'Unable to open document preview.');
     }
   };
 

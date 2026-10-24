@@ -44,6 +44,7 @@ builder.Services.AddApplicationServices(builder.Configuration);
 builder.Services.AddJwtAuthentication(builder.Configuration);
 builder.Services.AddAuthorization();
 builder.Services.AddSignalR();
+builder.Services.AddHostedService<backend.Services.Implementations.JaminHoldExpiryBackgroundService>();
 
 // 4. Configure CORS
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() 
@@ -901,6 +902,12 @@ IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'consultat
         catch (Exception ex)
         {
             Console.WriteLine($"[Database IRM/GHL Schema Sync Warning] {ex.Message}");
+        }
+
+        if (db.Database.IsNpgsql())
+        {
+            backend.Data.JaminSchemaInitializer.Apply(db);
+            Console.WriteLine("[Database] Jamin schema initialized or verified.");
         }
 
         if (!ensureCreatedForDevelopment)

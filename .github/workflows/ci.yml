@@ -75,6 +75,23 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Validate SonarQube Cloud configuration
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+          SONAR_PROJECT_KEY: ${{ vars.SONAR_BACKEND_PROJECT_KEY }}
+        run: |
+          missing=0
+          for name in SONAR_TOKEN SONAR_ORGANIZATION SONAR_PROJECT_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Required GitHub Actions secret/variable is missing: $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
+
       - name: 🔎 Analyze Backend
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -100,6 +117,23 @@ jobs:
         uses: actions/checkout@v4
         with:
           fetch-depth: 0
+
+      - name: Validate SonarQube Cloud configuration
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_ORGANIZATION: ${{ vars.SONAR_ORGANIZATION }}
+          SONAR_PROJECT_KEY: ${{ vars.SONAR_FRONTEND_PROJECT_KEY }}
+        run: |
+          missing=0
+          for name in SONAR_TOKEN SONAR_ORGANIZATION SONAR_PROJECT_KEY; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Required GitHub Actions secret/variable is missing: $name"
+              missing=1
+            fi
+          done
+          if [ "$missing" -ne 0 ]; then
+            exit 1
+          fi
 
       - name: 🔎 Analyze Frontend
         uses: SonarSource/sonarqube-scan-action@v8.3.0

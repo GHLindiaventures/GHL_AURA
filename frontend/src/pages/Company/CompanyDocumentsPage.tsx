@@ -30,6 +30,7 @@ import { apiClient } from '../../services/apiClient';
 import { isMockMode } from '../../config/environment';
 import { Modal } from '../../components/common/Modal';
 import { superAdminService } from '../../services/superAdminService';
+import { openDocumentLink } from '../../utils/documentPreview';
 import './CompanyDocumentsPage.css';
 
 const COMPANY_CATEGORIES = [
@@ -285,7 +286,7 @@ export const CompanyDocumentsPage: React.FC = () => {
     const text = encodeURIComponent(
       `Hello, here is the official ${doc.category} from ${tenant?.name || 'our company'}: "${doc.name}"\n${doc.fileUrl || ''}\n\nPlease let us know if you have any questions.`
     );
-    window.open(`https://wa.me/?text=${text}`, '_blank');
+    window.open(`https://wa.me/?text=${text}`, '_blank', 'noopener,noreferrer');
   };
 
   const handleShareEmail = (doc: DocumentItem) => {
@@ -539,7 +540,9 @@ export const CompanyDocumentsPage: React.FC = () => {
                         title="Download file"
                         onClick={() => {
                           if (doc.fileUrl && doc.fileUrl !== '#') {
-                            window.open(doc.fileUrl, '_blank');
+                            if (!openDocumentLink(doc.fileUrl)) {
+                              showToast('error', 'Invalid document file URL.');
+                            }
                           } else {
                             showToast('error', 'Sample document does not have a downloadable file.');
                           }

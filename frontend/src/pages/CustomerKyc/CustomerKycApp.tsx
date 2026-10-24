@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
+import { openDocumentPreview } from '../../utils/documentPreview';
 import {
   ShieldCheck,
   Lock,
@@ -413,14 +414,14 @@ export const CustomerKycApp: React.FC = () => {
   const handlePreviewDoc = (docKey: 'pan' | 'aadhaar' | 'bank' | 'demat') => {
     const doc = documents[docKey];
     if (!doc.dataUrl) return;
-    const w = window.open('');
-    if (w) {
-      if (doc.dataUrl.startsWith('data:application/pdf')) {
-        w.document.write(`<iframe src="${doc.dataUrl}" style="width:100%;height:100%;border:none;"></iframe>`);
-      } else {
-        w.document.write(`<div style="display:flex;align-items:center;justify-content:center;min-height:100vh;background:#0f172a;margin:0;"><img src="${doc.dataUrl}" style="max-width:90%;max-height:90vh;border-radius:8px;" alt="${doc.name}" /></div>`);
-      }
-    }
+    const result = openDocumentPreview(doc.dataUrl, doc.name);
+    setDocErrors(
+      result === 'opened'
+        ? null
+        : result === 'invalid-url'
+          ? 'This document has an invalid or unsafe URL.'
+          : 'Unable to open document preview.',
+    );
   };
 
   const handleProceedToConsent = () => {

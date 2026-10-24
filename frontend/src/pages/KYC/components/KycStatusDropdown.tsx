@@ -70,14 +70,12 @@ export const KycStatusDropdown: React.FC<Props> = ({
   disablePopup = false,
 }) => {
   const { permissions, user } = useAuth();
-  const canVerify =
-    permissions.includes(PERMISSIONS.KYC_VERIFY) ||
+  const canVerify = Boolean(
+    (permissions && Array.isArray(permissions) && permissions.includes(PERMISSIONS.KYC_VERIFY)) ||
     user?.role?.code === 'irm' ||
     user?.role?.code === 'company_admin' ||
-    user?.role?.code === 'super_admin' ||
-    user?.role?.code === 'sales_executive' ||
-    !permissions ||
-    permissions.length === 0;
+    user?.role?.code === 'super_admin'
+  );
 
   const currentStatus = normalizeLegacyKycStatus(deal.kycStatus, deal.verifiedBy);
 

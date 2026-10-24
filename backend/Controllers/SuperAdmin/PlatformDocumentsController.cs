@@ -18,6 +18,13 @@ namespace backend.Controllers.SuperAdmin
         private readonly ApplicationDbContext _context;
         private readonly IWebHostEnvironment _env;
 
+        private static readonly HashSet<string> AllowedExtensions = new(StringComparer.OrdinalIgnoreCase)
+        {
+            ".pdf", ".doc", ".docx", ".xls", ".xlsx", ".csv", ".ppt", ".pptx",
+            ".txt", ".png", ".jpg", ".jpeg", ".webp"
+        };
+        private const long MaxUploadSizeBytes = 25 * 1024 * 1024;
+
         public PlatformDocumentsController(ApplicationDbContext context, IWebHostEnvironment env)
         {
             _context = context;
@@ -146,6 +153,17 @@ namespace backend.Controllers.SuperAdmin
                 return BadRequest(ApiResponse<object>.ErrorResponse("File is required for upload."));
             }
 
+            if (dto.File.Length > MaxUploadSizeBytes)
+            {
+                return BadRequest(ApiResponse<object>.ErrorResponse("File size exceeds maximum allowed limit of 25 MB."));
+            }
+
+            var extension = Path.GetExtension(dto.File.FileName);
+            if (string.IsNullOrWhiteSpace(extension) || !AllowedExtensions.Contains(extension))
+            {
+                return BadRequest(ApiResponse<object>.ErrorResponse("File extension is not permitted."));
+            }
+
             var userName = User.FindFirstValue(ClaimTypes.Name) 
                         ?? User.FindFirstValue("name") 
                         ?? "Super Admin";
@@ -175,7 +193,7 @@ namespace backend.Controllers.SuperAdmin
                 Directory.CreateDirectory(uploadsFolder);
             }
 
-            var uniqueFileName = "platform_" + Guid.NewGuid().ToString("N") + Path.GetExtension(dto.File.FileName);
+            var uniqueFileName = "platform_" + Guid.NewGuid().ToString("N") + extension;
             var filePath = Path.Combine(uploadsFolder, uniqueFileName);
 
             using (var stream = new FileStream(filePath, FileMode.Create))

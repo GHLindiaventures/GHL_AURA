@@ -37,6 +37,11 @@ public class AuditLog
     /// <summary>String representation of the affected entity's primary key.</summary>
     public string EntityId { get; set; } = string.Empty;
 
+    public int? LeadId { get; set; }
+    public Lead? Lead { get; set; }
+    public int? CustomerId { get; set; }
+    public Customer? Customer { get; set; }
+
     /// <summary>Human-readable description of what changed.</summary>
     public string Details { get; set; } = string.Empty;
 

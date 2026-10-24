@@ -321,6 +321,8 @@ dotnet ef database update
 
 The backend startup checks will log a warning banner if any migrations are pending.
 
+Jamin project, plot, booking, payment, and site-visit tables are initialized idempotently when the backend starts with PostgreSQL. This initializer only creates or adjusts the required schema; it does not run pending EF migrations or delete/seed application data. The database user must have permission to create tables, alter columns, and create indexes.
+
 4. Run the API:
    ```bash
    dotnet run --launch-profile http

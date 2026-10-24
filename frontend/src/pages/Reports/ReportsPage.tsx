@@ -704,11 +704,11 @@ export const ReportsPage: React.FC = () => {
           ? bookings.filter(b => (b.agentId && b.agentId === user?.id) || (b.agentName && b.agentName === user?.name))
           : bookings;
 
-        const periodVisits = scopedVisits.filter(v => isWithinPeriod(v.scheduledAt, period));
+        const periodVisits = scopedVisits.filter(v => v.scheduledAt && isWithinPeriod(v.scheduledAt, period));
         const completedVisits = periodVisits.filter(v => v.status === 'Completed').length;
         const noShowVisits = periodVisits.filter(v => v.status === 'No-show').length;
 
-        const periodBookings = scopedBookings.filter(b => isWithinPeriod(b.bookingDate, period));
+        const periodBookings = scopedBookings.filter(b => b.bookingDate && isWithinPeriod(b.bookingDate, period));
         const bookingRate = periodVisits.length > 0 ? ((periodBookings.length / periodVisits.length) * 100).toFixed(1) : null;
         const totalBookingValue = periodBookings.reduce((acc, b) => acc + (b.totalAmount || 0), 0);
 
@@ -852,4 +852,3 @@ export const ReportsPage: React.FC = () => {
     </div>
   );
 };
-

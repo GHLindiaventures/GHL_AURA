@@ -9,6 +9,7 @@ using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 
 namespace backend.Controllers.SuperAdmin;
 
@@ -661,6 +662,216 @@ public class PlatformUsersController : ControllerBase
         return Ok(ApiResponse<CallsTodayMetricsDto>.SuccessResult(result));
     }
 
+    [HttpGet("~/api/super-admin/leads")]
+    public async Task<ActionResult<ApiResponse<PlatformLeadsResponseDto>>> GetAllLeads(
+        [FromQuery] int page = 1,
+        [FromQuery] int pageSize = 20,
+        [FromQuery] string? search = null,
+        [FromQuery] string? status = null,
+        [FromQuery] string? priority = null,
+        [FromQuery] int? tenantId = null,
+        [FromQuery] string? source = null,
+        [FromQuery] string? startDate = null,
+        [FromQuery] string? endDate = null,
+        [FromQuery] string? sortBy = "createdAt",
+        [FromQuery] string? sortOrder = "desc",
+        [FromQuery] string? timeZone = null,
+        [FromServices] IMemoryCache? cache = null,
+        CancellationToken ct = default)
+    {
+        var safePageSize = Math.Clamp(pageSize, 1, 100);
+        var safePage = Math.Clamp(page, 1, int.MaxValue / safePageSize + 1);
+        var safeSearch = search?.Trim();
+        if (safeSearch?.Length > 200)
+        {
+            safeSearch = safeSearch[..200];
+        }
+
+        var cacheKey = $"platform_leads:{safePage}:{safePageSize}:{safeSearch}:{status}:{priority}:{tenantId}:{source}:{startDate}:{endDate}:{sortBy}:{sortOrder}:{timeZone}";
+        if (cache?.TryGetValue(cacheKey, out PlatformLeadsResponseDto? cachedResponse) == true && cachedResponse != null)
+        {
+            return Ok(ApiResponse<PlatformLeadsResponseDto>.SuccessResult(cachedResponse));
+        }
+
+        var query = _context.Leads.AsNoTracking();
+        if (!string.IsNullOrWhiteSpace(safeSearch))
+        {
+            var normalizedSearch = safeSearch.ToLowerInvariant();
+            query = query.Where(lead =>
+                lead.Name.ToLower().Contains(normalizedSearch) ||
+                lead.Email.ToLower().Contains(normalizedSearch) ||
+                lead.Phone.Contains(safeSearch) ||
+                lead.Location.ToLower().Contains(normalizedSearch));
+        }
+
+        if (!string.IsNullOrWhiteSpace(status))
+        {
+            query = query.Where(lead => lead.Status == status);
+        }
+
+        if (!string.IsNullOrWhiteSpace(priority))
+        {
+            query = query.Where(lead => lead.Priority == priority);
+        }
+
+        if (tenantId.HasValue)
+        {
+            query = query.Where(lead => lead.CompanyId == tenantId.Value);
+        }
+
+        if (!string.IsNullOrWhiteSpace(source))
+        {
+            query = query.Where(lead => lead.Source == source);
+        }
+
+        var timeZoneInfo = ResolveTimeZone(timeZone);
+        if (!string.IsNullOrWhiteSpace(startDate))
+        {
+            if (!DateOnly.TryParseExact(startDate, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsedStartDate))
+            {
+                return BadRequest(ApiResponse<PlatformLeadsResponseDto>.FailureResult("startDate must use yyyy-MM-dd format."));
+            }
+
+            var localStart = DateTime.SpecifyKind(parsedStartDate.ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified);
+            var utcStart = TimeZoneInfo.ConvertTimeToUtc(localStart, timeZoneInfo);
+            query = query.Where(lead => lead.CreatedAt >= utcStart);
+        }
+
+        if (!string.IsNullOrWhiteSpace(endDate))
+        {
+            if (!DateOnly.TryParseExact(endDate, "yyyy-MM-dd", System.Globalization.CultureInfo.InvariantCulture, System.Globalization.DateTimeStyles.None, out var parsedEndDate))
+            {
+                return BadRequest(ApiResponse<PlatformLeadsResponseDto>.FailureResult("endDate must use yyyy-MM-dd format."));
+            }
+
+            var localEndExclusive = DateTime.SpecifyKind(parsedEndDate.AddDays(1).ToDateTime(TimeOnly.MinValue), DateTimeKind.Unspecified);
+            var utcEndExclusive = TimeZoneInfo.ConvertTimeToUtc(localEndExclusive, timeZoneInfo);
+            query = query.Where(lead => lead.CreatedAt < utcEndExclusive);
+        }
+
+        var totalCount = await query.CountAsync(ct);
+        var totalPages = (int)Math.Ceiling(totalCount / (double)safePageSize);
+        safePage = totalPages == 0 ? 1 : Math.Min(safePage, totalPages);
+
+        query = (sortBy?.ToLowerInvariant(), sortOrder?.ToLowerInvariant()) switch
+        {
+            ("name", "asc") => query.OrderBy(lead => lead.Name),
+            ("name", _) => query.OrderByDescending(lead => lead.Name),
+            ("status", "asc") => query.OrderBy(lead => lead.Status),
+            ("status", _) => query.OrderByDescending(lead => lead.Status),
+            ("priority", "asc") => query.OrderBy(lead => lead.Priority),
+            ("priority", _) => query.OrderByDescending(lead => lead.Priority),
+            ("tenant", "asc") => query.OrderBy(lead => lead.Company != null ? lead.Company.Name : string.Empty),
+            ("tenant", _) => query.OrderByDescending(lead => lead.Company != null ? lead.Company.Name : string.Empty),
+            ("createdat", "asc") => query.OrderBy(lead => lead.CreatedAt),
+            _ => query.OrderByDescending(lead => lead.CreatedAt)
+        };
+
+        var rawLeads = await query
+            .Skip((safePage - 1) * safePageSize)
+            .Take(safePageSize)
+            .Select(lead => new
+            {
+                lead.Id,
+                TenantId = lead.CompanyId,
+                TenantName = lead.Company != null ? lead.Company.Name : string.Empty,
+                lead.Name,
+                lead.Phone,
+                lead.Email,
+                lead.Status,
+                lead.Priority,
+                AssignedAgentName = lead.AssignedAgent != null ? lead.AssignedAgent.Name : null,
+                lead.Source,
+                lead.Location,
+                lead.CreatedAt
+            })
+            .ToListAsync(ct);
+
+        var items = rawLeads.Select(lead => new PlatformLeadDto
+        {
+            Id = lead.Id,
+            TenantId = lead.TenantId,
+            TenantName = string.IsNullOrEmpty(lead.TenantName) ? $"Tenant #{lead.TenantId}" : lead.TenantName,
+            Name = lead.Name,
+            Phone = lead.Phone,
+            Email = lead.Email,
+            Status = lead.Status,
+            Priority = lead.Priority,
+            AssignedAgentName = lead.AssignedAgentName,
+            Source = lead.Source,
+            Location = lead.Location,
+            CreatedAt = lead.CreatedAt.ToString("o")
+        }).ToList();
+
+        var summaryCacheKey = $"platform_leads_summary:{timeZone ?? "default"}";
+        PlatformLeadSummaryDto? summary = null;
+        if (cache?.TryGetValue(summaryCacheKey, out PlatformLeadSummaryDto? cachedSummary) == true)
+        {
+            summary = cachedSummary;
+        }
+
+        if (summary == null)
+        {
+            var (currentMonthStart, _, previousMonthStart) = GetMonthUtcRanges(timeZone);
+            var summaryCounts = await _context.Leads
+                .AsNoTracking()
+                .GroupBy(_ => 1)
+                .Select(group => new
+                {
+                    Total = group.Count(),
+                    NewLeads = group.Count(lead => lead.Status == "New"),
+                    InterestedLeads = group.Count(lead => lead.Status == "Interested"),
+                    ConvertedLeads = group.Count(lead => lead.Status == "Converted"),
+                    NotInterestedLeads = group.Count(lead => lead.Status == "Not Interested"),
+                    ThisMonthLeads = group.Count(lead => lead.CreatedAt >= currentMonthStart),
+                    LastMonthLeads = group.Count(lead => lead.CreatedAt >= previousMonthStart && lead.CreatedAt < currentMonthStart)
+                })
+                .FirstOrDefaultAsync(ct);
+
+            var tenantCounts = await _context.Leads
+                .AsNoTracking()
+                .GroupBy(lead => lead.CompanyId)
+                .Select(group => new { TenantId = group.Key, Count = group.Count() })
+                .ToListAsync(ct);
+            var tenantNames = await _context.Tenants
+                .AsNoTracking()
+                .Select(tenant => new { tenant.Id, tenant.Name })
+                .ToDictionaryAsync(tenant => tenant.Id, tenant => tenant.Name, ct);
+
+            summary = new PlatformLeadSummaryDto
+            {
+                Total = summaryCounts?.Total ?? 0,
+                NewLeads = summaryCounts?.NewLeads ?? 0,
+                InterestedLeads = summaryCounts?.InterestedLeads ?? 0,
+                ConvertedLeads = summaryCounts?.ConvertedLeads ?? 0,
+                NotInterestedLeads = summaryCounts?.NotInterestedLeads ?? 0,
+                ThisMonthLeads = summaryCounts?.ThisMonthLeads ?? 0,
+                LastMonthLeads = summaryCounts?.LastMonthLeads ?? 0,
+                ByTenant = tenantCounts.Select(item => new TenantLeadCountDto
+                {
+                    TenantId = item.TenantId,
+                    TenantName = tenantNames.TryGetValue(item.TenantId, out var name) ? name : $"Tenant #{item.TenantId}",
+                    Count = item.Count
+                }).OrderByDescending(item => item.Count).ToList()
+            };
+
+            cache?.Set(summaryCacheKey, summary, TimeSpan.FromSeconds(30));
+        }
+
+        var response = new PlatformLeadsResponseDto
+        {
+            Items = items,
+            TotalCount = totalCount,
+            Page = safePage,
+            PageSize = safePageSize,
+            TotalPages = Math.Max(1, totalPages),
+            Summary = summary
+        };
+
+        cache?.Set(cacheKey, response, TimeSpan.FromSeconds(10));
+        return Ok(ApiResponse<PlatformLeadsResponseDto>.SuccessResult(response));
+    }
+
     private static TimeZoneInfo ResolveTimeZone(string? timeZoneId)
     {
         TimeZoneInfo tz;
@@ -757,4 +968,3 @@ public class PlatformUsersController : ControllerBase
     }
 
 }
-
