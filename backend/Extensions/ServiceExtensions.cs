@@ -79,11 +79,7 @@ public static class ServiceExtensions
         services.Configure<JwtSettings>(configuration.GetSection(JwtSettings.SectionName));
         services.PostConfigure<JwtSettings>(options =>
         {
-            var envSecret = configuration["JWT_SECRET_KEY"];
-            if (string.IsNullOrWhiteSpace(envSecret) || envSecret.StartsWith("replace-with"))
-            {
-                envSecret = configuration["JwtSettings:SecretKey"];
-            }
+            var envSecret = configuration["JWT_SECRET_KEY"] ?? configuration["JwtSettings:SecretKey"];
             if (!string.IsNullOrWhiteSpace(envSecret))
             {
                 options.SecretKey = envSecret;

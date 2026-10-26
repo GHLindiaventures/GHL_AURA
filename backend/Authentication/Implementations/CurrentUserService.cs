@@ -35,7 +35,7 @@ public class CurrentUserService : ICurrentUserService
         }
     }
 
-    public string? Role => User?.FindFirst(ClaimTypes.Role)?.Value ?? User?.FindFirst("role")?.Value;
+    public string? Role => User?.FindFirst(ClaimTypes.Role)?.Value;
 
     public string? Email => User?.FindFirst(ClaimTypes.Email)?.Value;
 

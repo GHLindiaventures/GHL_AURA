@@ -648,7 +648,6 @@ public class PlatformUsersController : ControllerBase
     }
 
     [HttpGet("~/api/super-admin/metrics")]
-    [HttpGet("~/api/super-admin/system/metrics")]
     [HttpGet("~/api/platform/metrics")]
     public async Task<ActionResult<ApiResponse<PlatformMetricsDto>>> GetPlatformMetrics(
         [FromQuery] string? timeZone = null,
@@ -755,7 +754,6 @@ public class PlatformUsersController : ControllerBase
     }
 
     [HttpGet("~/api/super-admin/metrics/calls-today")]
-    [HttpGet("~/api/super-admin/system/metrics/calls-today")]
     [HttpGet("~/api/platform/metrics/calls-today")]
     public async Task<ActionResult<ApiResponse<CallsTodayMetricsDto>>> GetCallsTodayMetrics(
         [FromQuery] string? timeZone = null,

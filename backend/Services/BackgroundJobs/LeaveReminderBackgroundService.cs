@@ -40,23 +40,12 @@ public class LeaveReminderBackgroundService : BackgroundService
             {
                 await ProcessRemindersAsync(stoppingToken);
             }
-            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
+            catch (Exception ex) when (ex is not OperationCanceledException)
             {
-                break;
-            }
-            catch (Exception ex)
-            {
-                _logger.LogWarning(ex, "Error processing leave reminders: {Message}", ex.Message);
+                _logger.LogError(ex, "Error processing leave reminders");
             }
 
-            try
-            {
-                await Task.Delay(Interval, stoppingToken);
-            }
-            catch (OperationCanceledException)
-            {
-                break;
-            }
+            await Task.Delay(Interval, stoppingToken);
         }
     }
 

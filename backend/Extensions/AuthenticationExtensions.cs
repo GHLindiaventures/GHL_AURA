@@ -13,18 +13,12 @@ public static class AuthenticationExtensions
         var jwtSettings = configuration.GetSection(JwtSettings.SectionName).Get<JwtSettings>() 
                           ?? throw new InvalidOperationException("JwtSettings section is missing in configuration.");
 
-        var envSecret = configuration["JWT_SECRET_KEY"];
-        var effectiveSecretKey = (!string.IsNullOrWhiteSpace(envSecret) && !envSecret.StartsWith("replace-with"))
-            ? envSecret
-            : (configuration["JwtSettings:SecretKey"] ?? jwtSettings.SecretKey);
-
-        if (string.IsNullOrWhiteSpace(effectiveSecretKey) || effectiveSecretKey.Length < 32)
+        if (string.IsNullOrWhiteSpace(jwtSettings.SecretKey) || jwtSettings.SecretKey.Length < 32)
         {
             throw new InvalidOperationException("JwtSettings:SecretKey must be at least 32 characters long. Set it via the JwtSettings__SecretKey environment variable or a backend/.env file.");
         }
 
-        jwtSettings.SecretKey = effectiveSecretKey;
-        var key = Encoding.UTF8.GetBytes(effectiveSecretKey);
+        var key = Encoding.UTF8.GetBytes(jwtSettings.SecretKey);
 
         services.AddAuthentication(options =>
         {
@@ -80,9 +74,7 @@ public static class AuthenticationExtensions
                         }
 
                         // Enforce Tenant Suspension: Non-super-admins cannot access if tenant is suspended
-                        var roleCode = (context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value
-                                        ?? context.Principal?.FindFirst("role")?.Value
-                                        ?? user.Role?.Code)?.ToLowerInvariant();
+                        var roleCode = context.Principal?.FindFirst(System.Security.Claims.ClaimTypes.Role)?.Value?.ToLowerInvariant();
                         if (user.CompanyId.HasValue && roleCode != "super_admin")
                         {
                             var tenant = user.Company;

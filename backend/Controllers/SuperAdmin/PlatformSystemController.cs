@@ -1261,9 +1261,7 @@ public class PlatformSystemController : ControllerBase
 
         // 3. JWT Authentication & Security Infrastructure
         var authSw = Stopwatch.StartNew();
-        var secretKey = (!string.IsNullOrWhiteSpace(_configuration["JWT_SECRET_KEY"]) && !_configuration["JWT_SECRET_KEY"]!.StartsWith("replace-with"))
-            ? _configuration["JWT_SECRET_KEY"]!
-            : (_configuration["JwtSettings:SecretKey"] ?? string.Empty);
+        var secretKey = _configuration["JwtSettings:SecretKey"] ?? string.Empty;
         var issuer = _configuration["JwtSettings:Issuer"] ?? "NexusSalesApi";
         var audience = _configuration["JwtSettings:Audience"] ?? "NexusSalesClient";
         var expirationMin = _configuration.GetValue<int>("JwtSettings:ExpirationMinutes", 60);

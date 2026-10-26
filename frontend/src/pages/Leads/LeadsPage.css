@@ -725,8 +725,7 @@
   max-width: calc(100vw - 32px);
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
   overflow: hidden;
-  margin: auto;
-  animation: assignModalIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) ease-out;
+  animation: assign-slideUp 0.2s ease-out;
 }
 
 .assign-modal-header {
@@ -954,6 +953,7 @@
 .ai-dist-board::-webkit-scrollbar {
   height: 8px;
 }
+
 .ai-dist-board::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.15);
   border-radius: 4px;
@@ -1064,10 +1064,12 @@
 .ai-dist-col-body::-webkit-scrollbar {
   width: 6px;
 }
+
 .ai-dist-col-body::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.15);
   border-radius: 3px;
 }
+
 .ai-dist-col-body::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.28);
 }
@@ -1104,6 +1106,7 @@
 .ai-dist-lead-card.is-draggable {
   cursor: grab;
 }
+
 .ai-dist-lead-card.is-draggable:active {
   cursor: grabbing;
   opacity: 0.6;
@@ -1248,17 +1251,6 @@
 }
 
 /* ── Keyframes ───────────────────────────────────────────── */
-@keyframes assignModalIn {
-  from {
-    transform: scale(0.96) translateY(12px);
-    opacity: 0;
-  }
-  to {
-    transform: scale(1) translateY(0);
-    opacity: 1;
-  }
-}
-
 @keyframes assign-slideUp {
   from {
     transform: translateX(-50%) translateY(12px);
