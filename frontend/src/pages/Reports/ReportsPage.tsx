@@ -92,7 +92,7 @@ export const ReportsPage: React.FC = () => {
   const isWithinPeriod = (dateStr?: string | null, p: 'week' | 'month' | 'quarter' = 'month'): boolean => {
     if (!dateStr) return false;
     const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return false;
+    if (Number.isNaN(d.getTime())) return false;
     const now = new Date();
 
     const diffDays = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24);
@@ -375,7 +375,7 @@ export const ReportsPage: React.FC = () => {
   const isWithinMyPerfPeriod = (dateStr: string): boolean => {
     if (!dateStr) return false;
     const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return false;
+    if (Number.isNaN(d.getTime())) return false;
     const now = new Date();
     const diffDays = (now.getTime() - d.getTime()) / (1000 * 60 * 60 * 24);
     if (diffDays < 0) return true;

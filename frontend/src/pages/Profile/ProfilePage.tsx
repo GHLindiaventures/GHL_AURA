@@ -79,7 +79,7 @@ const fmtAvgDuration = (secs: number) => {
 const formatCallDateTime = (ts?: string): string => {
   if (!ts) return '—';
   const parsed = Date.parse(ts);
-  if (isNaN(parsed)) return '—';
+  if (Number.isNaN(parsed)) return '—';
   return new Date(parsed).toLocaleString('en-IN', {
     day: '2-digit',
     month: 'short',

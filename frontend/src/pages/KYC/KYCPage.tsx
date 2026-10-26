@@ -902,7 +902,7 @@ const GhlIrmKycView: React.FC = () => {
     const timestamp = deal.stageEnteredAt || deal.createdAt;
     if (!timestamp) return 0;
     const time = new Date(timestamp).getTime();
-    if (isNaN(time)) return 0;
+    if (Number.isNaN(time)) return 0;
     const diffMs = new Date().getTime() - time;
     const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     return Math.max(0, days);
@@ -920,7 +920,7 @@ const GhlIrmKycView: React.FC = () => {
     let hash = 0;
     for (let i = 0; i < deal.id.length; i++) {
       hash = (hash << 5) - hash + deal.id.charCodeAt(i);
-      hash |= 0;
+      hash |= 0; // intentional: coerce accumulator to 32-bit signed int (standard djb2 hash)
     }
     const clean = Math.abs(hash).toString().padEnd(6, '7').slice(0, 6);
     return `GHL${clean}`;
@@ -5452,7 +5452,7 @@ const OriginalKYCView: React.FC = () => {
     const timestamp = deal.stageEnteredAt || deal.createdAt;
     if (!timestamp) return 0;
     const time = new Date(timestamp).getTime();
-    if (isNaN(time)) return 0;
+    if (Number.isNaN(time)) return 0;
     const diffMs = new Date().getTime() - time;
     const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     return Math.max(0, days);

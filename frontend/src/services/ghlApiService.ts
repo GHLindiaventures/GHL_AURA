@@ -44,7 +44,7 @@ const nid = (s: string | number | undefined | null): number => {
   if (typeof s === 'number') return s;
   const cleaned = s.replace(/^[a-zA-Z_-]+/, '');
   const parsed = parseInt(cleaned, 10);
-  return isNaN(parsed) ? 0 : parsed;
+  return Number.isNaN(parsed) ? 0 : parsed;
 };
 
 // ── Tenant match helper ───────────────────────────────────────────────────────

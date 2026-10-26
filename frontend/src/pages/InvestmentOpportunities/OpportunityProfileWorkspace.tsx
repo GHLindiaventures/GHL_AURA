@@ -147,14 +147,14 @@ export const INVESTMENT_ROUTES: Record<'direct_aif' | 'debenture', InvestmentRou
 export const INVESTMENT_PRESETS = INVESTMENT_ROUTES.direct_aif.presets;
 
 function formatCurrency(amount: number): string {
-  if (isNaN(amount) || amount === 0) return '₹0';
+  if (Number.isNaN(amount) || amount === 0) return '₹0';
   if (amount >= 10000000) return `₹${(amount / 10000000).toFixed(2)} Cr`;
   if (amount >= 100000) return `₹${(amount / 100000).toFixed(2)} L`;
   return `₹${amount.toLocaleString('en-IN')}`;
 }
 
 function formatDuration(sec?: number): string {
-  if (!sec || isNaN(sec)) return '0s';
+  if (!sec || Number.isNaN(sec)) return '0s';
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   if (m === 0) return `${s}s`;
@@ -165,7 +165,7 @@ function formatDate(val?: string | null): string {
   if (!val) return '—';
   try {
     const d = new Date(val);
-    if (isNaN(d.getTime())) return val;
+    if (Number.isNaN(d.getTime())) return val;
     return d.toLocaleDateString('en-IN', {
       day: 'numeric',
       month: 'short',

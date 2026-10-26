@@ -408,7 +408,7 @@ export const IrmOtherPage: React.FC<IrmOtherPageProps> = ({ onNavigate }) => {
         width: '12%',
         render: record => {
           const d = new Date(record.lastCallAt);
-          const isDateValid = !isNaN(d.getTime());
+          const isDateValid = !Number.isNaN(d.getTime());
           return (
             <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
               <span style={{ fontSize: 12.5, fontWeight: 500, color: 'var(--text-primary)' }}>

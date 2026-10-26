@@ -542,12 +542,12 @@ export const jaminApiService = {
       let schedIso = new Date().toISOString();
       if (payload.scheduledAt) {
         const pDate = new Date(payload.scheduledAt);
-        if (!isNaN(pDate.getTime())) {
+        if (!Number.isNaN(pDate.getTime())) {
           schedIso = pDate.toISOString();
         } else {
           const cleaned = payload.scheduledAt.replace('•', ' ').replace(/\s+/g, ' ').trim();
           const p2 = new Date(cleaned);
-          schedIso = !isNaN(p2.getTime()) ? p2.toISOString() : new Date().toISOString();
+          schedIso = !Number.isNaN(p2.getTime()) ? p2.toISOString() : new Date().toISOString();
         }
       }
 

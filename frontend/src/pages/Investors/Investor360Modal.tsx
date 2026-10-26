@@ -126,7 +126,7 @@ function formatDate(val?: string | null): string {
   if (!val) return '—';
   try {
     const d = new Date(val);
-    if (isNaN(d.getTime())) return val;
+    if (Number.isNaN(d.getTime())) return val;
     return d.toLocaleDateString('en-IN', {
       day: '2-digit',
       month: 'short',
@@ -138,7 +138,7 @@ function formatDate(val?: string | null): string {
 }
 
 function formatDuration(sec?: number): string {
-  if (!sec || isNaN(sec)) return '0s';
+  if (!sec || Number.isNaN(sec)) return '0s';
   const m = Math.floor(sec / 60);
   const s = Math.floor(sec % 60);
   if (m === 0) return `${s}s`;

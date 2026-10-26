@@ -22,7 +22,7 @@ export function parseLocalDate(value: string): Date | null {
   }
 
   const d = new Date(trimmed);
-  return isNaN(d.getTime()) ? null : d;
+  return Number.isNaN(d.getTime()) ? null : d;
 }
 
 /**
@@ -434,7 +434,7 @@ export function validateKycStep(
           errs[`nominee_${idx}_dob`] = 'Enter a valid nominee date of birth (cannot be in the future).';
         }
         const pct = Number(nom.allocationPercentage);
-        if (isNaN(pct) || pct <= 0) {
+        if (Number.isNaN(pct) || pct <= 0) {
           errs[`nominee_${idx}_pct`] = 'Allocation percentage must be greater than 0%.';
         } else {
           totalPct += pct;

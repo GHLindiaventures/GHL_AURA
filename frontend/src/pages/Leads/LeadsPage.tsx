@@ -472,6 +472,8 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
       setAgents(dir.agents);
       setAdminIds(dir.adminIds);
       setAgentsFromApi(dir.fromApi);
+    }).catch(err => {
+      console.warn('[LeadsPage] Failed to load agent directory:', err);
     });
     return () => { cancelled = true; };
   }, [tenant?.id, user?.id, isLeadScopedUser]);
@@ -640,7 +642,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
       const crMatch = clean.match(/^(\d+\.?\d*)\s*(?:cr(?:ore)?)/);
       if (crMatch) return parseFloat(crMatch[1]);
       const num = parseFloat(clean.replace(/[^\d.]/g, ''));
-      if (!isNaN(num) && num > 0) return num / 1e7;
+      if (!Number.isNaN(num) && num > 0) return num / 1e7;
       return null;
     };
 
@@ -988,7 +990,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
       const fAgentId = f.assignedAgentId ? String(f.assignedAgentId) : '';
       if (fAgentId && currentAgentId && fAgentId !== currentAgentId) return false;
       const fTime = new Date(f.scheduledAt).getTime();
-      if (isNaN(fTime)) return false;
+      if (Number.isNaN(fTime)) return false;
       return Math.abs(targetMs - fTime) / (60 * 1000) < 20;
     });
 

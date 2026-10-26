@@ -182,7 +182,7 @@ export const IrmReportsView: React.FC = () => {
 
   // ── Formatters ───────────────────────────────────────────────────────────────
   const formatCurrency = (val: number) => {
-    if (!val || isNaN(val)) return '₹0';
+    if (!val || Number.isNaN(val)) return '₹0';
     if (val >= 10000000) return `₹${(val / 10000000).toFixed(2)} Cr`;
     if (val >= 100000) return `₹${(val / 100000).toFixed(2)} L`;
     return `₹${val.toLocaleString('en-IN')}`;
@@ -190,23 +190,23 @@ export const IrmReportsView: React.FC = () => {
 
   const parseAumToNumber = (val?: string | number): number => {
     if (val === undefined || val === null || val === '') return 0;
-    if (typeof val === 'number') return isNaN(val) ? 0 : val;
+    if (typeof val === 'number') return Number.isNaN(val) ? 0 : val;
     const clean = String(val).replace(/₹|,|\s/g, '').trim();
     if (!clean) return 0;
     if (clean.toLowerCase().includes('cr') || clean.toLowerCase().includes('crore')) {
       const num = parseFloat(clean);
-      return isNaN(num) ? 0 : num * 10000000;
+      return Number.isNaN(num) ? 0 : num * 10000000;
     }
     if (clean.toLowerCase().includes('l') || clean.toLowerCase().includes('lakh') || clean.toLowerCase().includes('lac')) {
       const num = parseFloat(clean);
-      return isNaN(num) ? 0 : num * 100000;
+      return Number.isNaN(num) ? 0 : num * 100000;
     }
     if (clean.toLowerCase().includes('k')) {
       const num = parseFloat(clean);
-      return isNaN(num) ? 0 : num * 1000;
+      return Number.isNaN(num) ? 0 : num * 1000;
     }
     const num = parseFloat(clean);
-    return isNaN(num) ? 0 : num;
+    return Number.isNaN(num) ? 0 : num;
   };
 
   const formatDuration = (seconds: number) => {

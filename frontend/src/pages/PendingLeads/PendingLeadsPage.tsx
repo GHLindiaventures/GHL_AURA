@@ -330,7 +330,7 @@ export const PendingLeadsPage: React.FC = () => {
     const dateStr = lead.assignedAt || lead.createdAt;
     if (!dateStr) return 0;
     const d = new Date(dateStr);
-    if (isNaN(d.getTime())) return 0;
+    if (Number.isNaN(d.getTime())) return 0;
     const diffMs = Date.now() - d.getTime();
     return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
   };
@@ -366,7 +366,7 @@ export const PendingLeadsPage: React.FC = () => {
       try {
         const leadId = parseInt(leadToReassign.id, 10);
         const numericAgentId = parseInt(selectedNewAgentId, 10);
-        if (!isNaN(leadId) && !isNaN(numericAgentId)) {
+        if (!Number.isNaN(leadId) && !Number.isNaN(numericAgentId)) {
           await apiClient.put(`/sales-executive/leads/${leadId}`, {
             assignedAgentId: numericAgentId,
           });

@@ -298,7 +298,7 @@ export const SiteVisitsPage: React.FC = () => {
 
         // Persist directly to backend database
         const numericId = parseInt(String(leadMatch.id).replace('db-', ''), 10);
-        if (!isNaN(numericId)) {
+        if (!Number.isNaN(numericId)) {
           apiClient.put(`/leads/${numericId}`, {
             name: updatedLead.name,
             phone: updatedLead.phone,
@@ -340,7 +340,7 @@ export const SiteVisitsPage: React.FC = () => {
         parsedDate = parts[0];
       } else if (parts[0]) {
         const d = new Date(parts[0]);
-        if (!isNaN(d.getTime())) {
+        if (!Number.isNaN(d.getTime())) {
           parsedDate = d.toISOString().split('T')[0];
         }
       }
@@ -492,7 +492,7 @@ export const SiteVisitsPage: React.FC = () => {
         setLeads(prev => prev.map(l => l.id === manageLeadMatch.id ? updatedLead : l));
 
         const numericId = parseInt(String(manageLeadMatch.id).replace('db-', ''), 10);
-        if (!isNaN(numericId)) {
+        if (!Number.isNaN(numericId)) {
           apiClient.put(`/leads/${numericId}`, {
             name: updatedLead.name,
             phone: updatedLead.phone,
@@ -535,7 +535,7 @@ export const SiteVisitsPage: React.FC = () => {
       : null;
     if (targetLead && targetLead.status !== 'Converted' && targetLead.status !== 'Booking In Progress') {
       const numId = parseInt(String(targetLead.id).replace('db-', ''), 10);
-      if (!isNaN(numId)) {
+      if (!Number.isNaN(numId)) {
         apiClient.put(`/leads/${numId}`, {
           name: targetLead.name,
           phone: targetLead.phone,

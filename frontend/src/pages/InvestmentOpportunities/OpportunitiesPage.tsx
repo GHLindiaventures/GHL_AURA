@@ -513,7 +513,7 @@ export const OpportunitiesPage: React.FC = () => {
     const timestamp = deal.stageEnteredAt || deal.createdAt;
     if (!timestamp) return 0;
     const time = new Date(timestamp).getTime();
-    if (isNaN(time)) return 0;
+    if (Number.isNaN(time)) return 0;
     const diffMs = new Date().getTime() - time;
     const days = Math.floor(diffMs / (1000 * 60 * 60 * 24));
     return Math.max(0, days);

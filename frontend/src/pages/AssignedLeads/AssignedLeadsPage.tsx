@@ -415,7 +415,9 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
 
   useEffect(() => {
     loadActiveCoverages();
-    getCompanyIrms(tenant?.id).then(list => setCompanyIrms(list || []));
+    getCompanyIrms(tenant?.id).then(list => setCompanyIrms(list || [])).catch(err => {
+      console.warn('[AssignedLeadsPage] Failed to load company IRMs:', err);
+    });
   }, [tenant?.id]);
 
   useEffect(() => {
@@ -424,6 +426,8 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
       if (cancelled) return;
       setAgents(dir.agents);
       setAdminIds(dir.adminIds);
+    }).catch(err => {
+      console.warn('[AssignedLeadsPage] Failed to load agent directory:', err);
     });
     return () => { cancelled = true; };
   }, [tenant?.id, user?.id]);
