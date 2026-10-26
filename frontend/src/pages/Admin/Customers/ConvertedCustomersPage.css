@@ -865,40 +865,42 @@
   100% { background-position: -200% 0; }
 }
 
-/* ── Customer Details Drawer ───────────────────────────────────────────────── */
+/* ── Customer Details Pop-up Page ───────────────────────────────────────────────── */
 .cc-drawer-overlay {
   position: fixed;
   inset: 0;
-  background-color: rgba(15, 23, 42, 0.45);
-  backdrop-filter: blur(4px);
+  background-color: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   z-index: 1000;
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(12px, 3vw, 24px);
+  box-sizing: border-box;
 }
 
 .dark-theme .cc-drawer-overlay, [data-theme='dark'] .cc-drawer-overlay {
-  background-color: rgba(0, 0, 0, 0.65);
+  background-color: rgba(0, 0, 0, 0.75);
 }
 
 .cc-drawer {
   width: 100%;
-  max-width: 540px;
-  height: 100%;
+  max-width: 640px;
+  max-height: min(92vh, 880px);
   background: var(--cc-drawer-bg);
-  border-left: 1px solid var(--cc-drawer-border);
+  border: 1px solid var(--cc-drawer-border);
+  border-radius: 20px;
   display: flex;
   flex-direction: column;
-  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.2);
-  animation: cc-slide-left 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.65), 0 0 0 1px var(--border-base);
+  overflow: hidden;
+  margin: auto;
+  animation: popupPageScaleCenter 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .dark-theme .cc-drawer, [data-theme='dark'] .cc-drawer {
-  box-shadow: -8px 0 32px rgba(0, 0, 0, 0.6);
-}
-
-@keyframes cc-slide-left {
-  from { transform: translateX(100%); }
-  to { transform: translateX(0); }
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.8), 0 0 0 1px var(--border-base);
 }
 
 .cc-drawer-header {

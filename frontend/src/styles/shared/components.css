@@ -437,3 +437,60 @@ h6 {
   font-style: normal;
 }
 
+/* ==========================================================================
+   Universal Centered Pop-up Page & Modal System (Applicable across all roles)
+   Ensures every pop-up page and modal opens in the exact dead center of the screen
+   ========================================================================== */
+
+:is(
+  .modal-backdrop,
+  .modal-overlay,
+  .assign-modal-overlay,
+  .opp-fund-modal-overlay,
+  .chat-preview-modal-overlay,
+  .handover-modal-overlay,
+  .kyc-link-modal-overlay,
+  .kyc-link-drawer-overlay,
+  .cc-drawer-overlay,
+  .drawer-overlay,
+  .popup-page-backdrop,
+  [class*="modal-overlay"],
+  [class*="drawer-overlay"],
+  [class*="popup-backdrop"]
+) {
+  position: fixed !important;
+  inset: 0 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  padding: clamp(12px, 3vw, 24px) !important;
+  box-sizing: border-box !important;
+  z-index: 1000 !important;
+  background-color: rgba(15, 23, 42, 0.72) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+}
+
+:is(
+  .modal-card,
+  .modal-content,
+  .assign-modal,
+  .ai-dist-modal,
+  .opp-fund-modal-dialog,
+  .chat-preview-modal-box,
+  .handover-modal-content,
+  .kyc-link-modal-container,
+  .kyc-link-drawer,
+  .cc-drawer,
+  .drawer-container,
+  .popup-page-dialog,
+  .modal-container
+) {
+  margin: auto !important;
+  max-height: min(92vh, 900px) !important;
+  border-radius: 20px !important;
+  overflow: hidden !important;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.65), 0 0 0 1px var(--border-base) !important;
+}
+
+

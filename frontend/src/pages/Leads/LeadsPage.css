@@ -725,7 +725,8 @@
   max-width: calc(100vw - 32px);
   box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5);
   overflow: hidden;
-  animation: assign-slideUp 0.2s ease-out;
+  margin: auto;
+  animation: assignModalIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) ease-out;
 }
 
 .assign-modal-header {
@@ -1247,6 +1248,17 @@
 }
 
 /* ── Keyframes ───────────────────────────────────────────── */
+@keyframes assignModalIn {
+  from {
+    transform: scale(0.96) translateY(12px);
+    opacity: 0;
+  }
+  to {
+    transform: scale(1) translateY(0);
+    opacity: 1;
+  }
+}
+
 @keyframes assign-slideUp {
   from {
     transform: translateX(-50%) translateY(12px);

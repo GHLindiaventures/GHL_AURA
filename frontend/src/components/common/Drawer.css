@@ -1,12 +1,104 @@
-@keyframes slideInRight {
+/* ==========================================================================
+   Centered Pop-up Page & Modal Dialog Component Styles
+   Applies across all roles for detail popups, inspections, and modal pages
+   ========================================================================== */
+
+@keyframes popupBackdropFadeIn {
   from {
-    transform: translateX(100%);
+    opacity: 0;
   }
   to {
-    transform: translateX(0);
+    opacity: 1;
   }
 }
 
+@keyframes popupPageScaleCenter {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(12px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+/* Backdrop overlay - dead center of the viewport */
+.popup-page-backdrop {
+  position: fixed !important;
+  inset: 0 !important;
+  z-index: 1000 !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  background-color: rgba(15, 23, 42, 0.72) !important;
+  backdrop-filter: blur(8px) !important;
+  -webkit-backdrop-filter: blur(8px) !important;
+  padding: clamp(12px, 3vw, 24px) !important;
+  box-sizing: border-box !important;
+  overflow-y: auto !important;
+  animation: popupBackdropFadeIn 0.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+/* Centered Pop-up Container Dialog */
+.popup-page-dialog,
 .animate-slide-right {
-  animation: slideInRight var(--transition-smooth) ease-out forwards;
+  width: 100% !important;
+  display: flex !important;
+  flex-direction: column !important;
+  background-color: var(--bg-surface) !important;
+  border-radius: 20px !important;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.65), 0 0 0 1px var(--border-base) !important;
+  border: 1px solid var(--border-base) !important;
+  overflow: hidden !important;
+  max-height: min(92vh, 900px) !important;
+  margin: auto !important;
+  animation: popupPageScaleCenter 0.22s cubic-bezier(0.16, 1, 0.3, 1) forwards !important;
+}
+
+.popup-page-header {
+  padding: 20px 24px;
+  border-bottom: 1px solid var(--border-base);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  background-color: var(--bg-surface);
+  flex-shrink: 0;
+}
+
+.popup-page-title {
+  font-size: 18px;
+  font-weight: 700;
+  margin: 0;
+  color: var(--text-primary);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.popup-page-subtitle {
+  font-size: 13px;
+  color: var(--text-secondary);
+  margin: 4px 0 0;
+}
+
+.popup-page-body {
+  padding: 24px;
+  overflow-y: auto;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  scrollbar-gutter: stable;
+}
+
+.popup-page-footer {
+  padding: 16px 24px;
+  border-top: 1px solid var(--border-base);
+  background-color: var(--bg-surface-hover);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  flex-shrink: 0;
 }

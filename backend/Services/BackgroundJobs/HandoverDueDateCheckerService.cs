@@ -35,12 +35,23 @@ public class HandoverDueDateCheckerService : BackgroundService
             {
                 await CheckOverdueHandoversAsync(stoppingToken);
             }
-            catch (Exception ex) when (ex is not OperationCanceledException)
+            catch (OperationCanceledException) when (stoppingToken.IsCancellationRequested)
             {
-                _logger.LogError(ex, "Error in HandoverDueDateChecker");
+                break;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogWarning(ex, "Error in HandoverDueDateChecker: {Message}", ex.Message);
             }
 
-            await Task.Delay(Interval, stoppingToken);
+            try
+            {
+                await Task.Delay(Interval, stoppingToken);
+            }
+            catch (OperationCanceledException)
+            {
+                break;
+            }
         }
     }
 

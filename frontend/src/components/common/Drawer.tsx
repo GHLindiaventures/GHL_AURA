@@ -14,10 +14,10 @@ interface DrawerProps {
 }
 
 const DRAWER_SIZE_MAP: Record<string, number> = {
-  sm: 400,
-  md: 540,
-  lg: 760,
-  xl: 960,
+  sm: 480,
+  md: 640,
+  lg: 840,
+  xl: 1040,
 };
 
 export const Drawer: React.FC<DrawerProps> = ({
@@ -30,97 +30,80 @@ export const Drawer: React.FC<DrawerProps> = ({
   width,
   footer,
 }) => {
-  const resolvedWidth = width ?? (size ? (DRAWER_SIZE_MAP[size] ?? size) : 540);
+  const resolvedWidth = width ?? (size ? (DRAWER_SIZE_MAP[size] ?? size) : 640);
+
   useEffect(() => {
+    if (!isOpen) return;
+
+    // Prevent background body scroll when pop-up page is open
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = 'hidden';
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'Escape' && isOpen) {
         onClose();
       }
     };
     window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
+
+    return () => {
+      document.body.style.overflow = originalOverflow;
+      window.removeEventListener('keydown', handleKeyDown);
+    };
   }, [isOpen, onClose]);
 
   if (!isOpen) return null;
 
   return (
     <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1000,
-        display: 'flex',
-        justifyContent: 'flex-end',
-        backgroundColor: 'rgba(15, 23, 42, 0.5)',
-        backdropFilter: 'blur(3px)',
-      }}
+      className="popup-page-backdrop"
       onClick={onClose}
     >
       <div
-        className="animate-slide-right"
+        className="popup-page-dialog animate-scale-center"
         style={{
-          width: '100%',
           maxWidth: typeof resolvedWidth === 'number' ? `${resolvedWidth}px` : resolvedWidth,
-          height: '100%',
-          backgroundColor: 'var(--bg-surface)',
-          display: 'flex',
-          flexDirection: 'column',
-          boxShadow: 'var(--shadow-xl)',
-          borderLeft: '1px solid var(--border-base)',
         }}
         onClick={e => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
       >
         {/* Header */}
-        <div
-          style={{
-            padding: '20px 24px',
-            borderBottom: '1px solid var(--border-base)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            backgroundColor: 'var(--bg-surface)',
-          }}
-        >
-          <div>
-            <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{title}</h3>
+        <div className="popup-page-header">
+          <div style={{ minWidth: 0, paddingRight: 16 }}>
+            <h3 className="popup-page-title">{title}</h3>
             {subtitle && (
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
+              <p className="popup-page-subtitle">
                 {subtitle}
               </p>
             )}
           </div>
-          <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose}>
+          <button
+            className="btn btn-ghost btn-icon btn-sm"
+            onClick={onClose}
+            style={{
+              borderRadius: '50%',
+              width: 36,
+              height: 36,
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              flexShrink: 0,
+            }}
+            aria-label="Close modal"
+          >
             <X size={18} />
           </button>
         </div>
 
         {/* Content */}
-        <div
-          style={{
-            padding: '24px',
-            overflowY: 'auto',
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 20,
-          }}
-        >
+        <div className="popup-page-body">
           {children}
         </div>
 
         {/* Footer */}
         {footer && (
-          <div
-            style={{
-              padding: '16px 24px',
-              borderTop: '1px solid var(--border-base)',
-              backgroundColor: 'var(--bg-surface-hover)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-end',
-              gap: 12,
-            }}
-          >
+          <div className="popup-page-footer">
             {footer}
           </div>
         )}

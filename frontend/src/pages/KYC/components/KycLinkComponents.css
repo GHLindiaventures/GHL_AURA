@@ -446,36 +446,45 @@
   gap: 10px;
 }
 
-/* ── KYC Review Drawer ── */
+/* ── KYC Review Pop-up Page ── */
 .kyc-link-drawer-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(15, 23, 42, 0.5);
-  backdrop-filter: blur(3px);
+  background: rgba(15, 23, 42, 0.7);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
   z-index: 9998;
   display: flex;
-  justify-content: flex-end;
+  align-items: center;
+  justify-content: center;
+  padding: clamp(12px, 3vw, 24px);
+  box-sizing: border-box;
   animation: kyc-link-fade-in 0.2s ease;
 }
 
 .kyc-link-drawer {
   width: 100%;
-  max-width: 640px;
-  height: 100%;
+  max-width: 760px;
+  max-height: min(92vh, 880px);
   background: var(--bg-surface, #ffffff);
-  border-left: 1px solid var(--border-base, #e2e8f0);
-  box-shadow: -10px 0 25px -5px rgba(0, 0, 0, 0.15);
+  border: 1px solid var(--border-base, #e2e8f0);
+  border-radius: 20px;
+  box-shadow: 0 25px 60px -15px rgba(0, 0, 0, 0.45), 0 0 0 1px var(--border-base);
   display: flex;
   flex-direction: column;
-  animation: kyc-link-slide-in 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  overflow: hidden;
+  margin: auto;
+  animation: popupPageScaleCenter 0.22s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes kyc-link-slide-in {
   from {
-    transform: translateX(100%);
+    opacity: 0;
+    transform: scale(0.96) translateY(12px);
   }
   to {
-    transform: translateX(0);
+    opacity: 1;
+    transform: scale(1) translateY(0);
   }
 }
 
