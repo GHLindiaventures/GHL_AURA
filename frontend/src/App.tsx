@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 
 export const routeToPath = (route: string, isSuperAdmin: boolean): string => {
-  if (route === 'ui-showcase') return '/ui-showcase';
   if (isSuperAdmin) {
     switch (route) {
       case 'admin-dashboard':
@@ -66,7 +65,6 @@ export const routeToPath = (route: string, isSuperAdmin: boolean): string => {
 
 export const pathToRoute = (pathname: string, isSuperAdmin: boolean): string => {
   const cleanPath = pathname.replace(/\/+$/, '') || '/';
-  if (cleanPath === '/ui-showcase') return 'ui-showcase';
   if (cleanPath === '/' || cleanPath === '/dashboard') {
     return isSuperAdmin ? 'admin-dashboard' : 'dashboard';
   }
@@ -203,7 +201,6 @@ import { signalRService } from './services/signalRService';
 
 import { ProtectedRoute } from './components/common/Guards';
 import { Modal } from './components/common/Modal';
-import { AnimationShowcasePage } from './pages/DesignSystem/AnimationShowcasePage';
 import { ImpersonationBanner } from './components/common/ImpersonationBanner';
 import { storageService } from './services/storageService';
 import { Investor, Customer } from './types';
@@ -711,10 +708,6 @@ export const App: React.FC = () => {
     }
   };
 
-  // Animation-based UI Prototype Showcase (direct preview for design verification)
-  if (currentRoute === 'ui-showcase') {
-    return <AnimationShowcasePage onNavigate={navigate} />;
-  }
 
   // If unauthenticated
   if (!isAuthenticated) {
@@ -760,33 +753,6 @@ export const App: React.FC = () => {
             <PlatformDashboardPage onNavigate={navigate} />
           )}
         </AdminLayout>
-        <button
-          type="button"
-          onClick={() => navigate('ui-showcase')}
-          style={{
-            position: 'fixed',
-            bottom: 24,
-            left: 24,
-            zIndex: 9990,
-            background: 'linear-gradient(135deg, #ef4444 0%, #8b5cf6 100%)',
-            color: '#fff',
-            border: 'none',
-            borderRadius: '9999px',
-            padding: '8px 16px',
-            fontSize: '12px',
-            fontWeight: 700,
-            boxShadow: '0 4px 18px rgba(239, 68, 68, 0.45)',
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            gap: '8px',
-          }}
-          className="anim-scale-click"
-          title="Click to preview the new animation-based UI design"
-        >
-          <span className="anim-live-dot" style={{ background: '#fff' }} />
-          ✨ Animation UI Preview
-        </button>
       </>
     );
   }
@@ -1453,33 +1419,6 @@ export const App: React.FC = () => {
           </form>
         </Modal>
       </SalesLayout>
-      <button
-        type="button"
-        onClick={() => navigate('ui-showcase')}
-        style={{
-          position: 'fixed',
-          bottom: 24,
-          left: 24,
-          zIndex: 9990,
-          background: 'linear-gradient(135deg, #ef4444 0%, #8b5cf6 100%)',
-          color: '#fff',
-          border: 'none',
-          borderRadius: '9999px',
-          padding: '8px 16px',
-          fontSize: '12px',
-          fontWeight: 700,
-          boxShadow: '0 4px 18px rgba(239, 68, 68, 0.45)',
-          cursor: 'pointer',
-          display: 'flex',
-          alignItems: 'center',
-          gap: '8px',
-        }}
-        className="anim-scale-click"
-        title="Click to preview the new animation-based UI design"
-      >
-        <span className="anim-live-dot" style={{ background: '#fff' }} />
-        ✨ Animation UI Preview
-      </button>
     </>
   );
 };
