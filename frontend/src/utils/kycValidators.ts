@@ -26,6 +26,26 @@ export function parseLocalDate(value: string): Date | null {
 }
 
 /**
+ * Masks an Aadhaar number to display only the last 4 digits (e.g. XXXX XXXX 1234).
+ */
+export function maskAadhaar(v?: string | null, fallback: string | null = null): string | null {
+  if (!v || !v.trim()) return fallback;
+  const clean = v.replace(/\s/g, '');
+  if (clean.length < 4) return clean;
+  return 'XXXX XXXX ' + clean.slice(-4);
+}
+
+/**
+ * Masks a bank or demat account number to display bullet points followed by the last 4 digits.
+ */
+export function maskAccount(v?: string | null, fallback: string | null = null): string | null {
+  if (!v || !v.trim()) return fallback;
+  const clean = v.trim();
+  if (clean.length <= 4) return clean;
+  return '\u2022'.repeat(Math.min(clean.length - 4, 8)) + clean.slice(-4);
+}
+
+/**
  * Ensures year in a date string (YYYY-MM-DD, DD-MM-YYYY, etc.) does not exceed 4 digits.
  * Clamps 5+ digit years to 4 digits (e.g. 20000-02-03 -> 2000-02-03, 03-02-20000 -> 03-02-2000).
  */

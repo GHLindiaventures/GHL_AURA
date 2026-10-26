@@ -133,8 +133,8 @@
 }
 
 .kyc-capacity-badge {
-  display: inline-flex;
-  align-items: center;
+  display: inline-block;
+  vertical-align: middle;
   padding: 3px 9px;
   border-radius: 9999px;
   font-size: 12px;
@@ -144,11 +144,15 @@
   border: 1px solid rgba(16, 185, 129, 0.25);
   letter-spacing: 0.2px;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
 }
 
 .kyc-pref-badge {
-  display: inline-flex;
-  align-items: center;
+  display: inline-block;
+  vertical-align: middle;
   padding: 3px 9px;
   border-radius: 9999px;
   font-size: 12px;
@@ -158,6 +162,10 @@
   border: 1px solid rgba(59, 130, 246, 0.25);
   letter-spacing: 0.2px;
   white-space: nowrap;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  box-sizing: border-box;
 }
 
 .kyc-days-pill {

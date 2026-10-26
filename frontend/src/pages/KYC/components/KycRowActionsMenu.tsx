@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { Deal } from '../../../types';
 import { getAuthHeaders } from '../../../utils/authHeaders';
+import { apiUrl } from '../../../utils/apiUrl';
 import './KycLinkComponents.css';
 
 interface KycRowActionsMenuProps {
@@ -99,7 +100,7 @@ export const KycRowActionsMenu: React.FC<KycRowActionsMenuProps> = ({
     try {
       const kycId = (deal as any).kycId || (deal as any).kycRecordId;
       if (kycId) {
-        const res = await fetch(`/api/irm/kyc/${kycId}`, { headers: getAuthHeaders() });
+        const res = await fetch(apiUrl(`/irm/kyc/${kycId}`), { headers: getAuthHeaders() });
         if (res.ok) {
           const json = await res.json();
           if (json?.success && json?.data?.kycLinkToken) {
@@ -112,7 +113,7 @@ export const KycRowActionsMenu: React.FC<KycRowActionsMenuProps> = ({
       }
 
       // If no token on KYC yet, fetch/create real link from backend
-      const sendRes = await fetch('/api/irm/kyc/send-link', {
+      const sendRes = await fetch(apiUrl('/irm/kyc/send-link'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -149,7 +150,7 @@ export const KycRowActionsMenu: React.FC<KycRowActionsMenuProps> = ({
         onShowToast(`No active KYC link to revoke for ${deal.customerName}`);
         return;
       }
-      const res = await fetch(`/api/irm/kyc/${kycId}/revoke-link`, {
+      const res = await fetch(apiUrl(`/irm/kyc/${kycId}/revoke-link`), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

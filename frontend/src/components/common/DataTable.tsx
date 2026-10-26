@@ -475,6 +475,8 @@ export function DataTable<T>({
                             color: 'var(--text-primary)',
                             wordBreak: 'break-word',
                             whiteSpace: 'normal',
+                            maxWidth: col.width,
+                            overflow: 'hidden',
                             position: isActionsCol ? 'sticky' : undefined,
                             right: isActionsCol ? 0 : undefined,
                             background: isActionsCol

@@ -634,7 +634,7 @@ public class PlatformRolesController : ControllerBase
             {
                 string[] irmDefaults = {
                     "dashboard.view", "calls.settings.view", "notifications.view",
-                    "documents.view", "leave_requests.view",
+                    "documents.view", "documents.manage", "leave_requests.view",
                     "support.view", "chat.view", "chat.send", "smarty_ai.view", "profile.view"
                 };
                 foreach (var k in irmDefaults) set.Add(k);

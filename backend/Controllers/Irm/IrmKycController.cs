@@ -28,6 +28,15 @@ public class IrmKycController : ControllerBase
         _db = db;
     }
 
+    private async Task<bool> HasKycVerifyPermissionAsync(int userId, int companyId, CancellationToken ct)
+    {
+        if (User.Claims.Any(c => c.Type == "permission" && c.Value == "kyc.verify"))
+            return true;
+
+        var dbUser = await _db.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Id == userId && u.CompanyId == companyId, ct);
+        return dbUser?.Role?.Permissions != null && dbUser.Role.Permissions.Contains("kyc.verify");
+    }
+
     [HttpGet("{id:int}")]
     [Authorize]
     public async Task<IActionResult> GetById(int id, CancellationToken ct)
@@ -210,7 +219,7 @@ public class IrmKycController : ControllerBase
         if (string.IsNullOrWhiteSpace(dto.Token))
             return BadRequest(ApiResponse<KycDto>.ErrorResponse("Token is required"));
 
-        var rawToken = dto.Token.Trim();
+        var rawToken = dto.Token.Trim().Split('?').First().Split('/').Last();
         var hash = KycService.HashToken(rawToken);
 
         var kyc = await _db.InvestorKycs.FirstOrDefaultAsync(k =>
@@ -463,14 +472,9 @@ public class IrmKycController : ControllerBase
             return Unauthorized();
 
         // Server-side permission check: user must have kyc.verify
-        var hasKycVerifyClaim = User.Claims.Any(c => c.Type == "permission" && c.Value == "kyc.verify");
-        if (!hasKycVerifyClaim)
+        if (!await HasKycVerifyPermissionAsync(userId, companyId, ct))
         {
-            var dbUser = await _db.Users.Include(u => u.Role).FirstOrDefaultAsync(u => u.Id == userId && u.CompanyId == companyId, ct);
-            if (dbUser?.Role?.Permissions == null || !dbUser.Role.Permissions.Contains("kyc.verify"))
-            {
-                return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<bool>.ErrorResponse("Forbidden: User lacks kyc.verify permission."));
-            }
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<bool>.ErrorResponse("Forbidden: User lacks kyc.verify permission."));
         }
 
         // Enforce record lookup and ownership
@@ -640,15 +644,10 @@ public class IrmKycController : ControllerBase
         var isPlatformAdmin = role == "admin" || role == "ghl_admin" || role == "super_admin" || role == "company_admin";
 
         // Permission check — same as status endpoint
-        var hasKycVerifyClaim = User.Claims.Any(c => c.Type == "permission" && c.Value == "kyc.verify");
-        if (!hasKycVerifyClaim)
+        if (!await HasKycVerifyPermissionAsync(userId, companyId, ct))
         {
-            var dbUser = await _db.Users
-                .Include(u => u.Role)
-                .FirstOrDefaultAsync(u => u.Id == userId && u.CompanyId == companyId, ct);
-            if (dbUser?.Role?.Permissions == null || !dbUser.Role.Permissions.Contains("kyc.verify"))
-                return StatusCode(StatusCodes.Status403Forbidden,
-                    ApiResponse<bool>.ErrorResponse("Forbidden: User lacks kyc.verify permission."));
+            return StatusCode(StatusCodes.Status403Forbidden,
+                ApiResponse<bool>.ErrorResponse("Forbidden: User lacks kyc.verify permission."));
         }
 
         var kyc = await _db.InvestorKycs
@@ -748,13 +747,50 @@ public class IrmKycController : ControllerBase
         var userId = User.GetUserId();
         if (userId <= 0) return Unauthorized();
 
+        if (!await HasKycVerifyPermissionAsync(userId, companyId, ct))
+        {
+            return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<bool>.ErrorResponse("Forbidden: User lacks kyc.verify permission."));
+        }
+
         var kyc = await _db.InvestorKycs.FirstOrDefaultAsync(k => k.Id == id && k.CompanyId == companyId, ct);
         if (kyc == null)
             return NotFound(ApiResponse<bool>.ErrorResponse("KYC record not found."));
 
+        if (kyc.Status == KycStatus.Approved)
+        {
+            return BadRequest(ApiResponse<bool>.ErrorResponse("Cannot modify KYC details: This record has already been verified and approved."));
+        }
+
         if (!isPlatformAdmin && kyc.IrmId.HasValue && kyc.IrmId.Value != userId)
         {
             return StatusCode(StatusCodes.Status403Forbidden, ApiResponse<bool>.ErrorResponse("Access denied: You can only update KYC records assigned to you."));
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto.PanNumber) && !KycService.IsValidPan(dto.PanNumber))
+        {
+            return BadRequest(ApiResponse<bool>.ErrorResponse("Invalid PAN number format. Format must be 5 uppercase letters, 4 digits, 1 uppercase letter (e.g. ABCDE1234F)."));
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto.AadhaarNumber) && !KycService.IsValidAadhaar(dto.AadhaarNumber))
+        {
+            return BadRequest(ApiResponse<bool>.ErrorResponse("Invalid Aadhaar number format. Must be 12 numeric digits."));
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto.IfscCode) && !KycService.IsValidIfsc(dto.IfscCode))
+        {
+            return BadRequest(ApiResponse<bool>.ErrorResponse("Invalid IFSC code format (e.g. HDFC0001234)."));
+        }
+
+        if (!string.IsNullOrWhiteSpace(dto.Email))
+        {
+            try
+            {
+                _ = new System.Net.Mail.MailAddress(dto.Email.Trim());
+            }
+            catch
+            {
+                return BadRequest(ApiResponse<bool>.ErrorResponse("Invalid email address format."));
+            }
         }
 
         // Apply provided field updates

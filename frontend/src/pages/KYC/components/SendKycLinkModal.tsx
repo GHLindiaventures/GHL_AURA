@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { Deal } from '../../../types';
 import { getAuthHeaders } from '../../../utils/authHeaders';
+import { apiUrl } from '../../../utils/apiUrl';
 import './KycLinkComponents.css';
 
 interface SendKycLinkModalProps {
@@ -66,7 +67,7 @@ export const SendKycLinkModal: React.FC<SendKycLinkModalProps> = ({
         forceNewToken: forceNew,
       };
 
-      const res = await fetch('/api/irm/kyc/send-link', {
+      const res = await fetch(apiUrl('/irm/kyc/send-link'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -178,7 +179,7 @@ Please click the secure link below to complete your verification:
         forceNewToken: isResend || selectedChannel === 'email',
       };
 
-      const res = await fetch('/api/irm/kyc/send-link', {
+      const res = await fetch(apiUrl('/irm/kyc/send-link'), {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

@@ -13,6 +13,7 @@ import {
   X,
   CalendarRange,
   Clock,
+  AlertCircle,
 } from 'lucide-react';
 import { Followup, CallRecord, Deal, Lead, Customer } from '../../types';
 import { storageService } from '../../services/storageService';
@@ -582,32 +583,35 @@ export const FollowupsPage: React.FC = () => {
       } catch { }
     }
 
-    const isLeadOrCustConfirmed =
-      l?.customFields?.irmPreferencesConfirmed === true ||
-      c?.customFields?.irmPreferencesConfirmed === true;
+    const isBoolOrStringTrue = (val: any) =>
+      val === true || val === 'true' || val === 'True' || val === 1 || val === '1';
 
-    // If lead or customer exists and is NOT confirmed, discard and purge any stale local cache
-    if ((l || c) && !isLeadOrCustConfirmed && savedLocal?.confirmed) {
+    const isLeadOrCustConfirmed =
+      isBoolOrStringTrue(l?.customFields?.irmPreferencesConfirmed) ||
+      isBoolOrStringTrue(c?.customFields?.irmPreferencesConfirmed);
+
+    // If lead or customer exists and is NOT confirmed, discard and purge any stale local cache only if no real preference exists
+    if ((l || c) && !isLeadOrCustConfirmed && savedLocal?.confirmed && !l?.customFields?.preferredAssetClass && !c?.customFields?.preferredAssetClass) {
       if (contactKey) localStorage.removeItem(`nexus_irm_pref_${contactKey}`);
       if (fDigits) localStorage.removeItem(`nexus_irm_pref_${fDigits}`);
       savedLocal = null;
     }
 
-    const isConfirmed = isLeadOrCustConfirmed || Boolean(!l && !c && savedLocal?.confirmed === true);
+    const isConfirmed = isLeadOrCustConfirmed || Boolean(savedLocal?.confirmed === true);
 
     const savedAssetClass = isConfirmed
-      ? (l?.customFields?.irmPreferencesConfirmed && l?.customFields?.preferredAssetClass) ||
-      (c?.customFields?.irmPreferencesConfirmed && c?.customFields?.preferredAssetClass) ||
-      savedLocal?.preferredAssetClass ||
-      ''
-      : '';
+      ? (l?.customFields?.preferredAssetClass) ||
+        (c?.customFields?.preferredAssetClass) ||
+        savedLocal?.preferredAssetClass ||
+        ''
+      : (l?.customFields?.preferredAssetClass || c?.customFields?.preferredAssetClass || '');
 
     const savedHorizon = isConfirmed
-      ? (l?.customFields?.irmPreferencesConfirmed && (l?.customFields?.horizon || l?.customFields?.investmentHorizon)) ||
-      (c?.customFields?.irmPreferencesConfirmed && (c?.customFields?.horizon || c?.customFields?.investmentHorizon)) ||
-      savedLocal?.horizon ||
-      ''
-      : '';
+      ? (l?.customFields?.horizon || l?.customFields?.investmentHorizon) ||
+        (c?.customFields?.horizon || c?.customFields?.investmentHorizon) ||
+        savedLocal?.horizon ||
+        ''
+      : (l?.customFields?.horizon || l?.customFields?.investmentHorizon || c?.customFields?.horizon || c?.customFields?.investmentHorizon || '');
 
     setPrefAssetClass(savedAssetClass);
     setPrefHorizon(savedHorizon);
@@ -801,7 +805,7 @@ export const FollowupsPage: React.FC = () => {
     setIsEditingAmount(false);
   };
 
-  const handleSavePreferences = (matchingLead: Lead | null, matchingCustomer: Customer | null) => {
+  const handleSavePreferences = async (matchingLead: Lead | null, matchingCustomer: Customer | null) => {
     if (!drawerFollowup) return;
     if (!prefAssetClass && !prefHorizon) {
       showToast('Please select Preferred Asset Class or Investment Horizon before confirming');
@@ -823,6 +827,11 @@ export const FollowupsPage: React.FC = () => {
         },
       };
       storageService.saveLead(updatedLead);
+      try {
+        await apiSaveLead(updatedLead);
+      } catch (err) {
+        console.warn('[FollowupsPage] apiSaveLead for preferences warning:', err);
+      }
     }
 
     if (matchingCustomer) {
@@ -837,11 +846,45 @@ export const FollowupsPage: React.FC = () => {
         },
       };
       storageService.saveCustomer(updatedCustomer);
+      try {
+        await apiSaveCustomer(updatedCustomer);
+      } catch (err) {
+        console.warn('[FollowupsPage] apiSaveCustomer for preferences warning:', err);
+      }
+    }
+
+    const resolvedContactId = drawerFollowup.contactId || matchingLead?.id || matchingCustomer?.id;
+    const allDeals = storageService.getDeals(tenant?.id) || [];
+    const existingDeal = allDeals.find((deal: Deal) =>
+      (resolvedContactId && (deal.customerId === resolvedContactId || deal.id === resolvedContactId)) ||
+      (drawerFollowup.contactPhone && deal.phone === drawerFollowup.contactPhone) ||
+      (fDigits && deal.phone && deal.phone.replace(/\D/g, '').slice(-10) === fDigits)
+    );
+    if (existingDeal) {
+      const updatedDeal: Deal = {
+        ...existingDeal,
+        preferredAssetClass: prefAssetClass,
+      };
+      try {
+        await apiSaveDeal(updatedDeal);
+      } catch (err) {
+        console.warn('[FollowupsPage] apiSaveDeal for preferences warning:', err);
+      }
     }
 
     if (contactKey) {
       localStorage.setItem(
         `nexus_irm_pref_${contactKey}`,
+        JSON.stringify({
+          preferredAssetClass: prefAssetClass,
+          horizon: prefHorizon,
+          confirmed: true,
+        })
+      );
+    }
+    if (fDigits) {
+      localStorage.setItem(
+        `nexus_irm_pref_${fDigits}`,
         JSON.stringify({
           preferredAssetClass: prefAssetClass,
           horizon: prefHorizon,
@@ -2932,28 +2975,55 @@ export const FollowupsPage: React.FC = () => {
       )}
 
       {/* Toast Notification */}
-      {toastMessage && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: 24,
-            right: 24,
-            backgroundColor: '#059669',
-            color: '#ffffff',
-            padding: '12px 20px',
-            borderRadius: 8,
-            boxShadow: '0 4px 14px rgba(0,0,0,0.25)',
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            fontSize: 13,
-            fontWeight: 600,
-            zIndex: 99999,
-          }}
-        >
-          <CheckCircle size={17} /> {toastMessage}
-        </div>
-      )}
+      {toastMessage && (() => {
+        const lower = toastMessage.toLowerCase();
+        const isErr =
+          lower.includes('failed') ||
+          lower.includes('error') ||
+          lower.includes('denied') ||
+          lower.includes('missing') ||
+          lower.includes('invalid') ||
+          lower.includes('cannot') ||
+          lower.includes('could not') ||
+          lower.includes('rejected') ||
+          lower.includes('wrong') ||
+          lower.includes('⚠️') ||
+          lower.includes('❌') ||
+          lower.includes('unauthorized') ||
+          lower.includes('forbidden') ||
+          lower.includes('please select') ||
+          lower.includes('please enter') ||
+          lower.includes('please provide') ||
+          lower.startsWith('no matching');
+
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 24,
+              right: 24,
+              backgroundColor: isErr ? '#dc2626' : '#059669',
+              color: '#ffffff',
+              padding: '12px 20px',
+              borderRadius: 8,
+              border: isErr ? '1px solid #ef4444' : '1px solid #10b981',
+              boxShadow: isErr
+                ? '0 6px 20px rgba(220, 38, 38, 0.45)'
+                : '0 6px 20px rgba(5, 150, 105, 0.35)',
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 13,
+              fontWeight: 600,
+              zIndex: 99999,
+              maxWidth: 480,
+            }}
+          >
+            {isErr ? <AlertCircle size={17} color="#ffffff" /> : <CheckCircle size={17} color="#ffffff" />}
+            <span>{toastMessage}</span>
+          </div>
+        );
+      })()}
     </div>
   );
 };

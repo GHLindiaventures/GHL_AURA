@@ -21,19 +21,11 @@ import { useAuth } from '../../../context/AuthContext';
 import { PERMISSIONS } from '../../../constants/permissions';
 import { Modal } from '../../../components/common/Modal';
 import { getAuthHeaders } from '../../../utils/authHeaders';
+import { apiUrl } from '../../../utils/apiUrl';
+import { maskAadhaar as maskAadhaarUtil, maskAccount as maskAccountUtil } from '../../../utils/kycValidators';
 
-function maskAadhaar(v?: string | null): string {
-  if (!v) return '—';
-  const clean = v.replace(/\s/g, '');
-  if (clean.length < 4) return clean;
-  return 'XXXX XXXX ' + clean.slice(-4);
-}
-
-function maskAccount(v?: string | null): string {
-  if (!v) return '—';
-  if (v.length <= 4) return v;
-  return '\u2022'.repeat(Math.min(v.length - 4, 8)) + v.slice(-4);
-}
+const maskAadhaar = (v?: string | null): string => maskAadhaarUtil(v, '—') || '—';
+const maskAccount = (v?: string | null): string => maskAccountUtil(v, '—') || '—';
 
 interface Props {
   deal: Deal;
@@ -124,7 +116,7 @@ export const KycStatusDropdown: React.FC<Props> = ({
         // 1. Stable direct KYC record ID or investor/customer ID
         const kycId = (deal as any).kycId || (deal as any).kycRecordId || (deal as any).customerId;
         if (kycId) {
-          const res = await fetch(`/api/irm/kyc/${kycId}`, {
+          const res = await fetch(apiUrl(`/irm/kyc/${kycId}`), {
             headers: getAuthHeaders(),
           });
           if (res.ok) {
@@ -138,7 +130,7 @@ export const KycStatusDropdown: React.FC<Props> = ({
 
         // 2. Fallback to email match
         if (deal.email) {
-          const res = await fetch(`/api/irm/kyc/by-email?email=${encodeURIComponent(deal.email)}`, {
+          const res = await fetch(apiUrl(`/irm/kyc/by-email?email=${encodeURIComponent(deal.email)}`), {
             headers: getAuthHeaders(),
           });
           if (res.ok) {

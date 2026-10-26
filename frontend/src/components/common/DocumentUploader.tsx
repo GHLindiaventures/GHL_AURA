@@ -42,6 +42,12 @@ function formatFileSize(bytes: number): string {
   return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`;
 }
 
+const ALLOWED_EXTENSIONS = [
+  '.pdf', '.doc', '.docx', '.xls', '.xlsx', '.csv',
+  '.ppt', '.pptx', '.txt', '.png', '.jpg', '.jpeg', '.webp'
+];
+const MAX_UPLOAD_SIZE_BYTES = 25 * 1024 * 1024; // 25 MB
+
 // ── Component ─────────────────────────────────────────────────────────────────
 
 export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
@@ -63,6 +69,19 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
 
   const handleFile = async (file: File) => {
     try {
+      if (file.size > MAX_UPLOAD_SIZE_BYTES) {
+        showToast('error', 'File size exceeds 25 MB limit.');
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+
+      const ext = '.' + (file.name.split('.').pop()?.toLowerCase() || '');
+      if (!ALLOWED_EXTENSIONS.includes(ext)) {
+        showToast('error', `Unsupported file type. Allowed: ${ALLOWED_EXTENSIONS.join(', ')}`);
+        if (fileInputRef.current) fileInputRef.current.value = '';
+        return;
+      }
+
       if (isMockMode()) {
         const doc: DocumentItem = {
           id: `doc-${Date.now()}-${typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function' ? crypto.randomUUID().slice(0, 8) : Date.now().toString(36)}`,
@@ -185,7 +204,7 @@ export const DocumentUploader: React.FC<DocumentUploaderProps> = ({
         type="file"
         style={{ display: 'none' }}
         onChange={handleInputChange}
-        accept="*/*"
+        accept={ALLOWED_EXTENSIONS.join(',')}
       />
 
       {/* Inline toast */}

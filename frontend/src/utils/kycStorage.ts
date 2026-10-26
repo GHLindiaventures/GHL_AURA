@@ -23,6 +23,32 @@ export function stripSensitiveKycFields<T extends Record<string, any>>(data: T):
   if (!data || typeof data !== 'object') return data;
   const copy: Record<string, any> = { ...data };
   for (const key of SENSITIVE_KYC_FIELDS) delete copy[key];
+
+  // Strip raw base64 data URLs from cached documents to prevent PII exposure in localStorage
+  const docKeys = ['panDoc', 'aadhaarDoc', 'bankProofDoc', 'dematDoc', 'photoDoc', 'signatureDoc'];
+  for (const dk of docKeys) {
+    if (copy[dk] && typeof copy[dk] === 'object') {
+      const docCopy = { ...copy[dk] };
+      if (typeof docCopy.url === 'string' && docCopy.url.startsWith('data:')) {
+        delete docCopy.url;
+      }
+      copy[dk] = docCopy;
+    }
+  }
+
+  // Recursively sanitize sensitive fields within nested nominees array (e.g. nominees[].dob)
+  if (Array.isArray(copy.nominees)) {
+    copy.nominees = copy.nominees.map((nominee: any) => {
+      if (!nominee || typeof nominee !== 'object') return nominee;
+      const nomineeCopy = { ...nominee };
+      delete nomineeCopy.dob;
+      delete nomineeCopy.nomineeDob;
+      delete nomineeCopy.panNumber;
+      delete nomineeCopy.aadhaarNumber;
+      return nomineeCopy;
+    });
+  }
+
   return copy as T;
 }
 
@@ -78,13 +104,13 @@ export function sanitizeStoredKycData(): void {
   }
 }
 
-/** Removes all locally cached KYC keys (drafts, forms, assisted metadata, statuses) across the app. */
+/** Removes all locally cached KYC keys (drafts, forms, assisted metadata, statuses, IRM prefs) across the app. */
 export function clearAllKycLocalStorage(): void {
   try {
     const keys: string[] = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (k && k.startsWith('nexus_kyc_')) {
+      if (k && (k.startsWith('nexus_kyc_') || k.startsWith('nexus_irm_pref_'))) {
         keys.push(k);
       }
     }

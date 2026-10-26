@@ -26,7 +26,11 @@ import { useAuth } from '../../../context/AuthContext';
 import { PERMISSIONS } from '../../../constants/permissions';
 import { isMockMode } from '../../../config/environment';
 import { getAuthHeaders } from '../../../utils/authHeaders';
+import { apiUrl } from '../../../utils/apiUrl';
 import { EXTERNAL_VERIFICATION_LINKS } from '../../../constants/externalLinks';
+import { maskAadhaar, maskAccount } from '../../../utils/kycValidators';
+import { openDocumentPreview } from '../../../utils/documentPreview';
+import { saveKycLocal } from '../../../utils/kycStorage';
 import './KycVerifyModal.css';
 
 // ── Types ──────────────────────────────────────────────────────────────────────
@@ -59,19 +63,6 @@ interface KycVerifyModalProps {
 }
 
 // ── Field helpers ──────────────────────────────────────────────────────────────
-
-function maskAadhaar(v?: string | null) {
-  if (!v) return null;
-  const clean = v.replace(/\s/g, '');
-  if (clean.length < 4) return clean;
-  return 'XXXX XXXX ' + clean.slice(-4);
-}
-
-function maskAccount(v?: string | null) {
-  if (!v) return null;
-  if (v.length <= 4) return v;
-  return '\u2022'.repeat(Math.min(v.length - 4, 8)) + v.slice(-4);
-}
 
 function NotProvided() {
   return <span className="kvm-not-provided">Not provided</span>;
@@ -541,7 +532,7 @@ export const KycVerifyModal: React.FC<KycVerifyModalProps> = ({
       try {
         const kycId = (deal as any).kycId || (deal as any).kycRecordId || (deal as any).customerId;
         if (kycId) {
-          const res = await fetch(`/api/irm/kyc/${kycId}`, { headers: getAuthHeaders() });
+          const res = await fetch(apiUrl(`/irm/kyc/${kycId}`), { headers: getAuthHeaders() });
           if (res.ok) {
             const json = await res.json();
             if (json.success && json.data) {
@@ -551,7 +542,7 @@ export const KycVerifyModal: React.FC<KycVerifyModalProps> = ({
           }
         }
         if (deal.email) {
-          const res = await fetch(`/api/irm/kyc/by-email?email=${encodeURIComponent(deal.email)}`, {
+          const res = await fetch(apiUrl(`/irm/kyc/by-email?email=${encodeURIComponent(deal.email)}`), {
             headers: getAuthHeaders(),
           });
           if (res.ok) {
@@ -727,62 +718,18 @@ export const KycVerifyModal: React.FC<KycVerifyModalProps> = ({
       onShowToast(`No preview file available for ${doc.name}.`);
       return;
     }
-    const cleanUrl = doc.url.trim();
-    const isAllowedScheme =
-      cleanUrl.startsWith('http://') ||
-      cleanUrl.startsWith('https://') ||
-      cleanUrl.startsWith('blob:') ||
-      cleanUrl.startsWith('data:application/pdf') ||
-      cleanUrl.startsWith('data:image/');
-    if (!isAllowedScheme) {
-      onShowToast('Invalid or unsafe document URL.');
-      return;
-    }
-
-    const isPdf = cleanUrl.startsWith('data:application/pdf') || cleanUrl.toLowerCase().includes('.pdf');
-    const w = window.open('', '_blank');
-    if (w) {
-      try {
-        w.opener = null;
-        w.document.title = doc.name;
-        w.document.body.style.margin = '0';
-        w.document.body.style.background = '#090d16';
-
-        if (isPdf) {
-          const iframe = w.document.createElement('iframe');
-          iframe.src = cleanUrl;
-          iframe.style.width = '100%';
-          iframe.style.height = '100%';
-          iframe.style.border = 'none';
-          iframe.style.position = 'fixed';
-          iframe.style.top = '0';
-          iframe.style.left = '0';
-          iframe.style.right = '0';
-          iframe.style.bottom = '0';
-          w.document.body.appendChild(iframe);
-        } else {
-          const container = w.document.createElement('div');
-          container.style.display = 'flex';
-          container.style.alignItems = 'center';
-          container.style.justifyContent = 'center';
-          container.style.minHeight = '100vh';
-          container.style.background = '#090d16';
-          container.style.margin = '0';
-
-          const img = w.document.createElement('img');
-          img.src = cleanUrl;
-          img.alt = doc.name;
-          img.style.maxWidth = '92%';
-          img.style.maxHeight = '92vh';
-          img.style.borderRadius = '10px';
-          img.style.boxShadow = '0 12px 36px rgba(0,0,0,0.6)';
-          container.appendChild(img);
-          w.document.body.appendChild(container);
-        }
-      } catch (err) {
-        console.error('Error rendering preview:', err);
+    const res = openDocumentPreview(doc.url, doc.name, {
+        backgroundColor: '#090d16',
+        maxWidth: '92%',
+        maxHeight: '92vh',
+        borderRadius: '10px',
+        boxShadow: '0 12px 36px rgba(0,0,0,0.6)',
+      });
+      if (res === 'invalid-url') {
+        onShowToast('Invalid or unsafe document URL.');
+      } else if (res === 'blocked') {
+        onShowToast('Popup blocked by browser. Please allow popups to preview documents.');
       }
-    }
   };
 
   // Section status counters
@@ -805,7 +752,7 @@ export const KycVerifyModal: React.FC<KycVerifyModalProps> = ({
     if (typeof resolvedKycId !== 'number' && !/^\d+$/.test(String(resolvedKycId))) return;
 
     try {
-      const res = await fetch('/api/irm/kyc/' + resolvedKycId + '/verification', {
+      const res = await fetch(apiUrl(`/irm/kyc/${resolvedKycId}/verification`), {
         method: 'PATCH',
         headers: {
           'Content-Type': 'application/json',
@@ -909,7 +856,7 @@ export const KycVerifyModal: React.FC<KycVerifyModalProps> = ({
       }
 
       if (!isMockMode() && resolvedKycId && (/^\d+$/.test(String(resolvedKycId)) || typeof resolvedKycId === 'number')) {
-        const res = await fetch(`/api/irm/kyc/${resolvedKycId}/details`, {
+        const res = await fetch(apiUrl(`/irm/kyc/${resolvedKycId}/details`), {
           method: 'PATCH',
           headers: {
             'Content-Type': 'application/json',
@@ -925,12 +872,12 @@ export const KycVerifyModal: React.FC<KycVerifyModalProps> = ({
         }
       }
 
-      // Also update local storage so it persists in offline/demo modes
+      // Also update local storage safely (stripping sensitive PII) so non-sensitive edits persist in offline/demo modes
       const kycStorageKey = `nexus_kyc_data_${deal.id}`;
       try {
         const raw = localStorage.getItem(kycStorageKey);
         const parsed = raw ? JSON.parse(raw) : {};
-        localStorage.setItem(kycStorageKey, JSON.stringify({ ...parsed, ...payload }));
+        saveKycLocal(deal.id, { ...parsed, ...payload });
       } catch {}
 
       window.dispatchEvent(new CustomEvent('nexus_storage_updated'));

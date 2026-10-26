@@ -42,8 +42,14 @@ public class KycService : IKycService
         _otherService = otherService ?? new IrmOtherService(db);
     }
 
+    private static readonly TimeSpan RegexTimeout = TimeSpan.FromMilliseconds(250);
+
     public static bool IsValidPan(string? pan) =>
-        !string.IsNullOrWhiteSpace(pan) && System.Text.RegularExpressions.Regex.IsMatch(pan.Trim().ToUpperInvariant(), "^[A-Z]{5}[0-9]{4}[A-Z]{1}$");
+        !string.IsNullOrWhiteSpace(pan) && System.Text.RegularExpressions.Regex.IsMatch(
+            pan.Trim().ToUpperInvariant(),
+            "^[A-Z]{5}[0-9]{4}[A-Z]{1}$",
+            System.Text.RegularExpressions.RegexOptions.ExplicitCapture,
+            RegexTimeout);
 
     public static bool IsValidAadhaar(string? aadhaar)
     {
@@ -53,7 +59,25 @@ public class KycService : IKycService
     }
 
     public static bool IsValidIfsc(string? ifsc) =>
-        !string.IsNullOrWhiteSpace(ifsc) && System.Text.RegularExpressions.Regex.IsMatch(ifsc.Trim().ToUpperInvariant(), "^[A-Z]{4}0[A-Z0-9]{6}$");
+        !string.IsNullOrWhiteSpace(ifsc) && System.Text.RegularExpressions.Regex.IsMatch(
+            ifsc.Trim().ToUpperInvariant(),
+            "^[A-Z]{4}0[A-Z0-9]{6}$",
+            System.Text.RegularExpressions.RegexOptions.ExplicitCapture,
+            RegexTimeout);
+
+    public static bool IsSafeDocumentUrl(string? url)
+    {
+        if (string.IsNullOrWhiteSpace(url)) return true;
+        var clean = url.Trim();
+        if (clean.Length > 7 * 1024 * 1024) return false;
+
+        return clean.StartsWith("http://", StringComparison.OrdinalIgnoreCase) ||
+               clean.StartsWith("https://", StringComparison.OrdinalIgnoreCase) ||
+               clean.StartsWith("blob:", StringComparison.OrdinalIgnoreCase) ||
+               clean.StartsWith("/uploads/", StringComparison.OrdinalIgnoreCase) ||
+               clean.StartsWith("data:application/pdf", StringComparison.OrdinalIgnoreCase) ||
+               clean.StartsWith("data:image/", StringComparison.OrdinalIgnoreCase);
+    }
 
     private static string? MaskPan(string? pan)
     {
@@ -394,11 +418,23 @@ public class KycService : IKycService
             if (!string.IsNullOrWhiteSpace(dto.IfscCode) && !IsValidIfsc(dto.IfscCode))
                 return ApiResponse<KycDto>.ErrorResponse("Invalid IFSC code format (e.g. HDFC0001234).");
 
-            if (!string.IsNullOrWhiteSpace(dto.PanDocumentUrl) && dto.PanDocumentUrl.Length > 7 * 1024 * 1024)
-                return ApiResponse<KycDto>.ErrorResponse("PAN document file size exceeds the 5 MB limit.");
+            if (!IsSafeDocumentUrl(dto.PanDocumentUrl))
+                return ApiResponse<KycDto>.ErrorResponse("PAN document file is invalid, unsafe, or exceeds the 5 MB limit.");
 
-            if (!string.IsNullOrWhiteSpace(dto.AadhaarDocumentUrl) && dto.AadhaarDocumentUrl.Length > 7 * 1024 * 1024)
-                return ApiResponse<KycDto>.ErrorResponse("Aadhaar document file size exceeds the 5 MB limit.");
+            if (!IsSafeDocumentUrl(dto.AadhaarDocumentUrl))
+                return ApiResponse<KycDto>.ErrorResponse("Aadhaar document file is invalid, unsafe, or exceeds the 5 MB limit.");
+
+            if (!IsSafeDocumentUrl(dto.BankChequeUrl))
+                return ApiResponse<KycDto>.ErrorResponse("Bank cheque file is invalid, unsafe, or exceeds the 5 MB limit.");
+
+            if (!IsSafeDocumentUrl(dto.DematDocumentUrl))
+                return ApiResponse<KycDto>.ErrorResponse("Demat document file is invalid, unsafe, or exceeds the 5 MB limit.");
+
+            if (!IsSafeDocumentUrl(dto.PhotoUrl))
+                return ApiResponse<KycDto>.ErrorResponse("Photo file is invalid, unsafe, or exceeds the 5 MB limit.");
+
+            if (!IsSafeDocumentUrl(dto.SignatureUrl))
+                return ApiResponse<KycDto>.ErrorResponse("Signature file is invalid, unsafe, or exceeds the 5 MB limit.");
         }
 
         kyc.InvestorName = !string.IsNullOrWhiteSpace(dto.InvestorName) ? dto.InvestorName : kyc.InvestorName;
@@ -812,6 +848,19 @@ public class KycService : IKycService
         {
             kyc.NomineesJson = string.IsNullOrWhiteSpace(dto.NomineesJson) ? "[]" : dto.NomineesJson.Trim();
         }
+
+        if (!IsSafeDocumentUrl(dto.PanDocumentUrl))
+            return ApiResponse<KycDto>.ErrorResponse("PAN document file is invalid, unsafe, or exceeds the 5 MB limit.");
+        if (!IsSafeDocumentUrl(dto.AadhaarDocumentUrl))
+            return ApiResponse<KycDto>.ErrorResponse("Aadhaar document file is invalid, unsafe, or exceeds the 5 MB limit.");
+        if (!IsSafeDocumentUrl(dto.BankChequeUrl))
+            return ApiResponse<KycDto>.ErrorResponse("Bank cheque file is invalid, unsafe, or exceeds the 5 MB limit.");
+        if (!IsSafeDocumentUrl(dto.DematDocumentUrl))
+            return ApiResponse<KycDto>.ErrorResponse("Demat document file is invalid, unsafe, or exceeds the 5 MB limit.");
+        if (!IsSafeDocumentUrl(dto.PhotoUrl))
+            return ApiResponse<KycDto>.ErrorResponse("Photo file is invalid, unsafe, or exceeds the 5 MB limit.");
+        if (!IsSafeDocumentUrl(dto.SignatureUrl))
+            return ApiResponse<KycDto>.ErrorResponse("Signature file is invalid, unsafe, or exceeds the 5 MB limit.");
 
         kyc.PanDocumentUrl = dto.PanDocumentUrl ?? kyc.PanDocumentUrl;
         kyc.AadhaarDocumentUrl = dto.AadhaarDocumentUrl ?? kyc.AadhaarDocumentUrl;

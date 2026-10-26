@@ -33,6 +33,7 @@ import {
   Sparkles,
   Check,
   ExternalLink,
+  Loader2,
 } from 'lucide-react';
 import { EXTERNAL_VERIFICATION_LINKS } from '../../constants/externalLinks';
 import { SendKycLinkModal } from './components/SendKycLinkModal';
@@ -188,7 +189,13 @@ const KYCUploadCard: React.FC<KYCUploadProps> = ({
     <div className="form-group" style={{ marginBottom: 12 }}>
       <label className="form-label" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span>{label} {required && <span style={{ color: '#ef4444' }}>*</span>}</span>
-        {doc && <span style={{ color: '#10b981', fontSize: 11, fontWeight: 700 }}>✓ Uploaded</span>}
+        {doc && (
+          doc.url || pendingDocFiles.has(doc) ? (
+            <span style={{ color: '#10b981', fontSize: 11, fontWeight: 700 }}>✓ Uploaded</span>
+          ) : (
+            <span style={{ color: '#f59e0b', fontSize: 11, fontWeight: 700 }}>⚠️ Needs re-attachment</span>
+          )
+        )}
       </label>
 
       {doc ? (
@@ -254,6 +261,12 @@ const KYCUploadCard: React.FC<KYCUploadProps> = ({
 // PREFERRED ASSET CLASS RESOLVER (Only display if confirmed from real customer/IRM input)
 // ==============================================================================
 const resolvePreferredAssetClass = (deal: Deal, leadsList: Lead[] = [], customersList: Customer[] = []) => {
+  // 1. Direct confirmed deal property (highest fidelity - saved by IRM on the deal)
+  const dealPref = deal.preferredAssetClass?.trim();
+  if (dealPref && dealPref !== '—' && dealPref.toLowerCase() !== 'not specified') {
+    return dealPref;
+  }
+
   const fDigits = (deal.phone || '').replace(/\D/g, '').slice(-10);
 
   const matchingLead = leadsList.find(l => {
@@ -267,8 +280,11 @@ const resolvePreferredAssetClass = (deal: Deal, leadsList: Lead[] = [], customer
     return Boolean(cDigits && fDigits && cDigits === fDigits);
   });
 
-  const leadConfirmed = matchingLead?.customFields?.irmPreferencesConfirmed === true;
-  const custConfirmed = matchingCustomer?.customFields?.irmPreferencesConfirmed === true;
+  const isConfirmedFlag = (val: any) =>
+    val === true || val === 'true' || val === 'True' || val === 1 || val === '1';
+
+  const leadConfirmed = isConfirmedFlag(matchingLead?.customFields?.irmPreferencesConfirmed);
+  const custConfirmed = isConfirmedFlag(matchingCustomer?.customFields?.irmPreferencesConfirmed);
 
   let savedLocal: any = null;
   try {
@@ -279,42 +295,87 @@ const resolvePreferredAssetClass = (deal: Deal, leadsList: Lead[] = [], customer
     if (raw) savedLocal = JSON.parse(raw);
   } catch { }
 
-  // If a lead or customer is identified and preferences are NOT confirmed,
-  // purge any stale / rogue localStorage entries claiming confirmation.
-  if ((matchingLead && !leadConfirmed) || (matchingCustomer && !custConfirmed)) {
-    if (savedLocal?.confirmed) {
-      try {
-        if (deal.customerId) localStorage.removeItem(`nexus_irm_pref_${deal.customerId}`);
-        if (fDigits) localStorage.removeItem(`nexus_irm_pref_${fDigits}`);
-        localStorage.removeItem(`nexus_irm_pref_${deal.id}`);
-      } catch { }
-      savedLocal = null;
+  // 2. Confirmed lead custom fields
+  if (matchingLead?.customFields?.preferredAssetClass) {
+    const lPref = matchingLead.customFields.preferredAssetClass.trim();
+    if (lPref && lPref !== '—' && lPref.toLowerCase() !== 'not specified') {
+      return lPref;
     }
   }
 
-  // 1. Confirmed lead custom fields
-  if (leadConfirmed && matchingLead?.customFields?.preferredAssetClass) {
-    return matchingLead.customFields.preferredAssetClass;
-  }
-
-  // 2. Confirmed customer custom fields
-  if (custConfirmed && matchingCustomer?.customFields?.preferredAssetClass) {
-    return matchingCustomer.customFields.preferredAssetClass;
-  }
-
-  // 3. Explicitly confirmed deal
-  if (deal.preferredAssetClass && deal.preferredAssetClass !== '—' && deal.preferredAssetClass.trim() !== '') {
-    if (leadConfirmed || custConfirmed || (!matchingLead && !matchingCustomer && savedLocal?.confirmed === true)) {
-      return deal.preferredAssetClass;
+  // 3. Confirmed customer custom fields
+  if (matchingCustomer?.customFields?.preferredAssetClass) {
+    const cPref = matchingCustomer.customFields.preferredAssetClass.trim();
+    if (cPref && cPref !== '—' && cPref.toLowerCase() !== 'not specified') {
+      return cPref;
     }
   }
 
-  // 4. Stored local preference (only if explicitly confirmed and not refuted by unconfirmed lead/customer)
-  if (!matchingLead && !matchingCustomer && savedLocal?.confirmed === true && savedLocal?.preferredAssetClass) {
-    return savedLocal.preferredAssetClass;
+  // 4. Stored local preference
+  if (savedLocal?.preferredAssetClass) {
+    const sPref = String(savedLocal.preferredAssetClass).trim();
+    if (sPref && sPref !== '—' && sPref.toLowerCase() !== 'not specified') {
+      return sPref;
+    }
   }
 
   return '—';
+};
+
+export const formatKycCurrency = (val: number) => {
+  if (val >= 10000000) return `₹${(val / 10000000).toFixed(2)} Cr`;
+  if (val >= 100000) return `₹${(val / 100000).toFixed(1)} L`;
+  return `₹${val.toLocaleString('en-IN')}`;
+};
+
+export const resolveCustomerInvestmentAmount = (
+  deal: Deal,
+  leadsList: Lead[] = [],
+  customersList: Customer[] = []
+): string => {
+  const fDigits = (deal.phone || '').replace(/\D/g, '').slice(-10);
+  const matchingLead = leadsList.find(l => {
+    if (deal.customerId && (l.id === deal.customerId || String(l.id) === String(deal.customerId))) return true;
+    const lDigits = (l.phone || '').replace(/\D/g, '').slice(-10);
+    return Boolean(lDigits && fDigits && lDigits === fDigits);
+  });
+  const matchingCustomer = customersList.find(c => {
+    if (deal.customerId && (c.id === deal.customerId || String(c.id) === String(deal.customerId))) return true;
+    const cDigits = (c.phone || '').replace(/\D/g, '').slice(-10);
+    return Boolean(cDigits && fDigits && cDigits === fDigits);
+  });
+  const val =
+    deal.value ||
+    (deal as any).customFields?.investmentAmount ||
+    matchingLead?.customFields?.investmentAmount ||
+    matchingCustomer?.customFields?.investmentAmount;
+  const num = Number(val);
+  return num && num > 0 ? formatKycCurrency(num) : '—';
+};
+
+export const isToastError = (msg: string | null | undefined): boolean => {
+  if (!msg) return false;
+  const lower = msg.toLowerCase();
+  return (
+    lower.includes('failed') ||
+    lower.includes('error') ||
+    lower.includes('denied') ||
+    lower.includes('missing') ||
+    lower.includes('invalid') ||
+    lower.includes('cannot') ||
+    lower.includes('could not') ||
+    lower.includes('rejected') ||
+    lower.includes('wrong') ||
+    lower.includes('⚠️') ||
+    lower.includes('❌') ||
+    lower.includes('unauthorized') ||
+    lower.includes('forbidden') ||
+    lower.includes('please select') ||
+    lower.includes('please enter') ||
+    lower.includes('please provide') ||
+    lower.includes('please re-attach') ||
+    lower.startsWith('no matching')
+  );
 };
 
 // ==============================================================================
@@ -345,7 +406,13 @@ const GhlIrmKycView: React.FC = () => {
   const [sendLinkDeal, setSendLinkDeal] = useState<Deal | null>(null);
   const [reviewDeal, setReviewDeal] = useState<Deal | null>(null);
   const [dbKycs, setDbKycs] = useState<Record<string, any>>({});
+  const [kycSyncWarning, setKycSyncWarning] = useState<string | null>(null);
+  const [isLiveKycLoaded, setIsLiveKycLoaded] = useState<boolean>(false);
   const [sentDealIds, setSentDealIds] = useState<Record<string, boolean>>({});
+
+  // In-flight upload promise deduplication mutex & step save flag
+  const [isStepSaving, setIsStepSaving] = useState<boolean>(false);
+  const inFlightUploads = useRef<WeakMap<object, Promise<string | null>>>(new WeakMap());
 
   // View state: 'table' | 'flow' | 'profile'
   const [viewMode, setViewMode] = useState<'table' | 'flow' | 'profile'>('table');
@@ -484,9 +551,15 @@ const GhlIrmKycView: React.FC = () => {
       const res = await fetch(apiUrl('/irm/kyc/all'), {
         headers: getAuthHeaders(),
       });
-      if (!res.ok) return;
+      if (!res.ok) {
+        setKycSyncWarning(`Live KYC synchronization failed (HTTP ${res.status}). Retaining cached records.`);
+        setIsLiveKycLoaded(false);
+        return;
+      }
       const json = await res.json();
       if (json?.success && Array.isArray(json.data)) {
+        setKycSyncWarning(null);
+        setIsLiveKycLoaded(true);
         const map: Record<string, any> = {};
         json.data.forEach((k: any) => {
           if (!k) return;
@@ -507,7 +580,8 @@ const GhlIrmKycView: React.FC = () => {
         setDbKycs(map);
       }
     } catch {
-      // background refresh
+      setKycSyncWarning('Network error: Live KYC synchronization failed. Retaining cached records.');
+      setIsLiveKycLoaded(false);
     }
   };
 
@@ -589,12 +663,65 @@ const GhlIrmKycView: React.FC = () => {
     setIsLoading(true);
     setLoadError(false);
     try {
-      const [allDeals, apiLeads, apiCustomers] = await Promise.all([
+      interface KycFetchResult {
+        isError: boolean;
+        status?: number;
+        networkError?: boolean;
+        message?: string;
+        json?: any;
+      }
+
+      const [allDeals, apiLeads, apiCustomers, kycResponse] = await Promise.all([
         getDeals(tenant?.id),
         getLeads(tenant?.id),
         getCustomers(tenant?.id),
+        fetch(apiUrl('/irm/kyc/all'), {
+          headers: getAuthHeaders(),
+        })
+          .then(async (res): Promise<KycFetchResult> => {
+            if (!res.ok) {
+              return { isError: true, status: res.status, message: `HTTP ${res.status}` };
+            }
+            const json = await res.json().catch(() => null);
+            return { isError: false, json };
+          })
+          .catch((err): KycFetchResult => {
+            console.warn('[KYCPage] Error fetching KYC records:', err);
+            return { isError: true, networkError: true, message: err?.message || 'Network error' };
+          }),
       ]);
       if (my !== reqId.current) return;
+
+      if (kycResponse?.isError) {
+        setKycSyncWarning(
+          kycResponse.networkError
+            ? 'Network error: Unable to load live KYC records. Showing cached or local records.'
+            : `Live KYC synchronization failed (${kycResponse.message}). Showing cached or local records.`
+        );
+        setIsLiveKycLoaded(false);
+      } else if (kycResponse?.json?.success && Array.isArray(kycResponse.json.data)) {
+        setKycSyncWarning(null);
+        setIsLiveKycLoaded(true);
+        const map: Record<string, any> = {};
+        kycResponse.json.data.forEach((k: any) => {
+          if (!k) return;
+          if (k.id) map[`id_${k.id}`] = k;
+          if (k.investorId) map[`inv_${k.investorId}`] = k;
+          if (k.email) {
+            map[`email_${k.email.toLowerCase().trim()}`] = k;
+            map[k.email.toLowerCase().trim()] = k;
+          }
+          if (k.phone) {
+            const p10 = (k.phone || '').replace(/\D/g, '').slice(-10);
+            if (p10) map[`phone_${p10}`] = k;
+          }
+          if (k.companyId && k.investorId) {
+            map[`comp_${k.companyId}_inv_${k.investorId}`] = k;
+          }
+        });
+        setDbKycs(map);
+      }
+
       const leadsList = apiLeads || [];
       const customersList = apiCustomers || [];
       const enriched = (allDeals || []).map(d => enrichDealWithContact(d, leadsList, customersList));
@@ -636,37 +763,6 @@ const GhlIrmKycView: React.FC = () => {
         setIsLoading(false);
       }
     }
-
-    fetch(apiUrl('/irm/kyc/all'), {
-      headers: getAuthHeaders(),
-    })
-      .then(res => (res.ok ? res.json() : null))
-      .then(json => {
-        if (my !== reqId.current) return;
-        if (json?.success && Array.isArray(json.data)) {
-          const map: Record<string, any> = {};
-          json.data.forEach((k: any) => {
-            if (!k) return;
-            if (k.id) map[`id_${k.id}`] = k;
-            if (k.investorId) map[`inv_${k.investorId}`] = k;
-            if (k.email) {
-              map[`email_${k.email.toLowerCase().trim()}`] = k;
-              map[k.email.toLowerCase().trim()] = k;
-            }
-            if (k.phone) {
-              const p10 = (k.phone || '').replace(/\D/g, '').slice(-10);
-              if (p10) map[`phone_${p10}`] = k;
-            }
-            if (k.companyId && k.investorId) {
-              map[`comp_${k.companyId}_inv_${k.investorId}`] = k;
-            }
-          });
-          setDbKycs(map);
-        }
-      })
-      .catch(() => {
-        if (my !== reqId.current) return;
-      });
   };
 
   const getResolvedLocation = (deal: Deal) => {
@@ -712,6 +808,40 @@ const GhlIrmKycView: React.FC = () => {
 
   const getIrmPreferredAssetClass = (deal: Deal) => {
     return resolvePreferredAssetClass(deal, leads, customers);
+  };
+
+  const getCustomerInvestmentAmount = (deal: Deal) => {
+    return resolveCustomerInvestmentAmount(deal, leads, customers);
+  };
+
+  const getIrmInvestmentHorizon = (deal: Deal) => {
+    const fDigits = (deal.phone || '').replace(/\D/g, '').slice(-10);
+    const matchingLead = leads.find(l => {
+      if (deal.customerId && (l.id === deal.customerId || String(l.id) === String(deal.customerId))) return true;
+      const lDigits = (l.phone || '').replace(/\D/g, '').slice(-10);
+      return Boolean(lDigits && fDigits && lDigits === fDigits);
+    });
+    const matchingCustomer = customers.find(c => {
+      if (deal.customerId && (c.id === deal.customerId || String(c.id) === String(deal.customerId))) return true;
+      const cDigits = (c.phone || '').replace(/\D/g, '').slice(-10);
+      return Boolean(cDigits && fDigits && cDigits === fDigits);
+    });
+    let savedLocal: any = null;
+    try {
+      const raw =
+        (deal.customerId ? localStorage.getItem(`nexus_irm_pref_${deal.customerId}`) : null) ||
+        (fDigits ? localStorage.getItem(`nexus_irm_pref_${fDigits}`) : null) ||
+        localStorage.getItem(`nexus_irm_pref_${deal.id}`);
+      if (raw) savedLocal = JSON.parse(raw);
+    } catch { }
+    return (
+      matchingLead?.customFields?.horizon ||
+      matchingLead?.customFields?.investmentHorizon ||
+      matchingCustomer?.customFields?.horizon ||
+      matchingCustomer?.customFields?.investmentHorizon ||
+      savedLocal?.horizon ||
+      '—'
+    );
   };
 
   const getDynamicKycStatus = (deal: Deal): 'completed' | 'continue' | 'pending' => {
@@ -1236,6 +1366,64 @@ const GhlIrmKycView: React.FC = () => {
     startAssistedKycFlow(deal, targetStep);
   };
 
+  /** Resolves the appropriate entity type and id for uploading KYC documents to /documents */
+  const resolveDocUploadEntity = (deal: Deal): { entityType: string; entityId: string } => {
+    // 1. Direct positive numeric customer ID on deal
+    const parsedCust = Number(deal.customerId);
+    if (Number.isInteger(parsedCust) && parsedCust > 0) {
+      return { entityType: 'investor', entityId: String(parsedCust) };
+    }
+
+    // 2. Prefixed numeric customer ID (e.g. 'customer-14', 'cust-14', 'db-14')
+    if (typeof deal.customerId === 'string') {
+      const stripped = deal.customerId.replace(/^(customer-|cust-|db-)/i, '');
+      const numStripped = Number(stripped);
+      if (Number.isInteger(numStripped) && numStripped > 0) {
+        return { entityType: 'investor', entityId: String(numStripped) };
+      }
+    }
+
+    // 3. Match against loaded customers by phone/email/id
+    const phoneDigits = (deal.phone || '').replace(/\D/g, '').slice(-10);
+    const matchCust = customers.find(c =>
+      (deal.customerId && (c.id === deal.customerId || String(c.id) === String(deal.customerId))) ||
+      (phoneDigits && c.phone && c.phone.replace(/\D/g, '').slice(-10) === phoneDigits) ||
+      (deal.email && c.email && c.email.trim().toLowerCase() === deal.email.trim().toLowerCase())
+    );
+    if (matchCust) {
+      const custNum = Number(matchCust.id);
+      if (Number.isInteger(custNum) && custNum > 0) {
+        return { entityType: 'investor', entityId: String(custNum) };
+      }
+    }
+
+    // 4. Match against loaded leads by phone/email/id
+    const matchLead = leads.find(l =>
+      (deal.customerId && (l.id === deal.customerId || String(l.id) === String(deal.customerId))) ||
+      (phoneDigits && l.phone && l.phone.replace(/\D/g, '').slice(-10) === phoneDigits) ||
+      (deal.email && l.email && l.email.trim().toLowerCase() === deal.email.trim().toLowerCase())
+    );
+    if (matchLead) {
+      const leadNum = Number(matchLead.id);
+      if (Number.isInteger(leadNum) && leadNum > 0) {
+        return { entityType: 'lead', entityId: String(leadNum) };
+      }
+    }
+
+    // 5. Deal numeric ID
+    const dealNum = Number(deal.id);
+    if (Number.isInteger(dealNum) && dealNum > 0) {
+      return { entityType: 'deal', entityId: String(dealNum) };
+    }
+
+    // 6. Explicit validation: Reject fallback '0' and invalid/missing identifiers
+    const candidateId = String(deal.id || deal.customerId || '').trim();
+    if (!candidateId || candidateId === '0' || candidateId === 'undefined' || candidateId === 'null') {
+      throw new Error(`Cannot upload document: Missing or invalid entity identifier for deal "${deal.customerName || deal.title || deal.id || 'Unknown'}".`);
+    }
+    return { entityType: 'deal', entityId: candidateId };
+  };
+
   /** Uploads a KYC document file to the server (once) and returns its stored URL. */
   const uploadKycDoc = async (
     doc: KycDoc | null,
@@ -1245,55 +1433,87 @@ const GhlIrmKycView: React.FC = () => {
     if (!doc) return null;
     if (doc.url) return doc.url;
 
-    const file = pendingDocFiles.get(doc);
-    if (!file) {
-      throw new Error(`Please re-attach the ${category} document and try again.`);
-    }
-    const investorId = Number(deal.customerId);
-    if (!Number.isFinite(investorId) || investorId <= 0) {
-      throw new Error('Cannot upload documents: this deal is not linked to an investor record yet.');
+    // Mutex / in-flight deduplication to prevent duplicate concurrent uploads
+    const existing = inFlightUploads.current.get(doc);
+    if (existing) {
+      return existing;
     }
 
-    const fd = new FormData();
-    fd.append('Name', file.name);
-    fd.append('Size', doc.size);
-    fd.append('Type', doc.type);
-    fd.append('Category', category);
-    fd.append('EntityType', 'investor');
-    fd.append('EntityId', String(investorId));
-    fd.append('File', file);
+    const uploadPromise = (async () => {
+      const file = pendingDocFiles.get(doc);
+      if (!file) {
+        throw new Error(`Please re-attach the ${category} document and try again.`);
+      }
 
-    const res = await fetch(apiUrl('/documents'), {
-      method: 'POST',
-      headers: getAuthHeaders(), // no Content-Type: the browser sets the multipart boundary
-      body: fd,
-    });
-    const json = await res.json().catch(() => null);
-    if (!res.ok || !json?.success || !json?.data?.fileUrl) {
-      throw new Error(json?.message || `Failed to upload ${category} document.`);
+      const { entityType, entityId } = resolveDocUploadEntity(deal);
+
+      const fd = new FormData();
+      fd.append('Name', file.name);
+      fd.append('Size', doc.size);
+      fd.append('Type', doc.type);
+      fd.append('Category', category);
+      fd.append('EntityType', entityType);
+      fd.append('EntityId', entityId);
+      fd.append('File', file);
+
+      const res = await fetch(apiUrl('/documents'), {
+        method: 'POST',
+        headers: getAuthHeaders(), // no Content-Type: the browser sets the multipart boundary
+        body: fd,
+      });
+      const json = await res.json().catch(() => null);
+      if (!res.ok || !json?.success || !json?.data?.fileUrl) {
+        throw new Error(json?.message || `Failed to upload ${category} document.`);
+      }
+      doc.url = String(json.data.fileUrl); // cache so retries don't upload again
+      return doc.url;
+    })();
+
+    inFlightUploads.current.set(doc, uploadPromise);
+    try {
+      return await uploadPromise;
+    } finally {
+      inFlightUploads.current.delete(doc);
     }
-    doc.url = String(json.data.fileUrl); // cache so retries don't upload again
-    return doc.url;
   };
 
   const saveBackendDraft = async (deal: Deal, data: KYCFormData, step: number) => {
     try {
-      // Best-effort document upload for drafts: a failed upload must not block saving the text fields.
-      const tryUpload = async (doc: KycDoc | null, category: string) => {
+      // Step-aware document upload: uploads required documents and propagates failures
+      const uploadOrThrow = async (doc: KycDoc | null, category: string, isRequired: boolean) => {
+        if (!doc) return null;
+        if (doc.url) return doc.url;
         try {
           return await uploadKycDoc(doc, category, deal);
-        } catch (e) {
-          console.warn('[KYC draft] document not uploaded:', e);
-          return doc?.url || null;
+        } catch (e: any) {
+          if (isRequired || pendingDocFiles.has(doc)) {
+            throw e;
+          }
+          console.warn(`[KYC draft] ${category} upload non-critical failure:`, e);
+          return null;
         }
       };
+
+      const isStep2 = step === 2;
+      const isStep3 = step === 3;
+      const isStep4 = step === 4;
+
       const docUrls = {
-        pan: await tryUpload(data.panDoc, 'KYC - PAN'),
-        aadhaar: await tryUpload(data.aadhaarDoc, 'KYC - Aadhaar'),
-        bank: await tryUpload(data.bankProofDoc, 'KYC - Bank Proof'),
-        demat: data.hasNoDemat ? null : await tryUpload(data.dematDoc, 'KYC - Demat Statement'),
-        photo: await tryUpload(data.photoDoc, 'KYC - Investor Photo'),
+        pan: await uploadOrThrow(data.panDoc, 'KYC - PAN', isStep2),
+        aadhaar: await uploadOrThrow(data.aadhaarDoc, 'KYC - Aadhaar', isStep2),
+        bank: await uploadOrThrow(data.bankProofDoc, 'KYC - Bank Proof', isStep3),
+        demat: data.hasNoDemat ? null : await uploadOrThrow(data.dematDoc, 'KYC - Demat Statement', isStep4),
+        photo: await uploadOrThrow(data.photoDoc, 'KYC - Investor Photo', isStep2),
       };
+
+      // Keep local state & storage synchronized with returned server URLs
+      if (data.panDoc && docUrls.pan) data.panDoc.url = docUrls.pan;
+      if (data.aadhaarDoc && docUrls.aadhaar) data.aadhaarDoc.url = docUrls.aadhaar;
+      if (data.bankProofDoc && docUrls.bank) data.bankProofDoc.url = docUrls.bank;
+      if (data.dematDoc && docUrls.demat) data.dematDoc.url = docUrls.demat;
+      if (data.photoDoc && docUrls.photo) data.photoDoc.url = docUrls.photo;
+      saveKycLocal(deal.id, data);
+
       const payload = {
         investorId: deal.customerId ? Number(deal.customerId) || 0 : 0,
         kycId: deal.kycId || (deal as any).kycRecordId || undefined,
@@ -1341,6 +1561,8 @@ const GhlIrmKycView: React.FC = () => {
       if (!res.ok) {
         const errJson = await res.json().catch(() => null);
         throw new Error(errJson?.message || `Draft was not saved on the server (${res.status}).`);
+      } else {
+        setFormData({ ...data });
       }
     } catch (err) {
       console.warn('Draft save error:', err);
@@ -1411,8 +1633,8 @@ const GhlIrmKycView: React.FC = () => {
     }
   };
 
-  const handleSaveDraft = (showToastNotice: boolean = true) => {
-    if (!selectedDeal) return;
+  const handleSaveDraft = async (showToastNotice: boolean = true): Promise<boolean> => {
+    if (!selectedDeal) return false;
     const dealId = selectedDeal.id;
 
     // Preserve existing submitted/verified status — avoid overwriting
@@ -1422,7 +1644,7 @@ const GhlIrmKycView: React.FC = () => {
       currentResolved === 'Submitted' ||
       currentResolved === 'Assisted KYC – Submitted for Verification';
 
-    // 1. Save all form field values
+    // 1. Save all form field values locally (sanitized)
     saveKycLocal(dealId, formData);
 
     // 2. Save draft metadata
@@ -1448,17 +1670,23 @@ const GhlIrmKycView: React.FC = () => {
       persistDeal(updatedDeal).catch(() => {});
     }
 
-    // 4. Save to backend if authenticated
+    // 4. Save to backend if authenticated (awaiting upload & draft persistence)
     if (user) {
-      saveBackendDraft(selectedDeal, formData, currentStep).catch(err => {
-        showToast(`⚠️ Draft is only saved on this device: ${err?.message || 'server error'}`);
-      });
+      try {
+        await saveBackendDraft(selectedDeal, formData, currentStep);
+      } catch (err: any) {
+        const errorMsg = err?.message || 'Server error while saving draft or uploading documents.';
+        setValidationErrorSummary(`Save / Upload failed: ${errorMsg}`);
+        showToast(`⚠️ ${errorMsg}`);
+        return false;
+      }
     }
 
     window.dispatchEvent(new Event('nexus_storage_updated'));
     if (showToastNotice) {
       showToast(`Assisted KYC draft saved at Step ${currentStep} of 5. You can resume at any time.`);
     }
+    return true;
   };
 
   const handleOpenSectionEdit = (section: 'personal' | 'address') => {
@@ -1757,22 +1985,34 @@ const GhlIrmKycView: React.FC = () => {
     if (step === 2) {
       if (!formData.aadhaarDoc) {
         errs.aadhaarDoc = 'Upload Aadhaar is required';
+      } else if (!formData.aadhaarDoc.url && !pendingDocFiles.has(formData.aadhaarDoc)) {
+        errs.aadhaarDoc = 'Please re-attach the Aadhaar document.';
       }
       if (!formData.panDoc) {
         errs.panDoc = 'Upload PAN is required';
+      } else if (!formData.panDoc.url && !pendingDocFiles.has(formData.panDoc)) {
+        errs.panDoc = 'Please re-attach the PAN document.';
       }
       if (!formData.photoDoc) {
         errs.photoDoc = 'Upload Investor Face Photo is required for biometric verification';
+      } else if (!formData.photoDoc.url && !pendingDocFiles.has(formData.photoDoc)) {
+        errs.photoDoc = 'Please re-attach the Investor Face Photo.';
       }
     }
     if (step === 3) {
       if (!formData.bankProofDoc) {
         errs.bankProofDoc = 'Upload Bank Statement / Cheque / Passbook is required';
+      } else if (!formData.bankProofDoc.url && !pendingDocFiles.has(formData.bankProofDoc)) {
+        errs.bankProofDoc = 'Please re-attach the Bank Statement / Cheque.';
       }
     }
     if (step === 4) {
-      if (!formData.hasNoDemat && !formData.dematDoc) {
-        errs.dematDoc = 'Upload Demat Statement is required';
+      if (!formData.hasNoDemat) {
+        if (!formData.dematDoc) {
+          errs.dematDoc = 'Upload Demat Statement is required';
+        } else if (!formData.dematDoc.url && !pendingDocFiles.has(formData.dematDoc)) {
+          errs.dematDoc = 'Please re-attach the Demat Statement.';
+        }
       }
     }
 
@@ -1786,37 +2026,35 @@ const GhlIrmKycView: React.FC = () => {
     return count === 0;
   };
 
-  const handleContinue = () => {
-    if (validateStep(currentStep)) {
-      setFormErrors({});
-      setValidationErrorSummary(null);
-      if (selectedDeal) {
-        saveKycLocal(selectedDeal.id, formData);
-        if (isAssistedFlow) {
-          const nextStep = Math.min(5, currentStep + 1);
-          localStorage.setItem(`nexus_kyc_draft_${selectedDeal.id}`, JSON.stringify({
-            isAssisted: true,
-            step: nextStep,
-            savedAt: new Date().toISOString(),
-            assistedByIrmId: user?.id,
-            assistedByIrmName: user?.name,
-            status: 'Assisted Draft',
-          }));
-          const currentStatus = localStorage.getItem(`nexus_kyc_status_${selectedDeal.id}`);
-          if (currentStatus !== 'Completed' && currentStatus !== 'Submitted for Review' && currentStatus !== 'Assisted KYC – Submitted for Verification') {
-            localStorage.setItem(`nexus_kyc_status_${selectedDeal.id}`, 'Assisted Draft');
+  const handleContinue = async () => {
+    if (isStepSaving) return;
+    if (!validateStep(currentStep)) {
+      return;
+    }
+    setFormErrors({});
+    setValidationErrorSummary(null);
+    if (selectedDeal) {
+      if (isAssistedFlow) {
+        setIsStepSaving(true);
+        try {
+          const savedOk = await handleSaveDraft(false);
+          if (!savedOk) {
+            // Stop navigation if document upload or backend persistence failed
+            return;
           }
-        } else {
-          const currentStatus = localStorage.getItem(`nexus_kyc_status_${selectedDeal.id}`);
-          if (currentStatus !== 'Completed' && currentStatus !== 'Submitted for Review') {
-            localStorage.setItem(`nexus_kyc_status_${selectedDeal.id}`, 'Partially Completed');
-          }
+        } finally {
+          setIsStepSaving(false);
         }
-        window.dispatchEvent(new Event('nexus_storage_updated'));
+      } else {
+        const currentStatus = localStorage.getItem(`nexus_kyc_status_${selectedDeal.id}`);
+        if (currentStatus !== 'Completed' && currentStatus !== 'Submitted for Review') {
+          localStorage.setItem(`nexus_kyc_status_${selectedDeal.id}`, 'Partially Completed');
+        }
       }
-      if (currentStep < 5) {
-        setCurrentStep((prev) => (prev + 1) as 1 | 2 | 3 | 4 | 5);
-      }
+      window.dispatchEvent(new Event('nexus_storage_updated'));
+    }
+    if (currentStep < 5) {
+      setCurrentStep((prev) => (prev + 1) as 1 | 2 | 3 | 4 | 5);
     }
   };
 
@@ -2194,14 +2432,44 @@ const GhlIrmKycView: React.FC = () => {
     {
       key: 'investmentRange',
       header: 'Investment Capacity',
-      width: '150px',
+      width: '185px',
       sortable: true,
       render: deal => {
         const capacity = getCustomerFilledCapacity(deal);
         const isSpecified = capacity && capacity !== '—' && capacity.trim() !== '' && capacity.toLowerCase() !== 'not specified';
         return isSpecified ? (
-          <span className="kyc-capacity-badge">
+          <span
+            className="kyc-capacity-badge"
+            title={capacity}
+            style={{
+              maxWidth: '100%',
+              display: 'inline-block',
+              overflow: 'hidden',
+              textOverflow: 'ellipsis',
+              whiteSpace: 'nowrap',
+              verticalAlign: 'middle',
+            }}
+          >
             {capacity}
+          </span>
+        ) : (
+          <span className="kyc-not-specified-badge">
+            Not Specified
+          </span>
+        );
+      },
+    },
+    {
+      key: 'value',
+      header: 'Investment Amount',
+      width: '150px',
+      sortable: true,
+      render: deal => {
+        const val = getCustomerInvestmentAmount(deal);
+        const isSpecified = val && val !== '—' && val.trim() !== '' && val.toLowerCase() !== 'not specified';
+        return isSpecified ? (
+          <span style={{ color: '#10b981', fontWeight: 800, fontSize: 13, whiteSpace: 'nowrap', display: 'inline-block' }}>
+            {val}
           </span>
         ) : (
           <span className="kyc-not-specified-badge">
@@ -2689,28 +2957,36 @@ const GhlIrmKycView: React.FC = () => {
   return (
     <div className="kyc-page-container">
       {/* Toast Notification */}
-      {toastMessage && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: 24,
-            right: 24,
-            backgroundColor: '#059669',
-            color: '#fff',
-            padding: '12px 20px',
-            borderRadius: 8,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-            zIndex: 9999,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            fontSize: 14,
-            fontWeight: 600,
-          }}
-        >
-          <CheckCircle size={18} /> {toastMessage}
-        </div>
-      )}
+      {toastMessage && (() => {
+        const isErr = isToastError(toastMessage);
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 24,
+              right: 24,
+              backgroundColor: isErr ? '#dc2626' : '#059669',
+              color: '#ffffff',
+              padding: '12px 20px',
+              borderRadius: 8,
+              border: isErr ? '1px solid #ef4444' : '1px solid #10b981',
+              boxShadow: isErr
+                ? '0 6px 20px rgba(220, 38, 38, 0.45)'
+                : '0 6px 20px rgba(5, 150, 105, 0.35)',
+              zIndex: 99999,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 14,
+              fontWeight: 600,
+              maxWidth: 500,
+            }}
+          >
+            {isErr ? <AlertCircle size={18} color="#ffffff" /> : <CheckCircle size={18} color="#ffffff" />}
+            <span>{toastMessage}</span>
+          </div>
+        );
+      })()}
 
       {viewMode === 'profile' && selectedCustomerDeal ? (() => {
         const deal = selectedCustomerDeal;
@@ -3208,7 +3484,9 @@ const GhlIrmKycView: React.FC = () => {
                     {renderField('Investor Type', data.investorType)}
                     {renderField('Resident Type', data.residentType)}
                     {renderField('Investment Capacity', getCustomerFilledCapacity(deal))}
+                    {renderField('Investment Amount', getCustomerInvestmentAmount(deal))}
                     {renderField('Preferred Asset Class', getIrmPreferredAssetClass(deal))}
+                    {renderField('Investment Horizon', getIrmInvestmentHorizon(deal))}
                   </div>
                 </div>
               )}
@@ -3460,6 +3738,35 @@ const GhlIrmKycView: React.FC = () => {
                 style={{ borderColor: '#ef4444', color: '#ef4444' }}
               >
                 Retry
+              </button>
+            </div>
+          )}
+
+          {/* Live Sync Warning Banner */}
+          {kycSyncWarning && !loadError && (
+            <div style={{
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'space-between',
+              padding: '12px 16px',
+              marginBottom: 16,
+              borderRadius: 8,
+              backgroundColor: 'rgba(245, 158, 11, 0.1)',
+              border: '1px solid rgba(245, 158, 11, 0.3)',
+              color: '#d97706',
+              fontSize: 13,
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                <AlertTriangle size={16} />
+                <span><strong>Live Sync Warning:</strong> {kycSyncWarning}</span>
+              </div>
+              <button
+                type="button"
+                className="btn btn-secondary btn-sm"
+                onClick={() => refreshDbKycs()}
+                style={{ borderColor: '#d97706', color: '#d97706', marginLeft: 12 }}
+              >
+                Retry Live Sync
               </button>
             </div>
           )}
@@ -4497,10 +4804,12 @@ const GhlIrmKycView: React.FC = () => {
                   type="button"
                   className="btn btn-ghost"
                   onClick={() => handleSaveDraft(true)}
+                  disabled={isStepSaving}
                   title="Save current details as draft"
                   style={{ border: '1px solid var(--border-color)', display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 13 }}
                 >
-                  <Save size={14} /> Save Draft
+                  {isStepSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  {isStepSaving ? 'Saving...' : 'Save Draft'}
                 </button>
               </div>
 
@@ -4514,16 +4823,25 @@ const GhlIrmKycView: React.FC = () => {
                     type="button"
                     className="btn btn-primary"
                     onClick={handleContinue}
+                    disabled={isStepSaving}
+                    style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
                   >
-                    {currentStep === 1 && 'Continue to Identity Details (Step 2) →'}
-                    {currentStep === 2 && 'Continue to Bank Details (Step 3) →'}
-                    {currentStep === 3 && 'Continue to Demat Details (Step 4) →'}
-                    {currentStep === 4 && 'Continue to Nominee Details (Step 5) →'}
+                    {isStepSaving && <Loader2 size={16} className="animate-spin" />}
+                    {isStepSaving
+                      ? 'Saving & Uploading Documents...'
+                      : currentStep === 1
+                      ? 'Continue to Identity Details (Step 2) →'
+                      : currentStep === 2
+                      ? 'Continue to Bank Details (Step 3) →'
+                      : currentStep === 3
+                      ? 'Continue to Demat Details (Step 4) →'
+                      : 'Continue to Nominee Details (Step 5) →'}
                   </button>
                 ) : (
                   <button
                     type="button"
                     className="btn btn-primary"
+                    disabled={isStepSaving}
                     style={{ backgroundColor: '#7c3aed', borderColor: '#7c3aed', display: 'inline-flex', alignItems: 'center', gap: 6 }}
                     onClick={handleOpenReviewForSubmission}
                   >
@@ -5250,6 +5568,24 @@ const OriginalKYCView: React.FC = () => {
       },
     },
     {
+      key: 'value',
+      header: 'Investment Amount',
+      sortable: true,
+      render: deal => {
+        const val = resolveCustomerInvestmentAmount(deal, storageService.getLeads(tenant?.id), storageService.getCustomers(tenant?.id));
+        const isSpecified = val && val !== '—' && val.trim() !== '' && val.toLowerCase() !== 'not specified';
+        return isSpecified ? (
+          <span style={{ color: '#10b981', fontWeight: 800, fontSize: 13 }}>
+            {val}
+          </span>
+        ) : (
+          <span className="kyc-not-specified-badge">
+            Not Specified
+          </span>
+        );
+      },
+    },
+    {
       key: 'preferredAssetClass',
       header: 'Preferred Asset Class',
       render: deal => {
@@ -5349,28 +5685,36 @@ const OriginalKYCView: React.FC = () => {
   return (
     <div className="kyc-page-container">
       {/* Toast Notification */}
-      {toastMessage && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: 24,
-            right: 24,
-            backgroundColor: '#059669',
-            color: '#fff',
-            padding: '12px 20px',
-            borderRadius: 8,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-            zIndex: 9999,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            fontSize: 14,
-            fontWeight: 600,
-          }}
-        >
-          <CheckCircle size={18} /> {toastMessage}
-        </div>
-      )}
+      {toastMessage && (() => {
+        const isErr = isToastError(toastMessage);
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 24,
+              right: 24,
+              backgroundColor: isErr ? '#dc2626' : '#059669',
+              color: '#ffffff',
+              padding: '12px 20px',
+              borderRadius: 8,
+              border: isErr ? '1px solid #ef4444' : '1px solid #10b981',
+              boxShadow: isErr
+                ? '0 6px 20px rgba(220, 38, 38, 0.45)'
+                : '0 6px 20px rgba(5, 150, 105, 0.35)',
+              zIndex: 99999,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 14,
+              fontWeight: 600,
+              maxWidth: 500,
+            }}
+          >
+            {isErr ? <AlertCircle size={18} color="#ffffff" /> : <CheckCircle size={18} color="#ffffff" />}
+            <span>{toastMessage}</span>
+          </div>
+        );
+      })()}
 
       {/* Header */}
       <div className="page-header" style={{ marginBottom: 20 }}>

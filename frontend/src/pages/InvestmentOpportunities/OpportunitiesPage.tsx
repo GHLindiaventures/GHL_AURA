@@ -989,28 +989,55 @@ export const OpportunitiesPage: React.FC = () => {
   return (
     <div className="opportunities-page">
       {/* Toast Notification */}
-      {toastMessage && (
-        <div
-          style={{
-            position: 'fixed',
-            bottom: 24,
-            right: 24,
-            backgroundColor: '#059669',
-            color: '#fff',
-            padding: '12px 20px',
-            borderRadius: 8,
-            boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
-            zIndex: 9999,
-            display: 'flex',
-            alignItems: 'center',
-            gap: 8,
-            fontSize: 14,
-            fontWeight: 600,
-          }}
-        >
-          <CheckCircle size={18} /> {toastMessage}
-        </div>
-      )}
+      {toastMessage && (() => {
+        const lower = toastMessage.toLowerCase();
+        const isErr =
+          lower.includes('failed') ||
+          lower.includes('error') ||
+          lower.includes('denied') ||
+          lower.includes('missing') ||
+          lower.includes('invalid') ||
+          lower.includes('cannot') ||
+          lower.includes('could not') ||
+          lower.includes('rejected') ||
+          lower.includes('wrong') ||
+          lower.includes('⚠️') ||
+          lower.includes('❌') ||
+          lower.includes('unauthorized') ||
+          lower.includes('forbidden') ||
+          lower.includes('please select') ||
+          lower.includes('please enter') ||
+          lower.includes('please provide') ||
+          lower.startsWith('no matching');
+
+        return (
+          <div
+            style={{
+              position: 'fixed',
+              bottom: 24,
+              right: 24,
+              backgroundColor: isErr ? '#dc2626' : '#059669',
+              color: '#ffffff',
+              padding: '12px 20px',
+              borderRadius: 8,
+              border: isErr ? '1px solid #ef4444' : '1px solid #10b981',
+              boxShadow: isErr
+                ? '0 6px 20px rgba(220, 38, 38, 0.45)'
+                : '0 6px 20px rgba(5, 150, 105, 0.35)',
+              zIndex: 99999,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 8,
+              fontSize: 14,
+              fontWeight: 600,
+              maxWidth: 480,
+            }}
+          >
+            {isErr ? <AlertCircle size={18} color="#ffffff" /> : <CheckCircle size={18} color="#ffffff" />}
+            <span>{toastMessage}</span>
+          </div>
+        );
+      })()}
 
       <div className="page-header">
         <div>

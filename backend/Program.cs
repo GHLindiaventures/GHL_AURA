@@ -1127,6 +1127,7 @@ using (var scope = app.Services.CreateScope())
                             "opportunities.view","opportunities.create","opportunities.update",
                             "deals.view","deals.create","deals.update",
                             "kyc.view","kyc.approve",
+                            "documents.view","documents.manage",
                             "calls.make","calls.receive","calls.view","reports.view","chat.view","chat.send"
                         };
                     else // sales_executive
@@ -1138,6 +1139,19 @@ using (var scope = app.Services.CreateScope())
                             "followups.view","followups.create","followups.update","chat.view","chat.send"
                         };
                     rolePatched = true;
+                }
+                else if (role.Code == "irm" && role.Permissions != null)
+                {
+                    if (!role.Permissions.Contains("documents.manage"))
+                    {
+                        role.Permissions.Add("documents.manage");
+                        rolePatched = true;
+                    }
+                    if (!role.Permissions.Contains("documents.view"))
+                    {
+                        role.Permissions.Add("documents.view");
+                        rolePatched = true;
+                    }
                 }
             }
             if (rolePatched) db.SaveChanges();

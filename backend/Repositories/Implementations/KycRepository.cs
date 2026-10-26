@@ -50,7 +50,7 @@ public class KycRepository : IKycRepository
         if (string.IsNullOrWhiteSpace(email)) return null;
         var cleanEmail = email.Trim().ToLowerInvariant();
         return await _db.InvestorKycs
-            .FirstOrDefaultAsync(k => k.CompanyId == companyId && k.Email.ToLower() == cleanEmail, ct);
+            .FirstOrDefaultAsync(k => k.CompanyId == companyId && k.Email != null && k.Email.ToLower() == cleanEmail, ct);
     }
 
     public async Task<InvestorKyc?> GetByPhoneLast10Async(string phoneLast10, int companyId, CancellationToken ct = default)
@@ -65,7 +65,7 @@ public class KycRepository : IKycRepository
     public async Task<InvestorKyc?> GetByTokenAsync(string token, CancellationToken ct = default)
     {
         if (string.IsNullOrWhiteSpace(token)) return null;
-        var cleanToken = token.Trim();
+        var cleanToken = token.Trim().Split('?').First().Split('/').Last();
         var subToken = cleanToken.StartsWith("tok_", StringComparison.OrdinalIgnoreCase) ? cleanToken[4..] : cleanToken;
         var prefixedToken = cleanToken.StartsWith("tok_", StringComparison.OrdinalIgnoreCase) ? cleanToken : "tok_" + cleanToken;
 
