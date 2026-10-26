@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { kycValidators, validateKycStep, getDobValidationError, sanitizeDobString } from './kycValidators';
+import { kycValidators, validateKycStep, getDobValidationError, sanitizeDobString, maskAadhaar, maskAccount } from './kycValidators';
 
 describe('kycValidators', () => {
   describe('pan', () => {
@@ -226,6 +226,24 @@ describe('kycValidators', () => {
         residentType: 'Resident Indian',
       });
       expect(Object.keys(valid).length).toBe(0);
+    });
+  });
+
+  describe('PII masking utilities', () => {
+    it('maskAadhaar masks all digits except the last 4', () => {
+      expect(maskAadhaar('2345 6789 0123')).toBe('XXXX XXXX 0123');
+      expect(maskAadhaar('234567890123')).toBe('XXXX XXXX 0123');
+      expect(maskAadhaar(null)).toBeNull();
+      expect(maskAadhaar('', 'Not provided')).toBe('Not provided');
+      expect(maskAadhaar('123')).toBe('123');
+    });
+
+    it('maskAccount masks all characters except the last 4 with bullet points', () => {
+      expect(maskAccount('1234567890')).toBe('••••••7890');
+      expect(maskAccount('1234567890123456')).toBe('••••••••3456');
+      expect(maskAccount(null)).toBeNull();
+      expect(maskAccount('', '—')).toBe('—');
+      expect(maskAccount('1234')).toBe('1234');
     });
   });
 });

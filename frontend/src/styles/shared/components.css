@@ -215,8 +215,8 @@ h6 {
 }
 
 .form-input:not(.auth-input-field):-webkit-autofill,
-.form-input:not(.auth-input-field):-webkit-autofill:hover, 
-.form-input:not(.auth-input-field):-webkit-autofill:focus, 
+.form-input:not(.auth-input-field):-webkit-autofill:hover,
+.form-input:not(.auth-input-field):-webkit-autofill:focus,
 .form-input:not(.auth-input-field):-webkit-autofill:active,
 .form-select:-webkit-autofill,
 .form-select:-webkit-autofill:hover,
@@ -382,6 +382,7 @@ h6 {
     opacity: 0;
     transform: translateY(-12px);
   }
+
   to {
     opacity: 1;
     transform: translateY(0);
@@ -392,6 +393,7 @@ h6 {
   from {
     opacity: 0;
   }
+
   to {
     opacity: 1;
   }
@@ -436,4 +438,3 @@ h6 {
   color: var(--text-muted, #8b949e);
   font-style: normal;
 }
-

@@ -953,6 +953,7 @@
 .ai-dist-board::-webkit-scrollbar {
   height: 8px;
 }
+
 .ai-dist-board::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.15);
   border-radius: 4px;
@@ -1063,10 +1064,12 @@
 .ai-dist-col-body::-webkit-scrollbar {
   width: 6px;
 }
+
 .ai-dist-col-body::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.15);
   border-radius: 3px;
 }
+
 .ai-dist-col-body::-webkit-scrollbar-thumb:hover {
   background: rgba(255, 255, 255, 0.28);
 }
@@ -1103,6 +1106,7 @@
 .ai-dist-lead-card.is-draggable {
   cursor: grab;
 }
+
 .ai-dist-lead-card.is-draggable:active {
   cursor: grabbing;
   opacity: 0.6;
