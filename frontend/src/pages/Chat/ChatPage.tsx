@@ -11,6 +11,7 @@ import { MeetingRoom } from './MeetingRoom';
 import { ChatSettingsModal } from './ChatSettingsModal';
 import { adminUserService } from '../../services/adminUserService';
 import { chatApiService } from '../../services/chatApiService';
+import { getSecureRandomId } from '../../utils/crypto';
 import './ChatPage.css';
 
 const getStoredUsers = (tenantSlug?: string): any[] => {
@@ -127,7 +128,7 @@ export const ChatPage: React.FC<{ onNavigate?: (route: string) => void }> = ({ o
   // Call Initiation
   const handleStartCall = (callMode: 'video' | 'audio') => {
     if (!activeConv || !me) return;
-    const meetingId = `meet-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+    const meetingId = getSecureRandomId('meet');
 
     // 1. Post interactive call card into the active thread
     cs.sendCallCardMessage(activeConv.id, companyId, me, meetingId, callMode);

@@ -2,6 +2,7 @@ import { ChatConversation, ChatMessage, ChatMember, ChatAttachment, ChatSettings
 import { chatApiService } from './chatApiService';
 import { signalRService } from './signalRService';
 import { playChatNotificationChime, showDesktopNotification } from '../utils/chatNotificationSound';
+import { getSecureRandomId } from '../utils/crypto';
 
 // ── Storage keys ──────────────────────────────────────────────────────────────
 const getPrefix = () => 'nexus_dev_';
@@ -266,7 +267,7 @@ export function getOrCreateDm(companyId: string, meId: string, them: ChatMember,
 
 export function createGroup(companyId: string, name: string, members: ChatMember[]): ChatConversation {
   const conv: ChatConversation = {
-    id: `conv-grp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    id: getSecureRandomId('conv-grp'),
     companyId,
     type: 'group',
     name,
@@ -324,7 +325,7 @@ export function sendMessage(
   attachments?: ChatAttachment[],
 ): ChatMessage {
   const msg: ChatMessage = {
-    id: `msg-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+    id: getSecureRandomId('msg'),
     conversationId,
     senderId: sender.id,
     senderName: sender.name,

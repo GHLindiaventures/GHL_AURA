@@ -3,6 +3,7 @@ import { Modal } from '../../components/common/Modal';
 import { FileCategory, FilePermission, ChatAttachment } from '../../types';
 import { FileText, Image as ImageIcon, FileSpreadsheet, File, Shield, Eye, Download, Edit3, UploadCloud, RefreshCw, Loader2 } from 'lucide-react';
 import { chatApiService } from '../../services/chatApiService';
+import { getSecureRandomId } from '../../utils/crypto';
 
 interface Props {
   isOpen: boolean;
@@ -100,7 +101,7 @@ export const FileShareModal: React.FC<Props> = ({
     try {
       const uploaded = await chatApiService.uploadFile(selectedFile.file);
       const attachment: ChatAttachment = {
-        id: uploaded.id || `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        id: uploaded.id || getSecureRandomId('att'),
         name: uploaded.name || selectedFile.file.name,
         size: uploaded.size || selectedFile.file.size,
         type: uploaded.type || selectedFile.file.type || 'application/octet-stream',
@@ -113,7 +114,7 @@ export const FileShareModal: React.FC<Props> = ({
     } catch (err) {
       console.warn('[FileShareModal] Server upload failed, using local inline dataUrl fallback:', err);
       const fallbackAttachment: ChatAttachment = {
-        id: `att-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+        id: getSecureRandomId('att'),
         name: selectedFile.file.name,
         size: selectedFile.file.size,
         type: selectedFile.file.type || 'application/octet-stream',

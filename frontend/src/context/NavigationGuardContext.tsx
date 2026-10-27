@@ -1,4 +1,5 @@
 import React, { createContext, useContext, useState, useEffect, useCallback, useRef } from 'react';
+import { getSecureRandomId } from '../utils/crypto';
 
 interface DirtyEntry {
   id: string;
@@ -118,7 +119,7 @@ export const useNavigationGuard = () => {
  */
 export const useUnsavedChanges = (isDirty: boolean, message?: string, customId?: string) => {
   const { registerDirty, clearDirty } = useNavigationGuard();
-  const idRef = useRef<string>(customId || `form-${Math.random().toString(36).slice(2, 9)}`);
+  const idRef = useRef<string>(customId || getSecureRandomId('form'));
 
   useEffect(() => {
     registerDirty(idRef.current, isDirty, message);
