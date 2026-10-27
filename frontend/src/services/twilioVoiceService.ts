@@ -149,11 +149,13 @@ class TwilioVoiceService {
         device.on('registered', () => {
           this.isRegistered = true;
           this.lastError = null;
+          console.log('[TwilioVoice] Device registered for agent:', tokenRes.data.identity);
           this.notifyState('registered');
         });
 
         device.on('unregistered', () => {
           this.isRegistered = false;
+          console.log('[TwilioVoice] Device unregistered');
           this.notifyState('unregistered');
         });
 
@@ -165,10 +167,12 @@ class TwilioVoiceService {
         });
 
         device.on('tokenWillExpire', async () => {
+          console.log('[TwilioVoice] Token will expire, refreshing...');
           try {
             const refreshRes = await apiClient.get<ApiResponse<VoiceTokenResponse>>('/voice/token');
             if (refreshRes.success && refreshRes.data?.token) {
               await device.updateToken(refreshRes.data.token);
+              console.log('[TwilioVoice] Token refreshed successfully');
             }
           } catch (refreshErr) {
             console.error('[TwilioVoice] Failed to refresh token:', refreshErr);
@@ -176,6 +180,7 @@ class TwilioVoiceService {
         });
 
         device.on('incoming', (call: Call) => {
+          console.log('[TwilioVoice] Incoming call from:', call.parameters.From);
           this.currentCall = call;
           this.incomingListeners.forEach(listener => {
             try {
