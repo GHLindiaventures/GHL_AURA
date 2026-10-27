@@ -7,6 +7,7 @@ import { apiClient } from '../services/apiClient';
 import { authService } from '../services/authService';
 import { isMockMode } from '../config/environment';
 import { clearKycLocalData, clearAllKycLocalStorage } from '../utils/kycStorage';
+import { getAuthToken } from '../utils/authHeaders';
 
 const getStoredTenants = (): Tenant[] => {
   try {
@@ -95,7 +96,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
   // User session state
   const [user, setUser] = useState<User | null>(() => {
     // Check if token exists and is expired in dev/API mode
-    const token = sessionStorage.getItem('nexus_auth_token') || localStorage.getItem('nexus_auth_token');
+    const token = getAuthToken();
     if (!isMockMode() && token && isJwtExpired(token)) {
       sessionStorage.removeItem('nexus_auth_token');
       sessionStorage.removeItem('nexus_current_user');
@@ -221,6 +222,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const { token, user: userData, tenant: tenantData } = response.data;
 
+        apiClient.resetLogoutState();
+
         if (token) {
           sessionStorage.setItem('nexus_auth_token', token);
           localStorage.setItem('nexus_auth_token', token);
@@ -256,6 +259,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const response: any = await authService.verifyMfa(mfaChallenge.challengeToken, code);
       if (response && response.success && response.data) {
         const { token, user: userData, tenant: tenantData } = response.data;
+        apiClient.resetLogoutState();
         if (token) {
           sessionStorage.setItem('nexus_auth_token', token);
           localStorage.setItem('nexus_auth_token', token);
@@ -284,6 +288,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const response: any = await authService.verifyRecovery(mfaChallenge.challengeToken, recoveryCode);
       if (response && response.success && response.data) {
         const { token, user: userData, tenant: tenantData } = response.data;
+        apiClient.resetLogoutState();
         if (token) {
           sessionStorage.setItem('nexus_auth_token', token);
           localStorage.setItem('nexus_auth_token', token);
@@ -356,7 +361,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       return;
     }
     if (isRevalidatingRef.current && !force) return;
-    const token = sessionStorage.getItem('nexus_auth_token') || localStorage.getItem('nexus_auth_token');
+    const token = getAuthToken();
     if (!token || isJwtExpired(token)) {
       logout();
       return;
@@ -493,7 +498,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const handleUnauthorized = () => {
-      logout('Your account has been suspended by an administrator.');
+      logout('Your session has expired. Please sign in again.');
     };
 
     const handleRevalidate = () => {

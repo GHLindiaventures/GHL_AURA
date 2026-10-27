@@ -27,6 +27,9 @@ public static class AuthenticationExtensions
         })
         .AddJwtBearer(options =>
         {
+            var issuer = string.IsNullOrWhiteSpace(jwtSettings.Issuer) ? "NexusSalesApi" : jwtSettings.Issuer;
+            var audience = string.IsNullOrWhiteSpace(jwtSettings.Audience) ? "NexusSalesClient" : jwtSettings.Audience;
+
             options.RequireHttpsMetadata = false;
             options.SaveToken = true;
             options.TokenValidationParameters = new TokenValidationParameters
@@ -34,9 +37,9 @@ public static class AuthenticationExtensions
                 ValidateIssuerSigningKey = true,
                 IssuerSigningKey = new SymmetricSecurityKey(key),
                 ValidateIssuer = true,
-                ValidIssuer = jwtSettings.Issuer,
+                ValidIssuer = issuer,
                 ValidateAudience = true,
-                ValidAudience = jwtSettings.Audience,
+                ValidAudience = audience,
                 ValidateLifetime = true,
                 ClockSkew = TimeSpan.Zero
             };

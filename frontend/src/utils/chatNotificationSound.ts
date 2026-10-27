@@ -20,8 +20,8 @@ export function playChatNotificationChime(): void {
 
     osc.start();
     osc.stop(ctx.currentTime + 0.4);
-  } catch (err) {
-    console.debug('Audio chime error:', err);
+  } catch {
+    // AudioContext unavailable or autoplay restricted by browser policy
   }
 }
 

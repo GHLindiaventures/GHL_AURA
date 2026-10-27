@@ -375,7 +375,9 @@ public class PlatformSecurityController : ControllerBase
 
         if (!string.IsNullOrWhiteSpace(severity) && !severity.Equals("all", StringComparison.OrdinalIgnoreCase))
         {
-            query = query.Where(e => e.Severity == severity.ToUpperInvariant());
+            // Normalize both sides to upper for case-insensitive comparison across DB providers
+            var severityUpper = severity.ToUpperInvariant();
+            query = query.Where(e => e.Severity.ToUpper() == severityUpper);
         }
 
         var total = await query.CountAsync(ct);
@@ -387,9 +389,11 @@ public class PlatformSecurityController : ControllerBase
             {
                 Id = e.Id,
                 EventType = e.EventType,
-                Severity = e.Severity,
+                // Normalize severity to lowercase for consistent frontend display
+                Severity = e.Severity.ToLower(),
                 Description = e.Details,
                 IpAddress = e.IpAddress,
+                // Expose as both UserEmail and ActorEmail so frontend can use either field name
                 UserEmail = e.ActorEmail,
                 UserId = e.UserId,
                 Timestamp = e.CreatedAt,

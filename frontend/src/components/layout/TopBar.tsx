@@ -17,6 +17,7 @@ import { PersonaSwitcher } from './PersonaSwitcher';
 import { storageService } from '../../services/storageService';
 import { FEATURES } from '../../constants/features';
 import { ExportReportModal } from '../modals/ExportReportModal';
+import { getAuthHeaders } from '../../utils/authHeaders';
 import './TopBar.css';
 
 
@@ -123,10 +124,9 @@ export const TopBar: React.FC<TopBarProps> = ({ onNavigate, onOpenQuickCreate })
   const handleExport = async (moduleName: string) => {
     setIsExportModalOpen(false);
     try {
-      const token = sessionStorage.getItem('nexus_auth_token') || localStorage.getItem('nexus_auth_token') || '';
       const url = `/api/Reports/export${moduleName === 'All' ? '' : '?module=' + moduleName}`;
       const res = await fetch(url, {
-        headers: { 'Authorization': `Bearer ${token}` }
+        headers: getAuthHeaders()
       });
       if (!res.ok) {
         const errorText = await res.text();

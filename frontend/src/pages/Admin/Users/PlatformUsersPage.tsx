@@ -25,6 +25,7 @@ import { Modal } from '../../../components/common/Modal';
 import { Drawer } from '../../../components/common/Drawer';
 import { useUnsavedChanges } from '../../../context/NavigationGuardContext';
 import { useAuth } from '../../../context/AuthContext';
+import { getAuthToken } from '../../../utils/authHeaders';
 import './PlatformUsersPage.css';
 
 export const PlatformUsersPage: React.FC = () => {
@@ -96,7 +97,7 @@ export const PlatformUsersPage: React.FC = () => {
     setImpersonateError(null);
     try {
       const currentAdminUser = localStorage.getItem('nexus_current_user');
-      const currentAdminToken = sessionStorage.getItem('nexus_auth_token') || localStorage.getItem('nexus_auth_token');
+      const currentAdminToken = getAuthToken();
       const res = await superAdminService.impersonateUser(userToImpersonate.id);
 
       const backup = {
