@@ -4637,7 +4637,7 @@ const GhlIrmKycView: React.FC = () => {
 
                 {/* Optional Nominee Toggle */}
                 <div style={{ marginBottom: 16, padding: '12px 14px', borderRadius: 8, background: 'var(--bg-secondary, #f8fafc)', border: '1px solid var(--border-color, #e2e8f0)' }}>
-                  <label className="kyc-checkbox-label" htmlFor="kyc-has-nominee" aria-label="Register Nominee(s) for this Investment Account" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+                  <label className="kyc-checkbox-label" htmlFor="kyc-has-nominee" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
                     <input
                       id="kyc-has-nominee"
                       type="checkbox"
@@ -4674,14 +4674,14 @@ const GhlIrmKycView: React.FC = () => {
                         }
                       }}
                     />
-                    <div>
+                    <span style={{ display: 'flex', flexDirection: 'column' }}>
                       <span style={{ fontWeight: 700, fontSize: 13, color: 'var(--text-primary)' }}>
                         Register Nominee(s) for this Investment Account
                       </span>
-                      <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
+                      <span style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 2 }}>
                         Nomination is optional. Designate up to 3 legal nominees or uncheck to proceed as a single applicant without nominee.
-                      </div>
-                    </div>
+                      </span>
+                    </span>
                   </label>
                 </div>
 
