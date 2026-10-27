@@ -33,6 +33,7 @@ import { FEATURES } from '../constants/features';
 import { apiClient, ApiResponse, PagedResult } from './apiClient';
 import { isMockMode } from '../config/environment';
 import { storageService } from './storageService';
+import { getSecureRandomInt } from '../utils/crypto';
 
 // Storage Keys
 const STORAGE_KEYS = {
@@ -966,7 +967,7 @@ export class SuperAdminService {
     const user = this.getUserById(id);
     if (!user) return { success: false };
 
-    const generatedPassword = newPassword || `Nexus#${Math.trunc(100000 + Math.random() * 900000)}`;
+    const generatedPassword = newPassword || `Nexus#${getSecureRandomInt(100000, 999999)}`;
 
     this.addAuditLog({
       action: 'RESET_PASSWORD',

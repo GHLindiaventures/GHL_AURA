@@ -25,6 +25,7 @@ import { User, RoleCode } from '../../types';
 import './CompanyUsersPage.css';
 import { adminUserService } from '../../services/adminUserService';
 import { storageService } from '../../services/storageService';
+import { getSecureRandomInt } from '../../utils/crypto';
 
 const addStoredAuditLog = (log: any) => {
   try {
@@ -177,7 +178,7 @@ export const CompanyUsersPage: React.FC = () => {
     const assignedRole = SYSTEM_ROLES[inviteRole] || SYSTEM_ROLES.sales_executive;
     const isInstant = creationMode === 'instant_password';
     const tempPass = isInstant
-      ? `Nexus#${Math.trunc(1000 + Math.random() * 9000)}`
+      ? `Nexus#${getSecureRandomInt(1000, 9999)}`
       : undefined;
 
     const newUser: User = {

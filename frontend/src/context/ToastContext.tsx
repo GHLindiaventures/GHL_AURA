@@ -1,5 +1,6 @@
 import React, { createContext, useContext, useState, useCallback, useEffect } from 'react';
 import { CheckCircle2, AlertCircle, Info, AlertTriangle, X } from 'lucide-react';
+import { getSecureRandomId } from '../utils/crypto';
 import './ToastContext.css';
 
 export type ToastType = 'success' | 'error' | 'info' | 'warning';
@@ -48,7 +49,7 @@ export const ToastProvider: React.FC<{ children: React.ReactNode }> = ({ childre
   }, []);
 
   const addToast = useCallback((message: string, type: ToastType = 'info', duration = 3500) => {
-    const id = `toast-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const id = getSecureRandomId('toast');
     const item: ToastItem = { id, message, type, duration };
 
     setToasts(prev => [...prev.slice(-4), item]); // Keep at most 5 toasts visible
