@@ -332,7 +332,7 @@ export const PendingLeadsPage: React.FC = () => {
     const d = new Date(dateStr);
     if (Number.isNaN(d.getTime())) return 0;
     const diffMs = Date.now() - d.getTime();
-    return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+    return Math.max(0, Math.trunc(diffMs / (1000 * 60 * 60 * 24)));
   };
 
   // Reassign Lead Action

@@ -177,7 +177,7 @@ export const CompanyUsersPage: React.FC = () => {
     const assignedRole = SYSTEM_ROLES[inviteRole] || SYSTEM_ROLES.sales_executive;
     const isInstant = creationMode === 'instant_password';
     const tempPass = isInstant
-      ? `Nexus#${Math.floor(1000 + Math.random() * 9000)}`
+      ? `Nexus#${Math.trunc(1000 + Math.random() * 9000)}`
       : undefined;
 
     const newUser: User = {

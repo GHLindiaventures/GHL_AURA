@@ -51,7 +51,7 @@ export const ActivityLogDrawer: React.FC<ActivityLogDrawerProps> = ({
     const time = new Date(card.stageEnteredAt || card.createdAt).getTime();
     if (isNaN(time)) return 0;
     const diffMs = Date.now() - time;
-    return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+    return Math.max(0, Math.trunc(diffMs / (1000 * 60 * 60 * 24)));
   };
 
   const daysInStage = getDaysInStage();

@@ -460,7 +460,7 @@ export const LeaveRequestsPage: React.FC<LeaveRequestsPageProps> = ({ onNavigate
     const s = status.toLowerCase();
     let waitingTag = null;
     if (s === 'pending' && createdAt) {
-      const waitDays = Math.floor((Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24));
+      const waitDays = Math.trunc((Date.now() - new Date(createdAt).getTime()) / (1000 * 60 * 60 * 24));
       if (waitDays >= 2) {
         waitingTag = (
           <span className="waiting-tag" title={`Submitted ${waitDays} days ago`}>

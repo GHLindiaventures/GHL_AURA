@@ -339,7 +339,7 @@ export const CallHistoryPage: React.FC = () => {
 
     // ── Formatters ────────────────────────────────────────────────────────────
     const formatDuration = (seconds: number) => {
-      const mins = Math.floor(seconds / 60);
+      const mins = Math.trunc(seconds / 60);
       const secs = seconds % 60;
       return `${mins}m ${secs}s`;
     };

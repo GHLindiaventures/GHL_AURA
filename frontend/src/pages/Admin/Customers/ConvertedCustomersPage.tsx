@@ -127,7 +127,7 @@ export const ConvertedCustomersPage: React.FC<ConvertedCustomersPageProps> = ({ 
       setStartDate(start.toISOString().split('T')[0]);
       setEndDate(now.toISOString().split('T')[0]);
     } else if (preset === 'this_quarter') {
-      const quarterMonth = Math.floor(now.getMonth() / 3) * 3;
+      const quarterMonth = Math.trunc(now.getMonth() / 3) * 3;
       const start = new Date(now.getFullYear(), quarterMonth, 1);
       setStartDate(start.toISOString().split('T')[0]);
       setEndDate(now.toISOString().split('T')[0]);

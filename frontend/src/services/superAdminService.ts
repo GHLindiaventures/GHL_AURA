@@ -966,7 +966,7 @@ export class SuperAdminService {
     const user = this.getUserById(id);
     if (!user) return { success: false };
 
-    const generatedPassword = newPassword || `Nexus#${Math.floor(100000 + Math.random() * 900000)}`;
+    const generatedPassword = newPassword || `Nexus#${Math.trunc(100000 + Math.random() * 900000)}`;
 
     this.addAuditLog({
       action: 'RESET_PASSWORD',

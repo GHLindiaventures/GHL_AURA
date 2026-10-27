@@ -155,8 +155,8 @@ function formatCurrency(amount: number): string {
 
 function formatDuration(sec?: number): string {
   if (!sec || Number.isNaN(sec)) return '0s';
-  const m = Math.floor(sec / 60);
-  const s = Math.floor(sec % 60);
+  const m = Math.trunc(sec / 60);
+  const s = Math.trunc(sec % 60);
   if (m === 0) return `${s}s`;
   return `${m}m ${s}s`;
 }

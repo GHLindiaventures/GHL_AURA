@@ -73,7 +73,7 @@ const saveStoredUser = (updatedUser: any) => {
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 const fmtDuration = (secs: number) => {
-  const m = Math.floor(secs / 60);
+  const m = Math.trunc(secs / 60);
   const s = secs % 60;
   return `${m}m ${s}s`;
 };
