@@ -36,6 +36,10 @@ class ApiClient {
 
   private static isLoggingOut = false;
 
+  public resetLogoutState(): void {
+    ApiClient.isLoggingOut = false;
+  }
+
   private async handleResponse<T>(res: Response): Promise<T> {
     if (res.status === 401) {
       const err = await res.json().catch(() => ({ message: 'Invalid credentials.' }));

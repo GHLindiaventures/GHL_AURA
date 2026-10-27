@@ -221,6 +221,8 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
 
         const { token, user: userData, tenant: tenantData } = response.data;
 
+        apiClient.resetLogoutState();
+
         if (token) {
           sessionStorage.setItem('nexus_auth_token', token);
           localStorage.setItem('nexus_auth_token', token);
@@ -256,6 +258,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const response: any = await authService.verifyMfa(mfaChallenge.challengeToken, code);
       if (response && response.success && response.data) {
         const { token, user: userData, tenant: tenantData } = response.data;
+        apiClient.resetLogoutState();
         if (token) {
           sessionStorage.setItem('nexus_auth_token', token);
           localStorage.setItem('nexus_auth_token', token);
@@ -284,6 +287,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
       const response: any = await authService.verifyRecovery(mfaChallenge.challengeToken, recoveryCode);
       if (response && response.success && response.data) {
         const { token, user: userData, tenant: tenantData } = response.data;
+        apiClient.resetLogoutState();
         if (token) {
           sessionStorage.setItem('nexus_auth_token', token);
           localStorage.setItem('nexus_auth_token', token);
@@ -493,7 +497,7 @@ export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children
     };
 
     const handleUnauthorized = () => {
-      logout('Your account has been suspended by an administrator.');
+      logout('Your session has expired. Please sign in again.');
     };
 
     const handleRevalidate = () => {

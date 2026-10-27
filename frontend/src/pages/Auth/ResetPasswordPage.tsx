@@ -1,11 +1,16 @@
-import React, { useState, useEffect } from 'react';
-import { Lock, Eye, EyeOff, ArrowRight, CheckCircle2, AlertCircle, ShieldCheck } from 'lucide-react';
+import React, { useState } from 'react';
+import { Lock, Eye, EyeOff, ArrowRight, ArrowLeft, CheckCircle2, AlertCircle, ShieldCheck } from 'lucide-react';
 import { authService } from '../../services/authService';
+import { AuthOrbitLayout, AuthOrbitButton } from '../../layouts/AuthOrbitLayout';
 import '../../layouts/AuthLayout.css';
 import './ResetPasswordPage.css';
 
 export const ResetPasswordPage: React.FC = () => {
-  const [token, setToken] = useState<string>('');
+  const [token] = useState<string>(() => {
+    const params = new URLSearchParams(window.location.search);
+    return params.get('token')?.trim() || '';
+  });
+  const isTokenMissing = !token;
   const [newPassword, setNewPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
@@ -13,17 +18,6 @@ export const ResetPasswordPage: React.FC = () => {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isSuccess, setIsSuccess] = useState(false);
-  const [isTokenMissing, setIsTokenMissing] = useState(false);
-
-  useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const tokenParam = params.get('token');
-    if (!tokenParam || !tokenParam.trim()) {
-      setIsTokenMissing(true);
-    } else {
-      setToken(tokenParam.trim());
-    }
-  }, []);
 
   const handleReturnToLogin = () => {
     window.location.href = '/';
@@ -62,190 +56,188 @@ export const ResetPasswordPage: React.FC = () => {
   const isMatching = Boolean(newPassword && confirmPassword && newPassword === confirmPassword);
 
   return (
-    <div className="auth-page-container">
-      {/* Fixed background video */}
-      <div className="auth-bg-layer">
-        <video
-          className="auth-bg-video"
-          autoPlay
-          loop
-          muted
-          playsInline
-          poster="/connectng bg.jpg"
-        >
-          <source src="/login-bg.mp4" type="video/mp4" />
-        </video>
-      </div>
-      <div className="auth-bg-overlay" />
+    <AuthOrbitLayout>
+      {/* Success State */}
+      {isSuccess ? (
+        <>
+          <div className="auth-header auth-orbit-header auth-orbit-up auth-orbit-delay-1">
+            <div className="auth-logo-badge auth-orbit-badge-green">
+              <CheckCircle2 size={26} color="#ffffff" />
+            </div>
+            <p className="auth-orbit-eyebrow">PASSWORD UPDATED</p>
+            <h2 className="auth-title">
+              All <span className="auth-orbit-gradient-text">set</span>
+            </h2>
+            <span className="auth-orbit-heading-line" aria-hidden="true" style={{ margin: '8px auto 12px' }} />
+            <p className="auth-subtitle">Your password has been changed successfully.</p>
+          </div>
 
-      <div className="auth-card-container">
-        <div className="card animate-slide-down auth-card">
-          {/* Header */}
-          <div className="auth-header">
-            {isSuccess ? (
-              <div className="reset-password-badge success">
-                <CheckCircle2 size={28} />
+          <div className="auth-orbit-message-box auth-orbit-up auth-orbit-delay-2">
+            <p className="auth-orbit-message-text">
+              Your password has been updated securely. You can now return to the login screen and sign in with your new credentials.
+            </p>
+            <AuthOrbitButton
+              type="button"
+              onClick={handleReturnToLogin}
+            >
+              Sign In to Platform <ArrowRight size={16} />
+            </AuthOrbitButton>
+          </div>
+        </>
+      ) : isTokenMissing ? (
+        /* Token Missing or Invalid State */
+        <>
+          <div className="auth-header auth-orbit-header auth-orbit-up auth-orbit-delay-1">
+            <div className="auth-logo-badge auth-orbit-badge-red">
+              <AlertCircle size={26} color="#ffffff" />
+            </div>
+            <p className="auth-orbit-eyebrow">INVALID LINK</p>
+            <h2 className="auth-title">
+              Link <span className="auth-orbit-gradient-text">expired</span>
+            </h2>
+            <span className="auth-orbit-heading-line" aria-hidden="true" style={{ margin: '8px auto 12px' }} />
+            <p className="auth-subtitle">This password reset link is missing or malformed.</p>
+          </div>
+
+          <div className="auth-orbit-message-box auth-orbit-up auth-orbit-delay-2">
+            <p className="auth-orbit-message-text">
+              The password reset token is invalid or has expired. Please request a new password reset link from the sign-in page.
+            </p>
+            <button
+              type="button"
+              className="btn btn-secondary auth-orbit-btn-secondary"
+              onClick={handleReturnToLogin}
+            >
+              <ArrowLeft size={16} /> Return to Sign In
+            </button>
+          </div>
+        </>
+      ) : (
+        /* Reset Password Form */
+        <>
+          <div className="auth-header auth-orbit-header auth-orbit-up auth-orbit-delay-1">
+            <div className="auth-logo-badge auth-orbit-badge-blue">
+              <ShieldCheck size={26} color="#ffffff" />
+            </div>
+            <p className="auth-orbit-eyebrow">NEW CREDENTIALS</p>
+            <h2 className="auth-title">
+              Set new <span className="auth-orbit-gradient-text">password</span>
+            </h2>
+            <span className="auth-orbit-heading-line" aria-hidden="true" style={{ margin: '8px auto 12px' }} />
+            <p className="auth-subtitle">Create a new strong password for your account.</p>
+          </div>
+
+          <form onSubmit={handleSubmit} className="auth-form auth-orbit-form">
+            {/* New Password */}
+            <div className="form-group auth-orbit-up auth-orbit-delay-2">
+              <label htmlFor="reset-new-password" className="form-label auth-form-label">
+                New Password
+              </label>
+              <div className="auth-input-wrapper auth-orbit-input-wrapper auth-orbit-password-wrapper">
+                <Lock size={19} className="auth-input-icon" />
+                <input
+                  id="reset-new-password"
+                  name="newPassword"
+                  type={showPassword ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  className="form-input auth-input-field"
+                  placeholder="Enter new password (min. 8 characters)"
+                  value={newPassword}
+                  onChange={(e) => setNewPassword(e.target.value)}
+                  required
+                  autoFocus
+                  style={{ fontSize: 15, paddingLeft: 0, paddingRight: 0 }}
+                />
+                <button
+                  type="button"
+                  className="auth-orbit-password-toggle"
+                  aria-label={showPassword ? 'Hide password' : 'Show password'}
+                  title={showPassword ? 'Hide password' : 'Show password'}
+                  onClick={() => setShowPassword(!showPassword)}
+                  tabIndex={-1}
+                >
+                  {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
-            ) : isTokenMissing ? (
-              <div className="reset-password-badge error">
-                <AlertCircle size={28} />
+            </div>
+
+            {/* Confirm New Password */}
+            <div className="form-group auth-orbit-up auth-orbit-delay-3">
+              <label htmlFor="reset-confirm-password" className="form-label auth-form-label">
+                Confirm New Password
+              </label>
+              <div className="auth-input-wrapper auth-orbit-input-wrapper auth-orbit-password-wrapper">
+                <Lock size={19} className="auth-input-icon" />
+                <input
+                  id="reset-confirm-password"
+                  name="confirmPassword"
+                  type={showConfirm ? 'text' : 'password'}
+                  autoComplete="new-password"
+                  className="form-input auth-input-field"
+                  placeholder="Re-enter new password"
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  required
+                  style={{ fontSize: 15, paddingLeft: 0, paddingRight: 0 }}
+                />
+                <button
+                  type="button"
+                  className="auth-orbit-password-toggle"
+                  aria-label={showConfirm ? 'Hide password' : 'Show password'}
+                  title={showConfirm ? 'Hide password' : 'Show password'}
+                  onClick={() => setShowConfirm(!showConfirm)}
+                  tabIndex={-1}
+                >
+                  {showConfirm ? <EyeOff size={16} /> : <Eye size={16} />}
+                </button>
               </div>
-            ) : (
-              <div className="reset-password-badge">
-                <ShieldCheck size={28} />
+
+              {/* Password Criteria Feedback */}
+              <div className="reset-password-requirements">
+                <div className={`reset-password-requirement-item ${isMinLength ? 'valid' : ''}`}>
+                  <span>{isMinLength ? '✓' : '•'}</span>
+                  <span>At least 8 characters long</span>
+                </div>
+                {confirmPassword && (
+                  <div className={`reset-password-requirement-item ${isMatching ? 'valid' : ''}`}>
+                    <span>{isMatching ? '✓' : '•'}</span>
+                    <span>Passwords match</span>
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Error Alert */}
+            {error && (
+              <div className="auth-error-alert auth-orbit-up auth-orbit-delay-4">
+                <AlertCircle size={16} />
+                <span>{error}</span>
               </div>
             )}
 
-            <h2 className="auth-title">
-              {isSuccess
-                ? 'Password Reset Complete'
-                : isTokenMissing
-                  ? 'Invalid Reset Link'
-                  : 'Set New Password'}
-            </h2>
-            <p className="auth-subtitle">
-              {isSuccess
-                ? 'Your password has been changed successfully.'
-                : isTokenMissing
-                  ? 'This password reset link is missing or malformed.'
-                  : 'Create a new strong password for your account.'}
-            </p>
-          </div>
+            {/* Submit Button */}
+            <AuthOrbitButton
+              type="submit"
+              className="auth-orbit-up auth-orbit-delay-5"
+              disabled={isLoading || !isMinLength || !isMatching}
+              isLoading={isLoading}
+              loadingText="Resetting Password..."
+            >
+              Save New Password <ArrowRight size={16} />
+            </AuthOrbitButton>
 
-          {/* Success State */}
-          {isSuccess && (
-            <div className="reset-password-success-box">
-              <p className="reset-password-success-text">
-                Your password has been updated securely. You can now return to the login screen and sign in with your new credentials.
-              </p>
-              <button
-                type="button"
-                className="btn btn-primary auth-submit-btn"
-                onClick={handleReturnToLogin}
-              >
-                Sign In to Platform <ArrowRight size={16} />
-              </button>
-            </div>
-          )}
-
-          {/* Token Missing State */}
-          {!isSuccess && isTokenMissing && (
-            <div className="reset-password-success-box">
-              <p className="reset-password-success-text">
-                The password reset token is missing from the URL. Please request a new password reset link from the login page.
-              </p>
-              <button
-                type="button"
-                className="btn btn-primary auth-submit-btn"
-                onClick={handleReturnToLogin}
-              >
-                Return to Login <ArrowRight size={16} />
-              </button>
-            </div>
-          )}
-
-          {/* Form State */}
-          {!isSuccess && !isTokenMissing && (
-            <form onSubmit={handleSubmit} className="auth-form">
-              {/* New Password */}
-              <div className="form-group">
-                <label htmlFor="reset-new-password" className="form-label auth-form-label">New Password</label>
-                <div className="auth-input-wrapper">
-                  <Lock size={15} className="auth-input-icon" />
-                  <input
-                    id="reset-new-password"
-                    name="newPassword"
-                    type={showPassword ? 'text' : 'password'}
-                    autoComplete="new-password"
-                    className="form-input auth-input-field"
-                    placeholder="Enter new password (min. 8 characters)"
-                    value={newPassword}
-                    onChange={e => setNewPassword(e.target.value)}
-                    required
-                    autoFocus
-                  />
-                  <button
-                    type="button"
-                    className="reset-password-toggle-pw"
-                    onClick={() => setShowPassword(!showPassword)}
-                    tabIndex={-1}
-                  >
-                    {showPassword ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                </div>
-              </div>
-
-              {/* Confirm New Password */}
-              <div className="form-group">
-                <label htmlFor="reset-confirm-password" className="form-label auth-form-label">Confirm New Password</label>
-                <div className="auth-input-wrapper">
-                  <Lock size={15} className="auth-input-icon" />
-                  <input
-                    id="reset-confirm-password"
-                    name="confirmPassword"
-                    type={showConfirm ? 'text' : 'password'}
-                    autoComplete="new-password"
-                    className="form-input auth-input-field"
-                    placeholder="Re-enter new password"
-                    value={confirmPassword}
-                    onChange={e => setConfirmPassword(e.target.value)}
-                    required
-                  />
-                  <button
-                    type="button"
-                    className="reset-password-toggle-pw"
-                    onClick={() => setShowConfirm(!showConfirm)}
-                    tabIndex={-1}
-                  >
-                    {showConfirm ? <EyeOff size={15} /> : <Eye size={15} />}
-                  </button>
-                </div>
-
-                {/* Password Criteria Feedback */}
-                <div className="reset-password-requirements">
-                  <div className={`reset-password-requirement-item ${isMinLength ? 'valid' : ''}`}>
-                    <span>{isMinLength ? '✓' : '•'}</span>
-                    <span>At least 8 characters long</span>
-                  </div>
-                  {confirmPassword && (
-                    <div className={`reset-password-requirement-item ${isMatching ? 'valid' : ''}`}>
-                      <span>{isMatching ? '✓' : '•'}</span>
-                      <span>Passwords match</span>
-                    </div>
-                  )}
-                </div>
-              </div>
-
-              {/* Error Alert */}
-              {error && (
-                <div className="auth-error-alert">
-                  <AlertCircle size={16} />
-                  <span>{error}</span>
-                </div>
-              )}
-
-              {/* Submit Button */}
-              <button
-                type="submit"
-                className="btn btn-primary auth-submit-btn"
-                disabled={isLoading || !isMinLength || !isMatching}
-              >
-                {isLoading ? 'Resetting Password...' : 'Save New Password'} <ArrowRight size={16} />
-              </button>
-
-              <button
-                type="button"
-                className="btn btn-secondary auth-preset-btn reset-password-back-btn"
-                onClick={handleReturnToLogin}
-                disabled={isLoading}
-              >
-                Cancel and Return to Sign In
-              </button>
-            </form>
-          )}
-        </div>
-      </div>
-    </div>
+            <button
+              type="button"
+              className="btn btn-secondary auth-orbit-btn-secondary auth-orbit-up auth-orbit-delay-6"
+              onClick={handleReturnToLogin}
+              disabled={isLoading}
+            >
+              <ArrowLeft size={14} /> Cancel and Return to Sign In
+            </button>
+          </form>
+        </>
+      )}
+    </AuthOrbitLayout>
   );
 };
 export default ResetPasswordPage;
