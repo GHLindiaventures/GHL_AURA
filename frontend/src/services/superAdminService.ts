@@ -34,6 +34,7 @@ import { apiClient, ApiResponse, PagedResult } from './apiClient';
 import { isMockMode } from '../config/environment';
 import { storageService } from './storageService';
 import { getSecureRandomInt } from '../utils/crypto';
+import { getAuthHeaders } from '../utils/authHeaders';
 
 // Storage Keys
 const STORAGE_KEYS = {
@@ -1835,11 +1836,8 @@ export class SuperAdminService {
   }
 
   async downloadDatabaseBackupApi(id: string, filename: string): Promise<void> {
-    const token = sessionStorage.getItem('nexus_auth_token') || localStorage.getItem('nexus_auth_token');
     const response = await fetch(`${apiClient.getBaseUrl()}/super-admin/system/backups/${id}/download`, {
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      headers: getAuthHeaders(),
     });
 
     if (!response.ok) {

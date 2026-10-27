@@ -1,4 +1,5 @@
 import { apiClient } from './apiClient';
+import { getAuthHeaders } from '../utils/authHeaders';
 import { ChatConversation, ChatMessage, ChatAttachment } from '../types';
 
 export interface CreateConversationPayload {
@@ -89,15 +90,12 @@ class ChatApiService {
   }
 
   async uploadFile(file: File): Promise<ChatAttachment> {
-    const token = sessionStorage.getItem('nexus_auth_token') || localStorage.getItem('nexus_auth_token');
     const formData = new FormData();
     formData.append('file', file);
 
     const res = await fetch('/api/chat/upload', {
       method: 'POST',
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      headers: getAuthHeaders(),
       body: formData,
     });
 

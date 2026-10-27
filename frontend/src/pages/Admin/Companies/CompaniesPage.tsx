@@ -35,6 +35,7 @@ import { FEATURES } from '../../../constants/features';
 import { SYSTEM_ROLES } from '../../../constants/roles';
 import { Modal } from '../../../components/common/Modal';
 import { Drawer } from '../../../components/common/Drawer';
+import { getAuthHeaders, getAuthToken } from '../../../utils/authHeaders';
 import './CompaniesPage.css';
 
 interface CompaniesPageProps {
@@ -340,9 +341,8 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({
     setIsExportingComplianceId(t.id);
     try {
       const url = superAdminService.getComplianceExportUrl(t.id);
-      const token = sessionStorage.getItem('nexus_auth_token') || localStorage.getItem('nexus_auth_token');
       const res = await fetch(url, {
-        headers: token ? { Authorization: `Bearer ${token}` } : {}
+        headers: getAuthHeaders()
       });
       if (!res.ok) throw new Error('Failed to generate compliance export archive.');
       const blob = await res.blob();
@@ -375,7 +375,7 @@ export const CompaniesPage: React.FC<CompaniesPageProps> = ({
       const res = await superAdminService.impersonateTenantApi(impersonatingTenant.id);
 
       // 1. Backup current Super Admin credentials
-      const currentAdminToken = sessionStorage.getItem('nexus_auth_token') || localStorage.getItem('nexus_auth_token');
+      const currentAdminToken = getAuthToken();
       const currentAdminUser = sessionStorage.getItem('nexus_current_user') || localStorage.getItem('nexus_current_user');
 
       const backup = {
