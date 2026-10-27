@@ -35,6 +35,8 @@ import {
 } from '../../services/ghlApiService';
 import { StatusChip } from '../../components/common/StatusChip';
 import { Modal } from '../../components/common/Modal';
+import { SlotConflictModal } from '../../components/common/SlotConflictModal';
+import { ErrorAlertBanner } from '../../components/common/ErrorAlertBanner';
 import { Drawer } from '../../components/common/Drawer';
 import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawerContent';
 type FollowupRoleFilter = 'all' | 'sales_executive' | 'irm';
@@ -1667,24 +1669,7 @@ export const FollowupsPage: React.FC = () => {
         </div>
       </div>
 
-      {loadError && (
-        <div
-          className="alert-banner error"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '12px 16px',
-            marginBottom: '16px',
-            borderRadius: '8px',
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            color: '#ef4444',
-          }}
-        >
-          <span>{loadError}</span>
-        </div>
-      )}
+      <ErrorAlertBanner message={loadError} />
 
       {/* ── Admin Global Filter Bar ─────────────────────────────────────────── */}
       {isAdmin && (
@@ -2231,120 +2216,14 @@ export const FollowupsPage: React.FC = () => {
       </Modal>
 
       {/* Time Slot Conflict Alert Popup */}
-      <Modal
+      <SlotConflictModal
         isOpen={!!conflictModalData}
         onClose={() => setConflictModalData(null)}
-        title="Time Slot Already Booked"
-        subtitle="Schedule Spacing & Conflict Warning"
-        maxWidth={490}
-        footer={
-          <div style={{ display: 'flex', gap: 10, width: '100%' }}>
-            <button
-              type="button"
-              className="btn btn-secondary"
-              onClick={() => setConflictModalData(null)}
-              style={{ flex: 1 }}
-            >
-              Choose Another Time
-            </button>
-            {conflictModalData?.suggestedDateIso && (
-              <button
-                type="button"
-                className="btn btn-primary"
-                onClick={() => {
-                  if (conflictModalData.suggestedDateIso) {
-                    setNewDate(conflictModalData.suggestedDateIso.slice(0, 16));
-                  }
-                  setConflictModalData(null);
-                }}
-                style={{ flex: 1.2 }}
-              >
-                Use Suggested (+20m)
-              </button>
-            )}
-          </div>
-        }
-      >
-        <div style={{ textAlign: 'center', padding: '10px 4px' }}>
-          <div style={{
-            width: 52,
-            height: 52,
-            borderRadius: '50%',
-            background: 'rgba(239, 68, 68, 0.1)',
-            color: '#dc2626',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            fontSize: 26,
-            margin: '0 auto 14px'
-          }}>
-            <AlertTriangle size={28} color="#dc2626" />
-          </div>
-          <h4 style={{ margin: '0 0 8px', fontSize: '1.05rem', fontWeight: 600, color: 'var(--text-primary, #0f172a)' }}>
-            This Time Slot is Already Booked
-          </h4>
-          <p style={{ margin: '0 0 14px', color: 'var(--text-secondary, #64748b)', fontSize: '0.9rem', lineHeight: 1.5 }}>
-            You already have a scheduled follow-up near this time:
-          </p>
-          <div style={{
-            background: 'var(--bg-surface-hover, #f8fafc)',
-            border: '1px solid var(--border-base, #e2e8f0)',
-            borderRadius: 8,
-            padding: '12px 16px',
-            marginBottom: 14,
-            textAlign: 'left'
-          }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 6 }}>
-              <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary, #64748b)' }}>Contact:</span>
-              <span style={{ fontSize: '0.88rem', fontWeight: 600, color: 'var(--text-primary, #1e293b)' }}>
-                {conflictModalData?.contactName}
-              </span>
-            </div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span style={{ fontSize: '0.82rem', color: 'var(--text-secondary, #64748b)' }}>Scheduled Time:</span>
-              <span style={{ fontSize: '0.88rem', fontWeight: 600, color: '#ef4444' }}>
-                {conflictModalData?.conflictTime}
-              </span>
-            </div>
-          </div>
-
-          {/* Meaningful scheduling advice box */}
-          <div style={{
-            background: 'rgba(59, 130, 246, 0.08)',
-            border: '1px solid rgba(59, 130, 246, 0.25)',
-            borderRadius: 8,
-            padding: '12px 14px',
-            marginBottom: 14,
-            textAlign: 'left'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginBottom: 4, color: '#2563eb', fontWeight: 600, fontSize: '0.85rem' }}>
-              <Clock size={15} />
-              Scheduling Buffer Advice
-            </div>
-            <p style={{ margin: 0, fontSize: '0.83rem', color: 'var(--text-primary, #334155)', lineHeight: 1.5 }}>
-              To avoid overlapping appointments and ensure sufficient time for each call, <strong>please schedule your follow-up at least 15–20 minutes after your existing appointment.</strong>
-            </p>
-          </div>
-
-          {conflictModalData?.suggestedTime && (
-            <div style={{
-              background: 'rgba(16, 185, 129, 0.08)',
-              border: '1px solid rgba(16, 185, 129, 0.25)',
-              borderRadius: 8,
-              padding: '10px 14px',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              marginBottom: 4
-            }}>
-              <span style={{ fontSize: '0.82rem', color: '#059669', fontWeight: 600 }}>Suggested Next Slot:</span>
-              <span style={{ fontSize: '0.88rem', fontWeight: 700, color: '#059669' }}>
-                {conflictModalData.suggestedTime}
-              </span>
-            </div>
-          )}
-        </div>
-      </Modal>
+        conflictData={conflictModalData}
+        onUseSuggestedSlot={(suggestedIso) => {
+          setNewDate(suggestedIso.slice(0, 16));
+        }}
+      />
 
       {/* Contact Profile & Detailed Attribution Drawer */}
       {canOpenDrawer && (

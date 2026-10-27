@@ -6,6 +6,7 @@ const apiProxyTarget = process.env.VITE_API_PROXY_TARGET || 'http://localhost:51
 export default defineConfig({
   plugins: [react()],
   test: {
+    environment: 'jsdom',
     coverage: {
       provider: 'v8',
       reporter: ['text', 'lcov'],

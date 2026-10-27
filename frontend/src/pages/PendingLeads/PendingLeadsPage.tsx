@@ -25,6 +25,7 @@ import { DataTable, Column, RowAction } from '../../components/common/DataTable'
 import { StatusChip } from '../../components/common/StatusChip';
 import { Drawer } from '../../components/common/Drawer';
 import { Modal } from '../../components/common/Modal';
+import { ErrorAlertBanner } from '../../components/common/ErrorAlertBanner';
 import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawerContent';
 import { canPlaceCalls } from '../../utils/agentRoleUtils';
 import './PendingLeadsPage.css';
@@ -514,24 +515,7 @@ export const PendingLeadsPage: React.FC = () => {
         </button>
       </div>
 
-      {loadError && (
-        <div
-          className="alert-banner error"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '12px 16px',
-            marginBottom: '16px',
-            borderRadius: '8px',
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            color: '#ef4444',
-          }}
-        >
-          <span>{loadError}</span>
-        </div>
-      )}
+      <ErrorAlertBanner message={loadError} />
 
       {/* Top Metric Cards */}
       <div className="pending-leads-kpi-grid">

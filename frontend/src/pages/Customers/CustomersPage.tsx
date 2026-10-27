@@ -41,6 +41,7 @@ import { DocumentUploader } from '../../components/common/DocumentUploader';
 import { DocumentList } from '../../components/common/DocumentList';
 import { Modal } from '../../components/common/Modal';
 import { Timeline, TimelineEvent } from '../../components/common/Timeline';
+import { ErrorAlertBanner } from '../../components/common/ErrorAlertBanner';
 import { formatSmartScheduleDate } from '../../utils/dateUtils';
 
 import './CustomersPage.css';
@@ -1114,24 +1115,7 @@ export const CustomersPage: React.FC = () => {
         )}
       </div>
 
-      {loadError && (
-        <div
-          className="alert-banner error"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '12px 16px',
-            marginBottom: '16px',
-            borderRadius: '8px',
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            color: '#ef4444',
-          }}
-        >
-          <span>{loadError}</span>
-        </div>
-      )}
+      <ErrorAlertBanner message={loadError} />
 
       {/* Customer 360 Split View: List on left, Full 360 on right */}
       <div className="customers-split-layout">
