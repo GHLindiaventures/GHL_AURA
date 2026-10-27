@@ -2913,8 +2913,9 @@ export class SuperAdminService {
     if (res && res.data) return res.data;
     throw new Error('Failed to fetch platform leads');
   }
+}
 
-
+export const superAdminService = new SuperAdminService();
 
 export function isAnnouncementEligibleForUser(
   ann: BroadcastAnnouncement,
