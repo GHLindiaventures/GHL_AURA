@@ -9,7 +9,6 @@
     "build": "tsc -b && vite build --mode dev",
     "build:dev": "tsc -b && vite build --mode dev",
     "lint": "oxlint",
-    "test": "vitest run",
     "preview": "vite preview"
   },
   "dependencies": {
@@ -33,7 +32,6 @@
     "oxlint": "^1.79.0",
     "pg": "^8.23.0",
     "typescript": "~6.0.2",
-    "vite": "^8.2.2",
-    "vitest": "^5.0.2"
+    "vite": "^8.2.2"
   }
 }
