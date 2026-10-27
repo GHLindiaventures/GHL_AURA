@@ -1456,7 +1456,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         );
 
       if (matchedLead) {
-        const durM = Math.floor(lastCallRecord.duration / 60);
+        const durM = Math.trunc(lastCallRecord.duration / 60);
         const durS = lastCallRecord.duration % 60;
         const entry = `[${new Date().toLocaleDateString()}] Call (${durM}m ${durS}s) - Wrap-up Skipped. Reason: ${trimmedReason}${notes?.trim() ? ` • Notes: ${notes.trim()}` : ''}`;
         matchedLead.notes = matchedLead.notes ? `${matchedLead.notes}\n\n${entry}` : entry;

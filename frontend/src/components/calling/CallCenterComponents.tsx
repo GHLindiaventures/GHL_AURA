@@ -507,7 +507,7 @@ export const InCallBar: React.FC = () => {
   }
 
   const formatDuration = (seconds: number) => {
-    const mins = Math.floor(seconds / 60);
+    const mins = Math.trunc(seconds / 60);
     const secs = seconds % 60;
     return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
   };
@@ -1453,7 +1453,7 @@ export const DispositionModal: React.FC = () => {
         closeOnEscape={false}
         hideCloseButton={true}
         title="Call Wrap-up & Disposition"
-        subtitle={`Call with ${lastCallRecord.contactName} (${lastCallRecord.contactPhone}) • Duration: ${isSimulated ? '0s (Not Connected)' : `${Math.floor(lastCallRecord.duration / 60)}m ${lastCallRecord.duration % 60}s`}`}
+        subtitle={`Call with ${lastCallRecord.contactName} (${lastCallRecord.contactPhone}) • Duration: ${isSimulated ? '0s (Not Connected)' : `${Math.trunc(lastCallRecord.duration / 60)}m ${lastCallRecord.duration % 60}s`}`}
         maxWidth={580}
         footer={
           <div style={{ display: 'flex', justifyContent: 'flex-end', width: '100%' }}>

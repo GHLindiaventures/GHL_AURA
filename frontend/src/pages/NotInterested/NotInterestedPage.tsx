@@ -262,7 +262,7 @@ export const NotInterestedPage: React.FC = () => {
         id: `ev-call-${c.id}`,
         type: 'call',
         title: `Call Logged - ${c.disposition}`,
-        description: `Duration: ${Math.floor(c.duration / 60)}m ${c.duration % 60}s. ${c.notes || ''}`,
+        description: `Duration: ${Math.trunc(c.duration / 60)}m ${c.duration % 60}s. ${c.notes || ''}`,
         timestamp: c.timestamp,
         actorName: c.agentName,
       });

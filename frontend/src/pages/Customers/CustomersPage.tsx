@@ -858,7 +858,7 @@ export const CustomersPage: React.FC = () => {
   // Call History helpers
   const formatCallDuration = (seconds?: number): string => {
     if (!seconds || seconds <= 0) return '0s';
-    const m = Math.floor(seconds / 60);
+    const m = Math.trunc(seconds / 60);
     const s = seconds % 60;
     if (m === 0) return `${s}s`;
     if (s === 0) return `${m}m`;

@@ -161,7 +161,7 @@ export const LeadDetailDrawerContent: React.FC<LeadDetailDrawerContentProps> = (
 
   const formatDuration = (sec: number) => {
     if (!sec || sec <= 0) return '0s';
-    const m = Math.floor(sec / 60);
+    const m = Math.trunc(sec / 60);
     const s = sec % 60;
     return m > 0 ? `${m}m ${s}s` : `${s}s`;
   };

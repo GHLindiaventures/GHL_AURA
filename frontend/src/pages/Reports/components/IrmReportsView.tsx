@@ -211,7 +211,7 @@ export const IrmReportsView: React.FC = () => {
 
   const formatDuration = (seconds: number) => {
     if (!seconds || seconds <= 0) return '0s';
-    const mins = Math.floor(seconds / 60);
+    const mins = Math.trunc(seconds / 60);
     const secs = Math.round(seconds % 60);
     if (mins === 0) return `${secs}s`;
     return `${mins}m ${secs < 10 ? '0' : ''}${secs}s`;

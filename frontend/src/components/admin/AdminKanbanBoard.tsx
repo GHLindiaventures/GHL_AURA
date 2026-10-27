@@ -633,7 +633,7 @@ export const AdminKanbanBoard: React.FC<AdminKanbanBoardProps> = ({
     const time = new Date(timestamp).getTime();
     if (isNaN(time)) return 0;
     const diffMs = Date.now() - time;
-    return Math.max(0, Math.floor(diffMs / (1000 * 60 * 60 * 24)));
+    return Math.max(0, Math.trunc(diffMs / (1000 * 60 * 60 * 24)));
   };
 
   // Drag and Drop support

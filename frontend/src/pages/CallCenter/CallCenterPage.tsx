@@ -23,7 +23,7 @@ const isSameCalendarDay = (dateStr: string, ref: Date): boolean => {
 // ── Duration formatter (same as DashboardPage / ReportsPage) ─────────────────
 const formatDuration = (seconds: number): string => {
   if (!seconds || seconds <= 0) return '0s';
-  const mins = Math.floor(seconds / 60);
+  const mins = Math.trunc(seconds / 60);
   const secs = Math.round(seconds % 60);
   if (mins === 0) return `${secs}s`;
   return `${mins}m ${secs < 10 ? '0' : ''}${secs}s`;

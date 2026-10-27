@@ -10,14 +10,14 @@ describe('Auth Session and Revalidation Integrity', () => {
 
     // Create an expired token payload
     const expiredPayload = Buffer.from(
-      JSON.stringify({ exp: Math.floor(Date.now() / 1000) - 3600, email: 'test@example.com' })
+      JSON.stringify({ exp: Math.trunc(Date.now() / 1000) - 3600, email: 'test@example.com' })
     ).toString('base64');
     const expiredToken = `header.${expiredPayload}.signature`;
     expect(isJwtExpired(expiredToken)).toBe(true);
 
     // Create a valid future token payload
     const validPayload = Buffer.from(
-      JSON.stringify({ exp: Math.floor(Date.now() / 1000) + 3600, email: 'test@example.com' })
+      JSON.stringify({ exp: Math.trunc(Date.now() / 1000) + 3600, email: 'test@example.com' })
     ).toString('base64');
     const validToken = `header.${validPayload}.signature`;
     expect(isJwtExpired(validToken)).toBe(false);
