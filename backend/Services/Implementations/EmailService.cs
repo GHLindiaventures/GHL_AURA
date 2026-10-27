@@ -384,7 +384,8 @@ public class EmailService : IEmailService
         {
             using var client = new SmtpClient(effectiveHost, effectivePort)
             {
-                EnableSsl = cfg.EnableSsl,
+                EnableSsl = cfg.EnableSsl || effectivePort == 587 || effectivePort == 465 || effectiveHost.Contains("gmail", StringComparison.OrdinalIgnoreCase),
+                UseDefaultCredentials = false,
                 Credentials = new NetworkCredential(effectiveUsername, effectivePassword),
                 DeliveryMethod = SmtpDeliveryMethod.Network,
                 Timeout = 15000 // 15 seconds

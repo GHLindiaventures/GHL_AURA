@@ -33,6 +33,7 @@ public class SmtpEmailService : IEmailService
         {
             using var client = new SmtpClient(host, port)
             {
+                UseDefaultCredentials = false,
                 Credentials = new NetworkCredential(username, password),
                 EnableSsl = true,
                 Timeout = 10000 // 10 seconds timeout
