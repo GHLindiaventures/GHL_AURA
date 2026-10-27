@@ -251,11 +251,11 @@ export const AuthLayout: React.FC = () => {
             <h2 className="auth-title">
               {forgotSuccess ? (
                 <>
-                  Check your <span className="auth-orbit-gradient-text">inbox</span>
+                  <span className="auth-orbit-gradient-text">Check your inbox</span>
                 </>
               ) : (
                 <>
-                  Reset <span className="auth-orbit-gradient-text">password</span>
+                  <span className="auth-orbit-gradient-text">Reset password</span>
                 </>
               )}
             </h2>
