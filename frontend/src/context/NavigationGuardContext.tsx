@@ -22,10 +22,12 @@ export const NavigationGuardProvider: React.FC<{ children: React.ReactNode }> = 
   const dirtyMapRef = useRef(dirtyMap);
   dirtyMapRef.current = dirtyMap;
 
-  // Derive whether any form or workflow is currently dirty
-  const dirtyEntries = Object.values(dirtyMap).filter(entry => entry.isDirty);
-  const isDirty = dirtyEntries.length > 0;
-  const dirtyMessage = dirtyEntries[0]?.message || 'You have unsaved changes. Are you sure you want to leave this page?';
+  // Time complexity: O(1) lookup since clean entries are pruned immediately on unregister
+  const dirtyKeys = Object.keys(dirtyMap);
+  const isDirty = dirtyKeys.length > 0;
+  const dirtyMessage = isDirty
+    ? (dirtyMap[dirtyKeys[0]]?.message || 'You have unsaved changes. Are you sure you want to leave this page?')
+    : null;
 
   const registerDirty = useCallback((id: string, dirty: boolean, message?: string) => {
     setDirtyMap(prev => {
