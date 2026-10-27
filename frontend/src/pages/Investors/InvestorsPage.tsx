@@ -12,6 +12,7 @@ import { FilterBar } from '../../components/common/FilterBar';
 import { Modal } from '../../components/common/Modal';
 import { DocumentUploader } from '../../components/common/DocumentUploader';
 import { DocumentList } from '../../components/common/DocumentList';
+import { ErrorAlertBanner } from '../../components/common/ErrorAlertBanner';
 import { Investor360Modal } from './Investor360Modal';
 import { canPlaceCalls } from '../../utils/agentRoleUtils';
 import './InvestorsPage.css';
@@ -540,24 +541,7 @@ export const InvestorsPage: React.FC = () => {
             </div>
           </div>
 
-          {loadError && (
-            <div
-              className="alert-banner error"
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'space-between',
-                padding: '12px 16px',
-                marginBottom: '16px',
-                borderRadius: '8px',
-                background: 'rgba(239, 68, 68, 0.1)',
-                border: '1px solid rgba(239, 68, 68, 0.3)',
-                color: '#ef4444',
-              }}
-            >
-              <span>{loadError}</span>
-            </div>
-          )}
+          <ErrorAlertBanner message={loadError} />
 
           {/* ── Data table ───────────────────────────────────────────────────── */}
           <DataTable

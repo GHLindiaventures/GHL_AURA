@@ -58,6 +58,7 @@ import {
 import { DataTable, Column, RowAction } from '../../components/common/DataTable';
 import { FilterBar } from '../../components/common/FilterBar';
 import { Modal } from '../../components/common/Modal';
+import { ErrorAlertBanner } from '../../components/common/ErrorAlertBanner';
 import { getAuthHeaders } from '../../utils/authHeaders';
 import { apiUrl } from '../../utils/apiUrl';
 import { saveKycLocal } from '../../utils/kycStorage';
@@ -3724,33 +3725,12 @@ const GhlIrmKycView: React.FC = () => {
           </div>
 
           {/* Inline Error Banner */}
-          {loadError && (
-            <div style={{
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'space-between',
-              padding: '12px 16px',
-              marginBottom: 16,
-              borderRadius: 8,
-              backgroundColor: 'rgba(239, 68, 68, 0.1)',
-              border: '1px solid rgba(239, 68, 68, 0.25)',
-              color: '#ef4444',
-              fontSize: 13,
-            }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <AlertCircle size={16} />
-                <span>Failed to load KYC data from server. Please check your connection or try again.</span>
-              </div>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => void loadData()}
-                style={{ borderColor: '#ef4444', color: '#ef4444' }}
-              >
-                Retry
-              </button>
-            </div>
-          )}
+          <ErrorAlertBanner
+            message={loadError ? 'Failed to load KYC data from server. Please check your connection or try again.' : null}
+            showIcon={true}
+            onRetry={() => void loadData()}
+            style={{ fontSize: 13, border: '1px solid rgba(239, 68, 68, 0.25)' }}
+          />
 
           {/* Live Sync Warning Banner */}
           {kycSyncWarning && !loadError && (

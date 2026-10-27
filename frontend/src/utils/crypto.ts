@@ -7,12 +7,22 @@
 /**
  * Returns a cryptographically secure random integer between min and max (inclusive).
  */
+function getCrypto(): Crypto | null {
+  if (typeof globalThis !== 'undefined' && globalThis.crypto) {
+    return globalThis.crypto;
+  }
+  if (typeof window !== 'undefined' && ((window as any).crypto || (window as any).msCrypto)) {
+    return (window as any).crypto || (window as any).msCrypto;
+  }
+  return null;
+}
+
 export function getSecureRandomInt(min: number, max: number): number {
   if (min > max) {
     throw new Error('min must be less than or equal to max');
   }
   const range = max - min + 1;
-  const cryptoObj = typeof window !== 'undefined' ? (window.crypto || (window as any).msCrypto) : null;
+  const cryptoObj = getCrypto();
 
   if (cryptoObj?.getRandomValues) {
     const array = new Uint32Array(1);
@@ -30,7 +40,7 @@ export function getSecureRandomInt(min: number, max: number): number {
  */
 export function getSecureRandomString(length = 6): string {
   const chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-  const cryptoObj = typeof window !== 'undefined' ? (window.crypto || (window as any).msCrypto) : null;
+  const cryptoObj = getCrypto();
 
   if (cryptoObj?.getRandomValues) {
     const array = new Uint8Array(length);
@@ -42,7 +52,11 @@ export function getSecureRandomString(length = 6): string {
     return result;
   }
 
-  return Date.now().toString(36).slice(-length);
+  let result = '';
+  while (result.length < length) {
+    result += Date.now().toString(36);
+  }
+  return result.slice(0, length);
 }
 
 /**
@@ -50,7 +64,7 @@ export function getSecureRandomString(length = 6): string {
  * e.g. "meet-3fa85f64-5717-4562-b3fc-2c963f66afa6" or "toast-1719000-a8b2c"
  */
 export function getSecureRandomId(prefix: string): string {
-  const cryptoObj = typeof window !== 'undefined' ? (window.crypto || (window as any).msCrypto) : null;
+  const cryptoObj = getCrypto();
   if (cryptoObj?.randomUUID) {
     return `${prefix}-${cryptoObj.randomUUID()}`;
   }

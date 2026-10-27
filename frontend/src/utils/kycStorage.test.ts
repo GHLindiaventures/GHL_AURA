@@ -30,8 +30,14 @@ class LocalStorageMock {
 }
 
 const mockStorage = new LocalStorageMock();
-(globalThis as any).localStorage = mockStorage;
-(globalThis as any).window = globalThis;
+Object.defineProperty(globalThis, 'localStorage', {
+  value: mockStorage,
+  configurable: true,
+  writable: true,
+});
+if (typeof (globalThis as any).window === 'undefined') {
+  (globalThis as any).window = globalThis;
+}
 
 describe('kycStorage: stripSensitiveKycFields', () => {
   it('strips all sensitive top-level KYC fields', () => {

@@ -43,6 +43,7 @@ import { DataTable, Column, RowAction } from '../../components/common/DataTable'
 import { StatusChip } from '../../components/common/StatusChip';
 import { FilterBar } from '../../components/common/FilterBar';
 import { Modal } from '../../components/common/Modal';
+import { ErrorAlertBanner } from '../../components/common/ErrorAlertBanner';
 import { apiUrl } from '../../utils/apiUrl';
 import { getAuthHeaders } from '../../utils/authHeaders';
 import { canPlaceCalls } from '../../utils/agentRoleUtils';
@@ -1066,24 +1067,7 @@ export const OpportunitiesPage: React.FC = () => {
         )}
       </div>
 
-      {loadError && (
-        <div
-          className="alert-banner error"
-          style={{
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            padding: '12px 16px',
-            marginBottom: '16px',
-            borderRadius: '8px',
-            background: 'rgba(239, 68, 68, 0.1)',
-            border: '1px solid rgba(239, 68, 68, 0.3)',
-            color: '#ef4444',
-          }}
-        >
-          <span>{loadError}</span>
-        </div>
-      )}
+      <ErrorAlertBanner message={loadError} />
 
       {/* ── Data table ───────────────────────────────────────────────────── */}
       {(isGhlIrm || isGhlAdmin) ? (
