@@ -2879,6 +2879,232 @@ export class SuperAdminService {
     if (res && res.data) return res.data;
     throw new Error('Failed to fetch platform leads');
   }
+
+  // ── SECURITY CENTER ────────────────────────────────────────────────────────
+
+  /**
+   * GET /api/super-admin/security/overview
+   * Returns live platform security telemetry: sessions, failed logins, events.
+   */
+  async getSecurityOverview(): Promise<SecurityOverviewDto> {
+    const res = await apiClient.get<ApiResponse<any>>('/super-admin/security/overview');
+    if (!res || !res.data) throw new Error(res?.message || 'Failed to fetch security overview.');
+    const d = res.data;
+    // Normalize backend PascalCase/camelCase field names to frontend interface
+    return {
+      activeSessionsCount: d.activeSessions ?? d.activeSessionsCount ?? 0,
+      failedLogins24h: d.failedLogins24h ?? 0,
+      securityEvents24h: d.totalSecurityEvents ?? d.securityEvents24h ?? 0,
+      mfaEnabledUsersCount: d.twoFactorAdoptionCount ?? d.mfaEnabledUsersCount ?? 0,
+    };
+  }
+
+  /**
+   * GET /api/super-admin/security/sessions
+   * Returns all active cross-tenant user sessions.
+   */
+  async getUserSessions(): Promise<UserSessionDto[]> {
+    const res = await apiClient.get<ApiResponse<any[]>>('/super-admin/security/sessions', { activeOnly: true });
+    if (!res || !res.data) throw new Error(res?.message || 'Failed to fetch active sessions.');
+    return (res.data || []).map((s: any) => ({
+      id: s.id,
+      userId: s.userId,
+      userName: s.userName,
+      userEmail: s.userEmail,
+      roleCode: s.roleCode,
+      tokenId: s.tokenId,
+      ipAddress: s.ipAddress,
+      userAgent: s.userAgent,
+      device: s.device,
+      location: s.location,
+      isActive: s.isActive,
+      // Backend returns `isCurrent`; page uses both `isCurrentSession` and `isCurrent`
+      isCurrentSession: s.isCurrent ?? s.isCurrentSession ?? false,
+      isCurrent: s.isCurrent ?? s.isCurrentSession ?? false,
+      createdAt: s.createdAt,
+      lastActivityAt: s.lastActivityAt,
+      revokedAt: s.revokedAt,
+      revokedReason: s.revokedReason,
+    }));
+  }
+
+  /**
+   * POST /api/super-admin/security/sessions/{id}/revoke
+   * Revokes a single user session and broadcasts SignalR disconnect.
+   */
+  async revokeSession(sessionId: number): Promise<void> {
+    const res = await apiClient.post<ApiResponse<boolean>>(`/super-admin/security/sessions/${sessionId}/revoke`);
+    if (!res || res.success === false) {
+      throw new Error(res?.message || 'Failed to revoke session.');
+    }
+  }
+
+  /**
+   * POST /api/super-admin/security/sessions/revoke-all
+   * Revokes all active sessions except the caller's current session.
+   */
+  async revokeAllSessions(): Promise<number> {
+    const res = await apiClient.post<ApiResponse<number>>('/super-admin/security/sessions/revoke-all');
+    if (!res || res.success === false) {
+      throw new Error(res?.message || 'Failed to revoke all sessions.');
+    }
+    return res.data ?? 0;
+  }
+
+  /**
+   * GET /api/super-admin/security/mfa/status
+   * Returns MFA enrollment status for the authenticated Super Admin.
+   */
+  async getMfaStatus(): Promise<MfaStatusDto> {
+    const res = await apiClient.get<ApiResponse<any>>('/super-admin/security/mfa/status');
+    if (!res || !res.data) throw new Error(res?.message || 'Failed to fetch MFA status.');
+    const d = res.data;
+    return {
+      isTwoFactorEnabled: d.isTwoFactorEnabled ?? d.isEnabled ?? false,
+      remainingRecoveryCodes: d.remainingRecoveryCodes ?? d.recoveryCodesRemaining ?? 0,
+      userEmail: d.userEmail,
+    };
+  }
+
+  /**
+   * POST /api/super-admin/security/mfa/setup
+   * Initiates TOTP MFA enrollment and returns a Base32 secret + recovery codes.
+   */
+  async setupMfa(): Promise<MfaSetupResponseDto> {
+    const res = await apiClient.post<ApiResponse<any>>('/super-admin/security/mfa/setup');
+    if (!res || !res.data) throw new Error(res?.message || 'Failed to initiate MFA setup.');
+    const d = res.data;
+    return {
+      secret: d.secret,
+      qrCodeUri: d.qrCodeUri,
+      manualEntryKey: d.manualEntryKey ?? d.secret,
+      recoveryCodes: d.recoveryCodes ?? [],
+    };
+  }
+
+  /**
+   * POST /api/super-admin/security/mfa/verify-and-enable
+   * Verifies the 6-digit TOTP code and activates MFA on the account.
+   */
+  async verifyAndEnableMfa(code: string): Promise<{ recoveryCodes: string[] }> {
+    const res = await apiClient.post<ApiResponse<any>>('/super-admin/security/mfa/verify-and-enable', { code });
+    if (!res || res.success === false) {
+      throw new Error(res?.message || 'Invalid TOTP verification code.');
+    }
+    return { recoveryCodes: res.data?.recoveryCodes ?? [] };
+  }
+
+  /**
+   * POST /api/super-admin/security/mfa/disable
+   * Disables MFA after confirming current password and TOTP/recovery code.
+   */
+  async disableMfa(password: string, code: string): Promise<void> {
+    const res = await apiClient.post<ApiResponse<boolean>>('/super-admin/security/mfa/disable', { password, code });
+    if (!res || res.success === false) {
+      throw new Error(res?.message || 'Failed to disable MFA.');
+    }
+  }
+
+  /**
+   * POST /api/super-admin/security/mfa/regenerate-recovery-codes
+   * Regenerates all backup recovery codes, invalidating previous ones.
+   */
+  async regenerateRecoveryCodes(password: string, code?: string): Promise<string[]> {
+    const res = await apiClient.post<ApiResponse<string[]>>(
+      '/super-admin/security/mfa/regenerate-recovery-codes',
+      { password, code: code || undefined }
+    );
+    if (!res || res.success === false) {
+      throw new Error(res?.message || 'Failed to regenerate recovery codes.');
+    }
+    return res.data ?? [];
+  }
+
+  /**
+   * GET /api/super-admin/security/lockdown
+   * Fetches the current Emergency Lockdown status from the platform.
+   */
+  async fetchLockdownStatus(): Promise<EmergencyLockdownStatus> {
+    const res = await apiClient.get<ApiResponse<any>>('/super-admin/security/lockdown');
+    if (!res || !res.data) return { isActive: false };
+    const d = res.data;
+    return {
+      isActive: d.isActive ?? false,
+      reason: d.reason,
+      initiatedBy: d.initiatedBy,
+      initiatedAt: d.initiatedAt,
+      revokedSessionsCount: d.revokedSessionsCount ?? 0,
+    };
+  }
+
+  /**
+   * POST /api/super-admin/security/lockdown
+   * Activates Emergency Threat Lockdown — revokes all tenant sessions and seals API.
+   */
+  async activateEmergencyLockdown(reason: string): Promise<EmergencyLockdownStatus> {
+    const res = await apiClient.post<ApiResponse<any>>('/super-admin/security/lockdown', { reason });
+    if (!res || res.success === false) {
+      throw new Error(res?.message || 'Failed to activate emergency lockdown.');
+    }
+    const d = res.data ?? {};
+    return {
+      isActive: d.isActive ?? true,
+      reason: d.reason ?? reason,
+      initiatedBy: d.initiatedBy,
+      initiatedAt: d.initiatedAt,
+      revokedSessionsCount: d.revokedSessionsCount ?? 0,
+    };
+  }
+
+  /**
+   * POST /api/super-admin/security/unlock
+   * Disarms Emergency Lockdown and restores normal platform operations.
+   */
+  async deactivateEmergencyLockdown(): Promise<EmergencyLockdownStatus> {
+    const res = await apiClient.post<ApiResponse<any>>('/super-admin/security/unlock');
+    if (!res || res.success === false) {
+      throw new Error(res?.message || 'Failed to deactivate lockdown.');
+    }
+    return { isActive: false };
+  }
+
+  /**
+   * GET /api/super-admin/security/events
+   * Returns paginated security audit event log with optional severity filter.
+   */
+  async getSecurityEvents(
+    page: number = 1,
+    pageSize: number = 15,
+    severity?: string
+  ): Promise<{ items: SecurityEventDto[]; totalCount: number }> {
+    const params: Record<string, any> = { page, pageSize };
+    if (severity && severity !== 'all') params['severity'] = severity;
+
+    const res = await apiClient.get<ApiResponse<any>>('/super-admin/security/events', params);
+    if (!res || !res.data) return { items: [], totalCount: 0 };
+
+    const data = res.data;
+    const rawItems: any[] = Array.isArray(data) ? data : (data.items ?? []);
+
+    const items: SecurityEventDto[] = rawItems.map((e: any) => ({
+      id: e.id,
+      eventType: e.eventType,
+      severity: e.severity ?? 'INFO',
+      description: e.description ?? e.details,
+      details: e.details ?? e.description,
+      // Backend maps ActorEmail → UserEmail in the DTO; frontend interface uses actorEmail
+      actorEmail: e.actorEmail ?? e.userEmail,
+      userEmail: e.userEmail ?? e.actorEmail,
+      userId: e.userId,
+      ipAddress: e.ipAddress,
+      timestamp: e.timestamp ?? e.createdAt,
+    }));
+
+    return {
+      items,
+      totalCount: data.totalCount ?? data.total ?? items.length,
+    };
+  }
 }
 
 export const superAdminService = new SuperAdminService();
