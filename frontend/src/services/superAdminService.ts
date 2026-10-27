@@ -34,6 +34,7 @@ import { apiClient, ApiResponse, PagedResult } from './apiClient';
 import { isMockMode } from '../config/environment';
 import { storageService } from './storageService';
 import { getSecureRandomInt } from '../utils/crypto';
+import { getAuthHeaders } from '../utils/authHeaders';
 
 // Storage Keys
 const STORAGE_KEYS = {
@@ -1835,11 +1836,8 @@ export class SuperAdminService {
   }
 
   async downloadDatabaseBackupApi(id: string, filename: string): Promise<void> {
-    const token = sessionStorage.getItem('nexus_auth_token') || localStorage.getItem('nexus_auth_token');
     const response = await fetch(`${apiClient.getBaseUrl()}/super-admin/system/backups/${id}/download`, {
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-      },
+      headers: getAuthHeaders(),
     });
 
     if (!response.ok) {
@@ -2499,16 +2497,28 @@ export class SuperAdminService {
 
   // ── SECURITY & SESSIONS ───────────────────────────────────────────────────
 
-  async getSecurityOverview(): Promise<any> {
+  async getSecurityOverview(): Promise<SecurityOverviewDto> {
     const res = await apiClient.get<ApiResponse<any>>('/super-admin/security/overview');
     if (!res || !res.data) throw new Error(res?.message || 'Failed to load security overview.');
-    return res.data;
+    const d = res.data;
+    // Normalize backend field names (activeSessions, twoFactorAdoptionCount) to frontend interface
+    return {
+      activeSessionsCount: d.activeSessions ?? d.activeSessionsCount ?? 0,
+      failedLogins24h: d.failedLogins24h ?? 0,
+      securityEvents24h: d.totalSecurityEvents ?? d.securityEvents24h ?? 0,
+      mfaEnabledUsersCount: d.twoFactorAdoptionCount ?? d.mfaEnabledUsersCount ?? 0,
+    };
   }
 
-  async getUserSessions(activeOnly: boolean = true): Promise<any[]> {
+  async getUserSessions(activeOnly: boolean = true): Promise<UserSessionDto[]> {
     const res = await apiClient.get<ApiResponse<any[]>>('/super-admin/security/sessions', { activeOnly });
     if (!res || !res.data) throw new Error(res?.message || 'Failed to load user sessions.');
-    return res.data;
+    return (res.data || []).map((s: any) => ({
+      ...s,
+      // Backend returns `isCurrent`; PlatformSecurityPage uses `isCurrentSession`
+      isCurrentSession: s.isCurrent ?? s.isCurrentSession ?? false,
+      isCurrent: s.isCurrent ?? s.isCurrentSession ?? false,
+    }));
   }
 
   async revokeSession(id: number | string): Promise<boolean> {
@@ -2523,12 +2533,34 @@ export class SuperAdminService {
     return res.data;
   }
 
-  async getSecurityEvents(page: number = 1, pageSize: number = 25, severity?: string): Promise<PagedResult<SecurityEventDto>> {
+  async getSecurityEvents(
+    page: number = 1,
+    pageSize: number = 25,
+    severity?: string
+  ): Promise<{ items: SecurityEventDto[]; totalCount: number }> {
     const params: any = { page, pageSize };
     if (severity && severity !== 'all') params.severity = severity;
-    const res = await apiClient.get<ApiResponse<PagedResult<SecurityEventDto>>>('/super-admin/security/events', params);
-    if (!res || !res.data) throw new Error(res?.message || 'Failed to load security events.');
-    return res.data;
+    const res = await apiClient.get<ApiResponse<any>>('/super-admin/security/events', params);
+    if (!res || !res.data) return { items: [], totalCount: 0 };
+    const data = res.data;
+    const rawItems: any[] = Array.isArray(data) ? data : (data.items ?? []);
+    const items: SecurityEventDto[] = rawItems.map((e: any) => ({
+      id: e.id,
+      eventType: e.eventType,
+      severity: (e.severity ?? 'info').toLowerCase(),
+      description: e.description ?? e.details,
+      details: e.details ?? e.description,
+      // Backend DTO maps ActorEmail → UserEmail; expose as actorEmail for the page
+      actorEmail: e.actorEmail ?? e.userEmail,
+      userEmail: e.userEmail ?? e.actorEmail,
+      userId: e.userId,
+      ipAddress: e.ipAddress,
+      timestamp: e.timestamp ?? e.createdAt,
+    }));
+    return {
+      items,
+      totalCount: data.totalCount ?? data.total ?? items.length,
+    };
   }
 
   async getMfaStatus(): Promise<MfaStatusDto> {

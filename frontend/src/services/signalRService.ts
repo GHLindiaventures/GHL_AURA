@@ -4,6 +4,7 @@ import {
   LogLevel,
   HubConnectionState,
 } from '@microsoft/signalr';
+import { getAuthToken } from '../utils/authHeaders';
 
 export type SignalREventCallback = (...args: any[]) => void;
 
@@ -15,9 +16,7 @@ class SignalRService {
   public async startConnection(): Promise<void> {
     if (typeof window === 'undefined') return;
 
-    const token =
-      sessionStorage.getItem('nexus_auth_token') ||
-      localStorage.getItem('nexus_auth_token');
+    const token = getAuthToken();
 
     if (!token) {
       return;
@@ -37,10 +36,7 @@ class SignalRService {
     try {
       this.connection = new HubConnectionBuilder()
         .withUrl('/hubs/platform', {
-          accessTokenFactory: () =>
-            sessionStorage.getItem('nexus_auth_token') ||
-            localStorage.getItem('nexus_auth_token') ||
-            '',
+          accessTokenFactory: () => getAuthToken() || '',
         })
         .withAutomaticReconnect([0, 2000, 5000, 10000, 30000])
         .configureLogging(LogLevel.Warning)

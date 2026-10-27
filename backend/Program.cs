@@ -21,6 +21,16 @@ if (!Directory.Exists(wwwrootDirectory))
 var builder = WebApplication.CreateBuilder(args);
 builder.Configuration.AddUserSecrets<Program>(optional: true);
 
+// Configure clean terminal output (Phase 4b): silence noisy SQL query & request logging unless LOG_LEVEL=debug
+var isDebugLogging = string.Equals(Environment.GetEnvironmentVariable("LOG_LEVEL"), "debug", StringComparison.OrdinalIgnoreCase);
+if (!isDebugLogging)
+{
+    builder.Logging.AddFilter("Microsoft.EntityFrameworkCore.Database.Command", LogLevel.Warning);
+    builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
+    builder.Logging.AddFilter("Microsoft.AspNetCore", LogLevel.Warning);
+    builder.Logging.AddFilter("Microsoft.Hosting.Lifetime", LogLevel.Information);
+}
+
 
 // 1. Add Controllers
 builder.Services.AddControllers()

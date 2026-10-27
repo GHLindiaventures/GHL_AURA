@@ -14,6 +14,7 @@ export interface PagedResult<T = any> {
 }
 
 import { isMockMode as envIsMockMode } from '../config/environment';
+import { getAuthToken } from '../utils/authHeaders';
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api';
 
@@ -27,7 +28,7 @@ class ApiClient {
   }
 
   private getHeaders(): HeadersInit {
-    const token = sessionStorage.getItem('nexus_auth_token') || localStorage.getItem('nexus_auth_token');
+    const token = getAuthToken();
     return {
       'Content-Type': 'application/json',
       ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -140,7 +141,7 @@ class ApiClient {
   }
 
   async postFormData<T>(endpoint: string, formData: FormData): Promise<T> {
-    const token = sessionStorage.getItem('nexus_auth_token') || localStorage.getItem('nexus_auth_token');
+    const token = getAuthToken();
     const headers: Record<string, string> = {};
     if (token) {
       headers['Authorization'] = `Bearer ${token}`;

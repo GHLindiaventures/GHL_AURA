@@ -13,14 +13,31 @@ export interface AgentRoleInfo {
  * - Yanosh -> Platform Admin (badge-role-admin)
  * - Mani -> Company Admin (badge-role-admin)
  */
+// Time complexity: O(1) hash map lookup for known agent IDs
+const AGENT_ID_ROLE_MAP: Record<string, AgentRoleInfo> = {
+  '1': { name: 'Yanosh', role: 'Platform Admin', badgeClass: 'badge-role-admin', iconColor: '#ef4444' },
+  '2': { name: 'Vishnu', role: 'GHL Admin', badgeClass: 'badge-role-admin', iconColor: '#ef4444' },
+  '3': { name: 'Naveen', role: 'Sales Executive', badgeClass: 'badge-role-sales', iconColor: '#3b82f6' },
+  '4': { name: 'Mani', role: 'Company Admin', badgeClass: 'badge-role-admin', iconColor: '#ef4444' },
+  '5': { name: 'Dhinakaran', role: 'IRM', badgeClass: 'badge-role-irm', iconColor: '#8b5cf6' },
+  '6': { name: 'Rajesh Sharma', role: 'Sales Executive', badgeClass: 'badge-role-sales', iconColor: '#3b82f6' },
+};
+
 export function getAgentRoleInfo(
   agentName?: string | null,
   agentId?: string | number | null,
   fallbackRole?: string | null
 ): AgentRoleInfo {
   const name = (agentName || '').trim();
-  const nameLower = name.toLowerCase();
   const idStr = String(agentId || '');
+
+  // Fast O(1) lookup by ID
+  if (idStr && AGENT_ID_ROLE_MAP[idStr]) {
+    const entry = AGENT_ID_ROLE_MAP[idStr];
+    return name ? { ...entry, name } : entry;
+  }
+
+  const nameLower = name.toLowerCase();
 
   // 1. Vishnu -> GHL Admin
   if (nameLower.includes('vishnu') || idStr === '2') {
