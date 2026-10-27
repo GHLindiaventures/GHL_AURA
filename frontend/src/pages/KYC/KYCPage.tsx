@@ -4637,7 +4637,7 @@ const GhlIrmKycView: React.FC = () => {
 
                 {/* Optional Nominee Toggle */}
                 <div style={{ marginBottom: 16, padding: '12px 14px', borderRadius: 8, background: 'var(--bg-secondary, #f8fafc)', border: '1px solid var(--border-color, #e2e8f0)' }}>
-                  <label className="kyc-checkbox-label" htmlFor="kyc-has-nominee" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+                  <label className="kyc-checkbox-label" htmlFor="kyc-has-nominee" aria-label="Register Nominee(s) for this Investment Account" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
                     <input
                       id="kyc-has-nominee"
                       type="checkbox"
