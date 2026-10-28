@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useId } from 'react';
 import {
   FileCheck,
   Phone,
@@ -164,6 +164,7 @@ const KYCUploadCard: React.FC<KYCUploadProps> = ({
   onRemove,
 }) => {
   const inputRef = useRef<HTMLInputElement>(null);
+  const uploadInputId = useId();
 
   const handleFile = (file: File) => {
     if (file.size > MAX_KYC_UPLOAD_BYTES) {
@@ -181,7 +182,7 @@ const KYCUploadCard: React.FC<KYCUploadProps> = ({
 
   return (
     <div className="form-group" style={{ marginBottom: 12 }}>
-      <label className="form-label" htmlFor={`kyc-upload-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+      <label className="form-label" htmlFor={uploadInputId} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
         <span>{label} {required && <span style={{ color: '#ef4444' }}>*</span>}</span>
         {doc && (
           doc.url || pendingDocFiles.has(doc) ? (
@@ -211,47 +212,40 @@ const KYCUploadCard: React.FC<KYCUploadProps> = ({
           </button>
         </div>
       ) : (
-        <div>
-          <div
-            className={`kyc-upload-dropzone ${error ? 'has-error' : ''}`}
-            role="button"
-            tabIndex={0}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter' || e.key === ' ') {
-                e.preventDefault();
-                inputRef.current?.click();
-              }
-            }}
-            onClick={() => inputRef.current?.click()}
-            onDragOver={e => e.preventDefault()}
-            onDrop={e => {
-              e.preventDefault();
-              const f = e.dataTransfer.files?.[0];
-              if (f) handleFile(f);
-            }}
-          >
-            <Upload size={22} color="var(--primary-600)" />
-            <div style={{ fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
-              Click to upload or drag & drop
-            </div>
-            <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-              PDF, JPG, PNG up to 10 MB
-            </div>
-          </div>
-          <input
-            ref={inputRef}
-            id={`kyc-upload-${label.toLowerCase().replace(/[^a-z0-9]+/g, '-')}`}
-            type="file"
-            accept=".pdf,.jpg,.jpeg,.png"
-            style={{ display: 'none' }}
-            onChange={e => {
-              const f = e.target.files?.[0];
-              if (f) handleFile(f);
-              if (inputRef.current) inputRef.current.value = '';
-            }}
-          />
-        </div>
+        <button
+          type="button"
+          className={`kyc-upload-dropzone ${error ? 'has-error' : ''}`}
+          style={{ width: '100%', font: 'inherit', color: 'inherit' }}
+          onClick={() => inputRef.current?.click()}
+          onDragOver={e => e.preventDefault()}
+          onDrop={e => {
+            e.preventDefault();
+            const f = e.dataTransfer.files?.[0];
+            if (f) handleFile(f);
+          }}
+        >
+          <Upload size={22} color="var(--primary-600)" />
+          <span style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--text-primary)' }}>
+            Click to upload or drag & drop
+          </span>
+          <span style={{ display: 'block', fontSize: 11, color: 'var(--text-muted)' }}>
+            PDF, JPG, PNG up to 10 MB
+          </span>
+        </button>
       )}
+
+      <input
+        ref={inputRef}
+        id={uploadInputId}
+        type="file"
+        accept=".pdf,.jpg,.jpeg,.png"
+        style={{ display: 'none' }}
+        onChange={e => {
+          const f = e.target.files?.[0];
+          if (f) handleFile(f);
+          if (inputRef.current) inputRef.current.value = '';
+        }}
+      />
 
       {error && <div className="kyc-field-error">{error}</div>}
       
@@ -1673,7 +1667,7 @@ const GhlIrmKycView: React.FC = () => {
         ...selectedDeal,
         customerKycStatus: 'Assisted Draft' as any,
       };
-      persistDeal(updatedDeal).catch(() => {});
+      void persistDeal(updatedDeal).catch(() => {});
     }
 
     // 4. Save to backend if authenticated (awaiting upload & draft persistence)
@@ -2944,7 +2938,7 @@ const GhlIrmKycView: React.FC = () => {
             onShowToast={msg => showToast(msg)}
             onEditKyc={isGhlAdmin || isVerified ? undefined : (d => handleCorrectKycDetails(d))}
             onAssistedKyc={isGhlAdmin || isVerified ? undefined : (d => startAssistedKycFlow(d))}
-            onCallInvestor={canPlaceCalls(user) ? d => initiateCall(d.customerName, d.phone || '', 'customer', d.customerId || d.id, undefined, 'kyc') : undefined}
+            onCallInvestor={canPlaceCalls(user) ? d => void initiateCall(d.customerName, d.phone || '', 'customer', d.customerId || d.id, undefined, 'kyc') : undefined}
             // Also available in menu as fallback (not available in Admin oversight mode)
             onAdvanceStage={!isGhlAdmin && isVerified ? d => { void handleAdvanceStage(d); } : undefined}
           />
@@ -3093,7 +3087,7 @@ const GhlIrmKycView: React.FC = () => {
                   <button
                     type="button"
                     className="kyc-glass-action-pill kyc-btn-call"
-                    onClick={() => initiateCall(deal.customerName, deal.phone || '', 'customer', deal.customerId || deal.id, undefined, 'kyc')}
+                    onClick={() => void initiateCall(deal.customerName, deal.phone || '', 'customer', deal.customerId || deal.id, undefined, 'kyc')}
                     title={`Initiate direct phone consultation with ${deal.customerName}`}
                   >
                     <Phone size={13} /> <span>Call Investor</span>
@@ -3643,85 +3637,81 @@ const GhlIrmKycView: React.FC = () => {
 
           {/* Executive KPI Metric Cards */}
           <div className="kyc-kpi-container">
-            <div
+            <button
+              type="button"
               className={`kyc-metric-card ${activeKpiFilter === 'all' ? 'active' : ''}`}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveKpiFilter('all'); } }}
               onClick={() => setActiveKpiFilter('all')}
               title={activeKpiFilter === 'all' ? 'Showing all investors' : 'Click to show all investors'}
+              style={{ textAlign: 'left', font: 'inherit', color: 'inherit' }}
             >
-              <div className="kyc-metric-header">
+              <span className="kyc-metric-header">
                 <span className="kyc-metric-label">Total in KYC</span>
-                <div className="kyc-metric-icon kyc-metric-icon--blue">
+                <span className="kyc-metric-icon kyc-metric-icon--blue">
                   <Users size={16} />
-                </div>
-              </div>
-              <div className="kyc-metric-val">{totalKycInvestors}</div>
-              <div className="kyc-metric-subtext">
+                </span>
+              </span>
+              <span className="kyc-metric-val" style={{ display: 'block' }}>{totalKycInvestors}</span>
+              <span className="kyc-metric-subtext" style={{ display: 'block' }}>
                 {activeKpiFilter === 'all' ? 'Showing all investors' : 'Click to view all'}
-              </div>
-            </div>
+              </span>
+            </button>
 
-            <div
+            <button
+              type="button"
               className={`kyc-metric-card ${activeKpiFilter === 'awaiting' ? 'active' : ''}`}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveKpiFilter(prev => prev === 'awaiting' ? 'all' : 'awaiting'); } }}
               onClick={() => setActiveKpiFilter(prev => prev === 'awaiting' ? 'all' : 'awaiting')}
               title={activeKpiFilter === 'awaiting' ? 'Click to reset filter' : 'Click to filter awaiting verification'}
+              style={{ textAlign: 'left', font: 'inherit', color: 'inherit' }}
             >
-              <div className="kyc-metric-header">
+              <span className="kyc-metric-header">
                 <span className="kyc-metric-label">Awaiting Verification</span>
-                <div className="kyc-metric-icon kyc-metric-icon--amber">
+                <span className="kyc-metric-icon kyc-metric-icon--amber">
                   <Clock size={16} />
-                </div>
-              </div>
-              <div className="kyc-metric-val">{awaitingVerificationCount}</div>
-              <div className="kyc-metric-subtext">
+                </span>
+              </span>
+              <span className="kyc-metric-val" style={{ display: 'block' }}>{awaitingVerificationCount}</span>
+              <span className="kyc-metric-subtext" style={{ display: 'block' }}>
                 {activeKpiFilter === 'awaiting' ? '● Filter active (Click to reset)' : 'Ready for compliance review'}
-              </div>
-            </div>
+              </span>
+            </button>
 
-            <div
+            <button
+              type="button"
               className={`kyc-metric-card ${activeKpiFilter === 'pending' ? 'active' : ''}`}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveKpiFilter(prev => prev === 'pending' ? 'all' : 'pending'); } }}
               onClick={() => setActiveKpiFilter(prev => prev === 'pending' ? 'all' : 'pending')}
               title={activeKpiFilter === 'pending' ? 'Click to reset filter' : 'Click to filter pending submission'}
+              style={{ textAlign: 'left', font: 'inherit', color: 'inherit' }}
             >
-              <div className="kyc-metric-header">
+              <span className="kyc-metric-header">
                 <span className="kyc-metric-label">Pending Submission</span>
-                <div className="kyc-metric-icon kyc-metric-icon--purple">
+                <span className="kyc-metric-icon kyc-metric-icon--purple">
                   <Send size={16} />
-                </div>
-              </div>
-              <div className="kyc-metric-val">{pendingSubmissionCount}</div>
-              <div className="kyc-metric-subtext">
+                </span>
+              </span>
+              <span className="kyc-metric-val" style={{ display: 'block' }}>{pendingSubmissionCount}</span>
+              <span className="kyc-metric-subtext" style={{ display: 'block' }}>
                 {activeKpiFilter === 'pending' ? '● Filter active (Click to reset)' : 'Link sent or draft in progress'}
-              </div>
-            </div>
+              </span>
+            </button>
 
-            <div
+            <button
+              type="button"
               className={`kyc-metric-card ${activeKpiFilter === 'verified' ? 'active' : ''}`}
-              role="button"
-              tabIndex={0}
-              onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); setActiveKpiFilter(prev => prev === 'verified' ? 'all' : 'verified'); } }}
               onClick={() => setActiveKpiFilter(prev => prev === 'verified' ? 'all' : 'verified')}
               title={activeKpiFilter === 'verified' ? 'Click to reset filter' : 'Click to filter verified & qualified'}
+              style={{ textAlign: 'left', font: 'inherit', color: 'inherit' }}
             >
-              <div className="kyc-metric-header">
+              <span className="kyc-metric-header">
                 <span className="kyc-metric-label">Verified &amp; Qualified</span>
-                <div className="kyc-metric-icon kyc-metric-icon--green">
+                <span className="kyc-metric-icon kyc-metric-icon--green">
                   <CheckCircle size={16} />
-                </div>
-              </div>
-              <div className="kyc-metric-val">{verifiedCount}</div>
-              <div className="kyc-metric-subtext">
+                </span>
+              </span>
+              <span className="kyc-metric-val" style={{ display: 'block' }}>{verifiedCount}</span>
+              <span className="kyc-metric-subtext" style={{ display: 'block' }}>
                 {activeKpiFilter === 'verified' ? '● Filter active (Click to reset)' : 'SEBI verified & cleared'}
-              </div>
-            </div>
+              </span>
+            </button>
           </div>
 
           {/* Inline Error Banner */}
@@ -4617,7 +4607,7 @@ const GhlIrmKycView: React.FC = () => {
 
                 {/* Optional Nominee Toggle */}
                 <div style={{ marginBottom: 16, padding: '12px 14px', borderRadius: 8, background: 'var(--bg-secondary, #f8fafc)', border: '1px solid var(--border-color, #e2e8f0)' }}>
-                  <label className="kyc-checkbox-label" htmlFor="kyc-has-nominee" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
+                  <label className="kyc-checkbox-label" htmlFor="kyc-has-nominee" aria-label="Register Nominee(s) for this Investment Account" style={{ display: 'flex', alignItems: 'flex-start', gap: 10, cursor: 'pointer' }}>
                     <input
                       id="kyc-has-nominee"
                       type="checkbox"
@@ -4849,7 +4839,7 @@ const GhlIrmKycView: React.FC = () => {
                   <button
                     type="button"
                     className="btn btn-primary"
-                    onClick={handleContinue}
+                    onClick={() => void handleContinue()}
                     disabled={isStepSaving}
                     style={{ display: 'inline-flex', alignItems: 'center', gap: 8 }}
                   >
@@ -5014,7 +5004,7 @@ const GhlIrmKycView: React.FC = () => {
                 <button
                   type="button"
                   className="btn btn-primary"
-                  onClick={handleSaveSectionEdit}
+                  onClick={() => void handleSaveSectionEdit()}
                 >
                   Save Changes
                 </button>
@@ -5322,7 +5312,7 @@ const GhlIrmKycView: React.FC = () => {
                 gap: 6,
               }}
               disabled={!customerConsentChecked}
-              onClick={handleConfirmAssistedSubmit}
+              onClick={() => void handleConfirmAssistedSubmit()}
             >
               <CheckCircle size={15} /> Confirm &amp; Submit for Verification
             </button>
@@ -5692,7 +5682,7 @@ const OriginalKYCView: React.FC = () => {
               type="button"
               className="btn btn-sm btn-ghost btn-icon"
               title={`Call ${deal.customerName}`}
-              onClick={() => initiateCall(deal.customerName, deal.phone || '', 'customer', deal.customerId || deal.id, undefined, 'kyc')}
+              onClick={() => void initiateCall(deal.customerName, deal.phone || '', 'customer', deal.customerId || deal.id, undefined, 'kyc')}
             >
               <Phone size={14} color="#059669" />
             </button>
@@ -5721,7 +5711,7 @@ const OriginalKYCView: React.FC = () => {
           {
             label: 'Call Investor',
             icon: <Phone size={14} color="#059669" style={{ marginRight: 6 }} />,
-            onClick: (deal: Deal) => initiateCall(deal.customerName, deal.phone || '', 'customer', deal.customerId || deal.id, undefined, 'kyc'),
+            onClick: (deal: Deal) => void initiateCall(deal.customerName, deal.phone || '', 'customer', deal.customerId || deal.id, undefined, 'kyc'),
           },
         ]
       : []),
