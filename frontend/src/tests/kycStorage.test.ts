@@ -5,7 +5,7 @@ import {
   clearAllKycLocalStorage,
   sanitizeStoredKycData,
   SENSITIVE_KYC_FIELDS,
-} from './kycStorage';
+} from '../utils/kycStorage';
 
 class LocalStorageMock {
   private store = new Map<string, string>();

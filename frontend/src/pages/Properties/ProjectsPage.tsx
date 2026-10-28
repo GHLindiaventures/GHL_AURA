@@ -3,19 +3,12 @@ import { MapPin, Grid, RefreshCw, Calendar, CheckCircle2, Plus, Upload, Image as
 import { useAuth } from '../../context/AuthContext';
 import { StatusChip } from '../../components/common/StatusChip';
 import { Modal } from '../../components/common/Modal';
+import { BlueprintViewerModal } from '../../components/common/BlueprintViewerModal';
+import { comparePlotNumbers } from '../../utils/plotUtils';
 import { jaminApiService } from '../../services/jaminApiService';
 import { storageService } from '../../services/storageService';
 import './ProjectsPage.css';
 
-const comparePlotNumbers = (left: any, right: any): number => {
-  const leftNumber = Number.parseInt(String(left.plotNumber ?? ''), 10);
-  const rightNumber = Number.parseInt(String(right.plotNumber ?? ''), 10);
-  const leftIsNumber = Number.isFinite(leftNumber);
-  const rightIsNumber = Number.isFinite(rightNumber);
-  if (leftIsNumber && rightIsNumber && leftNumber !== rightNumber) return leftNumber - rightNumber;
-  if (leftIsNumber !== rightIsNumber) return leftIsNumber ? -1 : 1;
-  return String(left.plotNumber ?? '').localeCompare(String(right.plotNumber ?? ''), undefined, { numeric: true });
-};
 
 interface ProjectsPageProps {
   onNavigate: (route: string) => void;
@@ -952,284 +945,23 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate }) => {
       </Modal>
 
       {/* Master Layout Blueprint Modal */}
-      <Modal
-        isOpen={!!viewingBlueprintProject && !isBlueprintFullScreen}
-        onClose={() => {
+      <BlueprintViewerModal
+        isOpen={!!viewingBlueprintProject}
+        onClose={() => setViewingBlueprintProject(null)}
+        projectName={viewingBlueprintProject?.name}
+        projectLocation={viewingBlueprintProject?.location}
+        imageUrl={viewingBlueprintProject?.imageUrl}
+        availableCount={viewingBlueprintProject?.availablePlots || 0}
+        holdCount={viewingBlueprintProject ? allPlots.filter((p: any) => p.projectId === viewingBlueprintProject.id && (p.status || '').toLowerCase() === 'hold').length : 0}
+        soldCount={viewingBlueprintProject ? allPlots.filter((p: any) => p.projectId === viewingBlueprintProject.id && (p.status || '').toLowerCase() === 'sold').length : 0}
+        phaseText="Phase 1"
+        canManage={canManageProjects}
+        onUploadBlueprint={() => {
+          const p = viewingBlueprintProject;
           setViewingBlueprintProject(null);
-          setIsBlueprintFullScreen(false);
+          openEditModal(p);
         }}
-        title={`${viewingBlueprintProject?.name || 'Project'} — Master Layout Blueprint`}
-        subtitle={`Master layout diagram and community plan for ${viewingBlueprintProject?.location || ''}`}
-        size="xl"
-        headerActions={
-          <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '0.8rem', color: 'var(--text-secondary, #475569)', marginRight: '4px' }}>
-              <span>Zoom: <strong style={{ color: 'var(--text-primary, #0f172a)' }}>{Math.round(blueprintZoom * 100)}%</strong></span>
-              {blueprintRotation > 0 && (
-                <span>• <strong>{blueprintRotation}°</strong></span>
-              )}
-              <span>•</span>
-              <span style={{ color: '#059669', fontWeight: 600 }}>{viewingBlueprintProject?.availablePlots || 0} Available</span>
-            </div>
-
-            <div style={{ display: 'flex', gap: '5px', alignItems: 'center' }}>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setBlueprintZoom(prev => Math.max(0.25, parseFloat((prev - 0.25).toFixed(2))))}
-                disabled={blueprintZoom <= 0.25}
-                title="Zoom Out (-25%)"
-                style={{ padding: '4px 8px', display: 'inline-flex', alignItems: 'center', height: '32px' }}
-              >
-                <ZoomOut size={14} />
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setBlueprintZoom(prev => Math.min(3.5, parseFloat((prev + 0.25).toFixed(2))))}
-                disabled={blueprintZoom >= 3.5}
-                title="Zoom In (+25%)"
-                style={{ padding: '4px 8px', display: 'inline-flex', alignItems: 'center', height: '32px' }}
-              >
-                <ZoomIn size={14} />
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setBlueprintRotation(prev => (prev + 90) % 360)}
-                title="Rotate 90° Clockwise"
-                style={{ padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 500, height: '32px' }}
-              >
-                <RotateCw size={14} /> Rotate
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => { setBlueprintZoom(1); setBlueprintRotation(0); }}
-                title="Reset Zoom (100%) and Rotation (0°)"
-                style={{ padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px', height: '32px' }}
-              >
-                <RotateCcw size={14} /> Reset
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setIsBlueprintFullScreen(true)}
-                title="Open Full Screen View"
-                style={{ padding: '4px 10px', display: 'inline-flex', alignItems: 'center', gap: '4px', fontWeight: 600, color: 'var(--primary-600, #4f46e5)', height: '32px' }}
-              >
-                <Maximize2 size={14} /> Full Screen
-              </button>
-            </div>
-          </div>
-        }
-      >
-        <div style={{ display: 'flex', flexDirection: 'column' }}>
-          {/* Blueprint Canvas Container - sized strictly to the image with no harsh background color */}
-          <div style={{
-            width: '100%',
-            maxHeight: '68vh',
-            minHeight: '220px',
-            overflow: 'auto',
-            background: 'transparent',
-            borderRadius: '8px',
-            border: '1px solid var(--border-base, #e2e8f0)',
-            position: 'relative',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            padding: '12px',
-          }}>
-            {viewingBlueprintProject?.imageUrl ? (
-              <div
-                style={{
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  justifyContent: 'center',
-                  transform: `scale(${blueprintZoom}) rotate(${blueprintRotation}deg)`,
-                  transformOrigin: 'center center',
-                  transition: 'transform 0.2s ease',
-                }}
-              >
-                <img
-                  src={viewingBlueprintProject.imageUrl}
-                  alt={`${viewingBlueprintProject.name} Master Layout Blueprint`}
-                  style={{
-                    maxWidth: '100%',
-                    maxHeight: '62vh',
-                    width: 'auto',
-                    height: 'auto',
-                    display: 'block',
-                    objectFit: 'contain',
-                    borderRadius: '4px',
-                  }}
-                />
-              </div>
-            ) : (
-              <div style={{ textAlign: 'center', color: 'var(--text-muted, #94a3b8)', padding: '32px' }}>
-                <ImageIcon size={48} style={{ margin: '0 auto 12px auto', opacity: 0.5 }} />
-                <p style={{ fontSize: '1rem', color: 'var(--text-primary, #1e293b)', margin: '0 0 8px 0', fontWeight: 600 }}>
-                  No Master Layout Blueprint uploaded for this project.
-                </p>
-                <p style={{ fontSize: '0.85rem', color: 'var(--text-secondary, #64748b)', margin: '0 0 16px 0' }}>
-                  You can upload the community blueprint or sanction map into this anytime.
-                </p>
-                {canManageProjects && (
-                  <button
-                    type="button"
-                    className="btn btn-primary btn-sm"
-                    onClick={() => {
-                      const p = viewingBlueprintProject;
-                      setViewingBlueprintProject(null);
-                      openEditModal(p);
-                    }}
-                  >
-                    <Edit3 size={14} /> Upload Blueprint Now
-                  </button>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </Modal>
-
-      {/* Fullscreen Overlay Viewer */}
-      {viewingBlueprintProject && isBlueprintFullScreen && (
-        <div
-          style={{
-            position: 'fixed',
-            inset: 0,
-            zIndex: 99999,
-            backgroundColor: '#0b0f19',
-            display: 'flex',
-            flexDirection: 'column',
-            width: '100vw',
-            height: '100vh',
-          }}
-        >
-          {/* Fullscreen Top Bar */}
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '12px 24px',
-              background: 'rgba(15, 23, 42, 0.95)',
-              borderBottom: '1px solid rgba(255, 255, 255, 0.1)',
-              color: '#ffffff',
-              flexWrap: 'wrap',
-              gap: '12px',
-            }}
-          >
-            <div>
-              <h3 style={{ margin: 0, fontSize: '1.05rem', fontWeight: 600, color: '#f8fafc' }}>
-                {viewingBlueprintProject.name} — Master Layout Blueprint
-              </h3>
-              <span style={{ fontSize: '0.8rem', color: '#94a3b8' }}>
-                {viewingBlueprintProject.location} • Zoom: {Math.round(blueprintZoom * 100)}% {blueprintRotation > 0 ? `• ${blueprintRotation}°` : ''} • Press ESC to exit
-              </span>
-            </div>
-
-            <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setBlueprintZoom(prev => Math.max(0.25, parseFloat((prev - 0.25).toFixed(2))))}
-                disabled={blueprintZoom <= 0.25}
-                title="Zoom Out (-25%)"
-                style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)' }}
-              >
-                <ZoomOut size={16} />
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setBlueprintZoom(prev => Math.min(4.0, parseFloat((prev + 0.25).toFixed(2))))}
-                disabled={blueprintZoom >= 4.0}
-                title="Zoom In (+25%)"
-                style={{ padding: '6px 12px', background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)' }}
-              >
-                <ZoomIn size={16} />
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => setBlueprintRotation(prev => (prev + 90) % 360)}
-                title="Rotate 90° Clockwise"
-                style={{ padding: '6px 14px', background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-              >
-                <RotateCw size={16} /> Rotate 90°
-              </button>
-              <button
-                type="button"
-                className="btn btn-secondary btn-sm"
-                onClick={() => { setBlueprintZoom(1); setBlueprintRotation(0); }}
-                title="Reset (100% Zoom & 0°)"
-                style={{ padding: '6px 14px', background: 'rgba(255,255,255,0.1)', color: '#fff', border: '1px solid rgba(255,255,255,0.2)', display: 'inline-flex', alignItems: 'center', gap: '6px' }}
-              >
-                <RotateCcw size={16} /> Reset
-              </button>
-              <button
-                type="button"
-                className="btn btn-primary btn-sm"
-                onClick={() => setIsBlueprintFullScreen(false)}
-                title="Exit Full Screen"
-                style={{ padding: '6px 16px', display: 'inline-flex', alignItems: 'center', gap: '6px', fontWeight: 600 }}
-              >
-                <Minimize2 size={16} /> Exit Full Screen
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setIsBlueprintFullScreen(false);
-                  setViewingBlueprintProject(null);
-                }}
-                style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: '6px', display: 'flex', alignItems: 'center' }}
-                title="Close Viewer"
-              >
-                <X size={20} />
-              </button>
-            </div>
-          </div>
-
-          {/* Fullscreen Body - clean display centered to the image */}
-          <div
-            style={{
-              flex: 1,
-              overflow: 'auto',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'center',
-              padding: '24px',
-            }}
-          >
-            <div
-              style={{
-                transform: `scale(${blueprintZoom}) rotate(${blueprintRotation}deg)`,
-                transformOrigin: 'center center',
-                transition: 'transform 0.2s ease',
-                display: 'inline-flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-              }}
-            >
-              <img
-                src={viewingBlueprintProject.imageUrl}
-                alt={`${viewingBlueprintProject.name} Blueprint`}
-                style={{
-                  maxWidth: '92vw',
-                  maxHeight: '85vh',
-                  width: 'auto',
-                  height: 'auto',
-                  objectFit: 'contain',
-                  borderRadius: '6px',
-                  display: 'block',
-                }}
-              />
-            </div>
-          </div>
-        </div>
-      )}
+      />
     </div>
   );
 };

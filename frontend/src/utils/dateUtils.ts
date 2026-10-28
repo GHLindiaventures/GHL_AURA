@@ -83,3 +83,42 @@ export function isDateDueTodayOrOverdue(dateVal?: string | Date | null): boolean
   return isDateToday(dateVal) || isDateOverdue(dateVal);
 }
 
+export function formatDateYMD(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+export function getPresetDates(preset: string): { from: string; to: string } {
+  const now = new Date();
+  const todayStr = formatDateYMD(now);
+
+  switch (preset) {
+    case 'today':
+      return { from: todayStr, to: todayStr };
+    case 'yesterday': {
+      const yest = new Date(now);
+      yest.setDate(yest.getDate() - 1);
+      const yestStr = formatDateYMD(yest);
+      return { from: yestStr, to: yestStr };
+    }
+    case 'this_week': {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 6);
+      return { from: formatDateYMD(d), to: todayStr };
+    }
+    case 'this_month': {
+      const startOfMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+      const endOfMonth = new Date(now.getFullYear(), now.getMonth() + 1, 0);
+      return { from: formatDateYMD(startOfMonth), to: formatDateYMD(endOfMonth) };
+    }
+    case 'last_30_days': {
+      const d = new Date(now);
+      d.setDate(d.getDate() - 29);
+      return { from: formatDateYMD(d), to: todayStr };
+    }
+    default:
+      return { from: '', to: '' };
+  }
+}

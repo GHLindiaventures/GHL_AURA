@@ -14,6 +14,7 @@ import { Drawer } from '../../components/common/Drawer';
 import { FilterBar } from '../../components/common/FilterBar';
 import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawerContent';
 import { canPlaceCalls } from '../../utils/agentRoleUtils';
+import { formatDateYMD, getPresetDates } from '../../utils/dateUtils';
 import './CallHistoryPage.css';
 
 export const CallHistoryPage: React.FC = () => {
@@ -88,13 +89,6 @@ export const CallHistoryPage: React.FC = () => {
     }
   }, [transcriptCall?.id]);
 
-    // ── Date formatting helpers ────────────────────────────────────────────────
-    const formatDateYMD = (d: Date): string => {
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const day = String(d.getDate()).padStart(2, '0');
-      return `${y}-${m}-${day}`;
-    };
 
     const getPresetDates = (preset: string): { from: string; to: string } => {
       const now = new Date();

@@ -11,6 +11,8 @@ import { StatusChip } from '../../components/common/StatusChip';
 import { Drawer } from '../../components/common/Drawer';
 import { Timeline, TimelineEvent } from '../../components/common/Timeline';
 import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawerContent';
+import { LeadContactDetailsCard } from '../../components/common/LeadContactDetailsCard';
+import { filterScopedLeads, getLeadCallTimelineEvents, reengageLead, renderLeadNameAndContact, renderLeadSourceBadge, ReengageButton } from '../../utils/leadHelpers';
 import { canPlaceCalls } from '../../utils/agentRoleUtils';
 import './JunkPage.css';
 
@@ -35,21 +37,7 @@ export const JunkPage: React.FC = () => {
         getCalls(tenant?.id),
       ]);
 
-      const scopedLeads = isExec
-        ? junkLeads.filter(l => {
-            const uid = user?.id ? String(user.id) : '';
-            const uname = user?.name ? user.name.trim().toLowerCase() : '';
-            const agentId = l.assignedAgentId ? String(l.assignedAgentId) : '';
-            const agentName = l.assignedAgentName ? l.assignedAgentName.trim().toLowerCase() : '';
-            const salesExecId = l.assignedSalesExecutiveId ? String(l.assignedSalesExecutiveId) : '';
-            const salesExecName = l.assignedSalesExecutiveName ? l.assignedSalesExecutiveName.trim().toLowerCase() : '';
-
-            if (!agentId && !agentName) return true;
-            if (uid && (agentId === uid || salesExecId === uid)) return true;
-            if (uname && (agentName === uname || salesExecName === uname)) return true;
-            return false;
-          })
-        : junkLeads;
+      const scopedLeads = filterScopedLeads(junkLeads, user, isExec);
 
       setLeads(scopedLeads);
       setCalls(allCalls);
@@ -116,43 +104,9 @@ export const JunkPage: React.FC = () => {
     if (!tenant || !user) return;
     setReengaging(true);
     try {
-      const numId = parseInt(String(lead.id).replace(/\D/g, ''), 10);
-      let backendSuccess = false;
-      if (numId) {
-        try {
-          await apiClient.post(`/sales-executive/leads/${numId}/reengage`);
-          backendSuccess = true;
-          storageService.saveLead({ ...lead, status: 'Follow-up Required' });
-        } catch (e) {
-          console.warn('Backend reengage error, falling back to apiSaveLead', e);
-          await apiSaveLead({ ...lead, status: 'Follow-up Required' });
-        }
-      } else {
-        await apiSaveLead({ ...lead, status: 'Follow-up Required' });
-      }
-
-      if (!backendSuccess) {
-        const tomorrow = new Date();
-        tomorrow.setDate(tomorrow.getDate() + 1);
-        const newFlw = {
-          id: `flw-${Date.now()}`,
-          companyId: tenant.id,
-          contactId: lead.id,
-          contactName: lead.name,
-          contactPhone: lead.phone,
-          contactType: 'lead' as const,
-          scheduledAt: tomorrow.toISOString(),
-          priority: 'High' as const,
-          status: 'Pending' as const,
-          notes: `Re-engaged from Junk — follow-up required with ${lead.name}.`,
-          assignedAgentId: user.id,
-          assignedAgentName: user.name,
-        };
-        await apiSaveFollowup(newFlw);
-      }
+      await reengageLead({ lead, tenant, user, sourceLabel: 'Junk' });
       await loadData();
       window.dispatchEvent(new Event('nexus_storage_updated'));
-
       setIsDetailDrawerOpen(false);
       setSelectedLead(null);
     } catch (err) {
@@ -166,34 +120,12 @@ export const JunkPage: React.FC = () => {
     {
       key: 'name',
       header: 'Name & Contact',
-      render: (r: Lead) => (
-        <div>
-          <div style={{ fontWeight: 600, color: 'var(--text-primary)' }}>{r.name}</div>
-          <div style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 2 }}>
-            {r.phone} • {r.location || 'Unknown'}
-          </div>
-        </div>
-      ),
+      render: renderLeadNameAndContact,
     },
     {
       key: 'source',
       header: 'Source',
-      render: (r: Lead) => (
-        <span
-          style={{
-            display: "inline-flex",
-            padding: "3px 10px",
-            borderRadius: 100,
-            fontSize: 11,
-            fontWeight: 600,
-            background: "rgba(100, 116, 139, 0.12)",
-            color: "#94a3b8",
-            border: "1px solid rgba(100, 116, 139, 0.2)",
-          }}
-        >
-          {r.source}
-        </span>
-      ),
+      render: renderLeadSourceBadge,
     },
     {
       key: 'status',
@@ -241,36 +173,7 @@ export const JunkPage: React.FC = () => {
     },
   ];
 
-  // ── Non-GHL exec: timeline helper ───────────────────────────────────────────
-  const getTimelineEvents = (lead: Lead): TimelineEvent[] => {
-    const events: TimelineEvent[] = [];
-
-    events.push({
-      id: `ev-create-${lead.id}`,
-      type: 'note',
-      title: 'Lead Created',
-      description: `Sourced from ${lead.source}`,
-      timestamp: lead.createdAt,
-      actorName: lead.assignedAgentName,
-    });
-
-    const leadCalls = calls.filter(c => c.contactPhone === lead.phone || c.contactName === lead.name);
-
-    leadCalls.forEach(c => {
-      events.push({
-        id: `ev-call-${c.id}`,
-        type: 'call',
-        title: `Call Logged - ${c.disposition}`,
-        description: `Duration: ${Math.trunc(c.duration / 60)}m ${c.duration % 60}s. ${c.notes || ''}`,
-        timestamp: c.timestamp,
-        actorName: c.agentName,
-      });
-    });
-
-    return events.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
-  };
-
-  const timelineEvents = selectedLead && !isGhlSalesExec ? getTimelineEvents(selectedLead) : [];
+  const timelineEvents = selectedLead && !isGhlSalesExec ? getLeadCallTimelineEvents(selectedLead, calls) : [];
   const callsCount = selectedLead && !isGhlSalesExec
     ? calls.filter(c => c.contactPhone === selectedLead.phone || c.contactName === selectedLead.name).length
     : 0;
@@ -335,24 +238,7 @@ export const JunkPage: React.FC = () => {
                     {getDispositionReason(selectedLead)}
                   </div>
                 </div>
-                <button
-                  className="btn btn-sm"
-                  style={{
-                    backgroundColor: '#16a34a',
-                    color: '#fff',
-                    border: 'none',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 6,
-                    whiteSpace: 'nowrap',
-                    flexShrink: 0,
-                  }}
-                  disabled={reengaging}
-                  onClick={() => handleReengage(selectedLead)}
-                >
-                  <RefreshCw size={13} />
-                  Re-engage → Follow-up
-                </button>
+                <ReengageButton disabled={reengaging} onClick={() => handleReengage(selectedLead)} />
               </div>
 
               {/* Full GHL detail drawer content */}
@@ -370,29 +256,12 @@ export const JunkPage: React.FC = () => {
             // ── Non-GHL / non-exec: original lightweight drawer ──────────────────
             <div style={{ display: 'flex', flexDirection: 'column', gap: 24, padding: '16px 0' }}>
               {/* Core Details */}
-              <div className="card">
-                <h4 style={{ fontSize: 13, textTransform: 'uppercase', color: 'var(--text-muted)', marginBottom: 12, fontWeight: 700 }}>
-                  Contact Details
-                </h4>
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-                  <div>
-                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Phone:</span>
-                    <div style={{ fontSize: 14, fontWeight: 500 }}>{selectedLead.phone}</div>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Email:</span>
-                    <div style={{ fontSize: 14, fontWeight: 500 }}>{selectedLead.email || '—'}</div>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Location:</span>
-                    <div style={{ fontSize: 14, fontWeight: 500 }}>{selectedLead.location || '—'}</div>
-                  </div>
-                  <div>
-                    <span style={{ fontSize: 12, color: 'var(--text-secondary)' }}>Total Calls:</span>
-                    <div style={{ fontSize: 14, fontWeight: 500 }}>{callsCount}</div>
-                  </div>
-                </div>
-              </div>
+              <LeadContactDetailsCard
+                phone={selectedLead.phone}
+                email={selectedLead.email}
+                location={selectedLead.location}
+                callsCount={callsCount}
+              />
 
               {/* Reason Details */}
               <div className="card">
