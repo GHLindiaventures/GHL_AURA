@@ -24,6 +24,12 @@ import {
   filterOriginalKycDeals,
   countKpiMetrics,
   filterDealsByKpi,
+  enrichDealWithContact,
+  resolveCustomerInvestmentAmount,
+  buildMergedProfileData,
+  resolveDocUploadEntity,
+  buildKycDraftMetadata,
+  buildSectionEditData,
 } from '../pages/KYC/helpers/kycHelpers';
 import { Deal, Lead, Customer } from '../types';
 import { KYCFormData } from '../pages/KYC/KYCPage';
@@ -727,4 +733,274 @@ describe('kycHelpers Unit Tests', () => {
       expect(filterDealsByKpi(mockDeals, 'verified', statusFn).length).toBe(1);
     });
   });
+
+  describe('findBackendKyc', () => {
+    const dbKycsMap = {
+      id_101: { id: 101, investorId: 50, investorName: 'Aarav Sharma', email: 'aarav@ex.com', phone: '9876543210' },
+      inv_55: { id: 102, investorId: 55, investorName: 'Priya Patel', email: 'priya@ex.com', phone: '9876543211', companyId: 'comp-1' },
+      deal_200: { id: 103, investorId: 60, dealId: 'deal-200', investorName: 'Rohit Verma', email: 'rohit@ex.com', phone: '9876543212' },
+    };
+
+    it('returns null if deal is null or undefined', () => {
+      expect(findBackendKyc(null, dbKycsMap)).toBeNull();
+      expect(findBackendKyc(undefined, dbKycsMap)).toBeNull();
+    });
+
+    it('finds KYC record by direct kycId or kycRecordId', () => {
+      expect(findBackendKyc({ id: '1', kycId: 101 } as any, dbKycsMap)).toEqual(dbKycsMap.id_101);
+      expect(findBackendKyc({ id: '1', kycRecordId: 101 } as any, dbKycsMap)).toEqual(dbKycsMap.id_101);
+    });
+
+    it('finds KYC record by investorId/customerId and respects company scope', () => {
+      expect(findBackendKyc({ id: '2', customerId: '55' } as any, dbKycsMap, 'comp-1')).toEqual(dbKycsMap.inv_55);
+      expect(findBackendKyc({ id: '2', investorId: 55 } as any, dbKycsMap)).toEqual(dbKycsMap.inv_55);
+    });
+
+    it('finds KYC record by tracked dealId', () => {
+      expect(findBackendKyc({ id: 'deal-200' } as any, dbKycsMap)).toEqual(dbKycsMap.deal_200);
+    });
+
+    it('falls back to 10-digit phone number match', () => {
+      const match = findBackendKyc({ id: '99', phone: '+91 9876543210' } as any, dbKycsMap);
+      expect(match).toEqual(dbKycsMap.id_101);
+    });
+
+    it('falls back to case-insensitive email match', () => {
+      const match = findBackendKyc({ id: '99', email: 'AARAV@EX.COM' } as any, dbKycsMap);
+      expect(match).toEqual(dbKycsMap.id_101);
+    });
+
+    it('falls back to customer name match', () => {
+      const match = findBackendKyc({ id: '99', customerName: 'aarav sharma' } as any, dbKycsMap);
+      expect(match).toEqual(dbKycsMap.id_101);
+    });
+
+    it('returns null when no criteria matches', () => {
+      expect(findBackendKyc({ id: '99', customerName: 'Unknown Nobody' } as any, dbKycsMap)).toBeNull();
+    });
+  });
+
+  describe('enrichDealWithContact', () => {
+    const leads: Lead[] = [
+      { id: 'lead-1', name: 'Kavita', phone: '9876543220', email: 'kavita@lead.com', location: 'Jaipur' } as any,
+    ];
+    const customers: Customer[] = [
+      { id: 'cust-1', name: 'Manish', phone: '9876543221', email: 'manish@cust.com', location: 'Surat' } as any,
+    ];
+
+    it('returns untouched deal if phone, email, and location are already populated', () => {
+      const fullDeal = { id: 'd1', phone: '123', email: 'a@b.com', location: 'Pune' } as Deal;
+      expect(enrichDealWithContact(fullDeal, leads, customers)).toBe(fullDeal);
+    });
+
+    it('enriches missing fields from customer match by id', () => {
+      const deal = { id: 'd2', customerId: 'cust-1' } as Deal;
+      const res = enrichDealWithContact(deal, leads, customers);
+      expect(res.phone).toBe('9876543221');
+      expect(res.email).toBe('manish@cust.com');
+      expect(res.location).toBe('Surat');
+    });
+
+    it('enriches missing fields from lead match by normalized phone digits', () => {
+      const deal = { id: 'd3', phone: '+91 9876543220' } as Deal;
+      const res = enrichDealWithContact(deal, leads, customers);
+      expect(res.email).toBe('kavita@lead.com');
+      expect(res.location).toBe('Jaipur');
+    });
+
+    it('enriches missing fields by customer name match', () => {
+      const deal = { id: 'd4', customerName: 'Manish' } as Deal;
+      const res = enrichDealWithContact(deal, leads, customers);
+      expect(res.phone).toBe('9876543221');
+      expect(res.email).toBe('manish@cust.com');
+    });
+
+    it('falls back to empty strings when no contact match is found', () => {
+      const deal = { id: 'd5', customerName: 'Nonexistent' } as Deal;
+      const res = enrichDealWithContact(deal, [], []);
+      expect(res.phone).toBe('');
+      expect(res.email).toBe('');
+      expect(res.location).toBe('');
+    });
+  });
+
+  describe('resolveCustomerInvestmentAmount', () => {
+    it('returns formatted currency from deal.value', () => {
+      const deal = { id: 'd1', value: 5000000 } as Deal;
+      expect(resolveCustomerInvestmentAmount(deal)).toBe('₹50.0 L');
+    });
+
+    it('returns formatted currency from customFields on deal', () => {
+      const deal = { id: 'd2', customFields: { investmentAmount: 10000000 } } as any;
+      expect(resolveCustomerInvestmentAmount(deal)).toBe('₹1.00 Cr');
+    });
+
+    it('returns formatted currency from matched lead or customer customFields', () => {
+      const deal = { id: 'd3', customerId: 'lead-1' } as Deal;
+      const leads = [{ id: 'lead-1', customFields: { investmentAmount: 2500000 } }] as any;
+      expect(resolveCustomerInvestmentAmount(deal, leads, [])).toBe('₹25.0 L');
+    });
+
+    it('returns "—" for 0, negative, or missing investment value', () => {
+      expect(resolveCustomerInvestmentAmount({ id: 'd4', value: 0 } as any)).toBe('—');
+      expect(resolveCustomerInvestmentAmount({ id: 'd5' } as any)).toBe('—');
+    });
+  });
+
+  describe('buildMergedProfileData', () => {
+    it('constructs merged profile data prioritizing dbKyc over lead/customer/deal fallbacks', () => {
+      const deal = { id: 'd1', customerName: 'Deal Name', phone: '111', email: 'deal@ex.com', location: 'Deal City' } as Deal;
+      const dbKyc = {
+        investorName: 'DB Investor',
+        panNumber: 'ABCDE1234F',
+        dateOfBirth: '1990-01-01',
+        bankName: 'HDFC Bank',
+        nomineesJson: JSON.stringify([{ name: 'Nominee A', relationship: 'Spouse', dob: '1992-02-02', allocationPercentage: 100 }]),
+        aadhaarDocumentUrl: 'https://docs.example.com/aadhaar.pdf',
+      };
+
+      const res = buildMergedProfileData(deal, dbKyc, undefined, undefined, () => null);
+      expect(res.investorName).toBe('DB Investor');
+      expect(res.panNumber).toBe('ABCDE1234F');
+      expect(res.dob).toBe('1990-01-01');
+      expect(res.bankName).toBe('HDFC Bank');
+      expect(res.nominees?.length).toBe(1);
+      expect(res.aadhaarDoc?.url).toBe('https://docs.example.com/aadhaar.pdf');
+    });
+
+    it('merges stored local draft data from storageGetter when available', () => {
+      const deal = { id: 'd2', customerName: 'Local Test' } as Deal;
+      const storageGetter = (key: string) => {
+        if (key === 'nexus_kyc_data_d2') {
+          return JSON.stringify({ investorName: 'Saved Draft Name', occupation: 'Engineer' });
+        }
+        return null;
+      };
+
+      const res = buildMergedProfileData(deal, null, undefined, undefined, storageGetter);
+      expect(res.investorName).toBe('Saved Draft Name');
+      expect(res.occupation).toBe('Engineer');
+    });
+  });
+
+  describe('resolveDocUploadEntity', () => {
+    it('returns investor entityType for direct numeric customerId', () => {
+      expect(resolveDocUploadEntity({ customerId: '105' } as any)).toEqual({
+        entityType: 'investor',
+        entityId: '105',
+      });
+      expect(resolveDocUploadEntity({ customerId: 42 } as any)).toEqual({
+        entityType: 'investor',
+        entityId: '42',
+      });
+    });
+
+    it('returns investor entityType for prefixed customer IDs like customer-14 or cust-14', () => {
+      expect(resolveDocUploadEntity({ customerId: 'customer-14' } as any)).toEqual({
+        entityType: 'investor',
+        entityId: '14',
+      });
+      expect(resolveDocUploadEntity({ customerId: 'cust-99' } as any)).toEqual({
+        entityType: 'investor',
+        entityId: '99',
+      });
+      expect(resolveDocUploadEntity({ customerId: 'db-88' } as any)).toEqual({
+        entityType: 'investor',
+        entityId: '88',
+      });
+    });
+
+    it('matches customer in loaded customers by phone or email', () => {
+      const customers = [{ id: '55', phone: '9876543210', email: 'cust@ex.com' }] as Customer[];
+      expect(resolveDocUploadEntity({ phone: '+91 9876543210' } as any, customers)).toEqual({
+        entityType: 'investor',
+        entityId: '55',
+      });
+      expect(resolveDocUploadEntity({ email: 'CUST@EX.COM' } as any, customers)).toEqual({
+        entityType: 'investor',
+        entityId: '55',
+      });
+    });
+
+    it('matches lead in loaded leads by phone or email', () => {
+      const leads = [{ id: '77', phone: '9876543210', email: 'lead@ex.com' }] as Lead[];
+      expect(resolveDocUploadEntity({ phone: '+91 9876543210' } as any, [], leads)).toEqual({
+        entityType: 'lead',
+        entityId: '77',
+      });
+    });
+
+    it('falls back to numeric deal ID', () => {
+      expect(resolveDocUploadEntity({ id: '202' } as any)).toEqual({
+        entityType: 'deal',
+        entityId: '202',
+      });
+    });
+
+    it('throws descriptive error on invalid or empty candidate identifier', () => {
+      expect(() => resolveDocUploadEntity({ id: '0' } as any)).toThrowError(/Cannot upload document/);
+      expect(() => resolveDocUploadEntity({ customerId: 'undefined' } as any)).toThrowError(/Cannot upload document/);
+      expect(() => resolveDocUploadEntity({} as any)).toThrowError(/Cannot upload document/);
+    });
+  });
+
+  describe('buildKycDraftMetadata', () => {
+    it('builds metadata structure with step, user info, and ISO timestamp', () => {
+      const now = '2026-03-01T12:00:00.000Z';
+      const meta = buildKycDraftMetadata(3, { id: 'u-1', name: 'Sanjay' }, now);
+      expect(meta).toEqual({
+        isAssisted: true,
+        step: 3,
+        savedAt: now,
+        assistedByIrmId: 'u-1',
+        assistedByIrmName: 'Sanjay',
+        status: 'Assisted Draft',
+      });
+    });
+
+    it('handles null/undefined user safely', () => {
+      const meta = buildKycDraftMetadata(1, null);
+      expect(meta.isAssisted).toBe(true);
+      expect(meta.step).toBe(1);
+      expect(meta.assistedByIrmId).toBeUndefined();
+      expect(meta.assistedByIrmName).toBeUndefined();
+    });
+  });
+
+  describe('buildSectionEditData', () => {
+    const deal = { customerName: 'Aarav', email: 'aarav@ex.com', phone: '9876543210' } as Deal;
+    const current = {
+      investorName: 'Aarav Sharma',
+      panNumber: 'ABCDE1234F',
+      dob: '1990-01-01',
+      address: '123 Marine Drive',
+      city: 'Mumbai',
+      state: 'Maharashtra',
+      pincode: '400001',
+    };
+
+    it('builds personal section data with confirmation flag', () => {
+      const data = buildSectionEditData('personal', deal, current, 'Mumbai', 'Real Estate');
+      expect(data.investorName).toBe('Aarav Sharma');
+      expect(data.panNumber).toBe('ABCDE1234F');
+      expect(data.preferredAssetClass).toBe('Real Estate');
+      expect(data.preferredAssetClassConfirmed).toBe(true);
+    });
+
+    it('builds address section data', () => {
+      const data = buildSectionEditData('address', deal, current, 'Mumbai', 'Real Estate');
+      expect(data.nameAsPerPan).toBe('Aarav Sharma');
+      expect(data.address).toBe('123 Marine Drive');
+      expect(data.city).toBe('Mumbai');
+      expect(data.state).toBe('Maharashtra');
+      expect(data.country).toBe('India');
+    });
+
+    it('handles null deal and placeholder asset class "—"', () => {
+      const personalData = buildSectionEditData('personal', null, current, '', '—');
+      expect(personalData.preferredAssetClassConfirmed).toBe(false);
+      expect(personalData.city).toBe('Mumbai');
+    });
+  });
+
 });

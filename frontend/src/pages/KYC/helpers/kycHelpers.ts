@@ -1,6 +1,6 @@
 import { Deal, Lead, Customer } from '../../../types';
 import { normalizeLegacyKycStatus, getCustomerKycStatus, CustomerKycStatus } from '../../../services/kycService';
-import { NomineeItem, validateKycStep } from '../../../utils/kycValidators';
+import { NomineeItem, validateKycStep, sanitizeDobString } from '../../../utils/kycValidators';
 import { EXTERNAL_VERIFICATION_LINKS } from '../../../constants/externalLinks';
 import type { KYCFormData, KycDoc } from '../KYCPage';
 
@@ -697,5 +697,274 @@ export const filterDealsByKpi = (
   }
   return deals.filter(d => normalizeLegacyKycStatus(d.kycStatus, d.verifiedBy) === 'Verified');
 };
+
+/**
+ * Enrich deal contact fields (phone, email, location) from matching leads or customers
+ */
+export const enrichDealWithContact = (
+  d: Deal,
+  leadsList: Lead[] = [],
+  customersList: Customer[] = []
+): Deal => {
+  // If the API already populated all three contact fields, nothing to do
+  if (d.phone && d.email && d.location) return d;
+
+  // Prefer ID-based match; fall back to normalised-phone match; then name match
+  const custIdStr = d.customerId ? String(d.customerId) : null;
+  const dealPhoneDigits = (d.phone || '').replace(/\D/g, '').slice(-10);
+  const dealNameLower = (d.customerName || '').trim().toLowerCase();
+
+  const matchCust = customersList.find(c => {
+    if (custIdStr && String(c.id) === custIdStr) return true;
+    const cDigits = (c.phone || '').replace(/\D/g, '').slice(-10);
+    if (cDigits && dealPhoneDigits && cDigits === dealPhoneDigits) return true;
+    if (dealNameLower && c.name && c.name.trim().toLowerCase() === dealNameLower) return true;
+    return false;
+  });
+
+  const matchLead = !matchCust ? leadsList.find(l => {
+    if (custIdStr && String(l.id) === custIdStr) return true;
+    const lDigits = (l.phone || '').replace(/\D/g, '').slice(-10);
+    if (lDigits && dealPhoneDigits && lDigits === dealPhoneDigits) return true;
+    if (dealNameLower && l.name && l.name.trim().toLowerCase() === dealNameLower) return true;
+    return false;
+  }) : null;
+
+  return {
+    ...d,
+    phone: d.phone || matchCust?.phone || matchLead?.phone || '',
+    email: d.email || matchCust?.email || matchLead?.email || '',
+    location: d.location || matchCust?.location || matchLead?.location || '',
+  };
+};
+
+/**
+ * Resolve customer investment amount formatted as currency across deal, lead, and customer
+ */
+export const resolveCustomerInvestmentAmount = (
+  deal: Deal,
+  leadsList: Lead[] = [],
+  customersList: Customer[] = []
+): string => {
+  const { matchingLead, matchingCustomer } = findMatchingLeadAndCustomer(deal, leadsList, customersList);
+  const val =
+    deal.value ||
+    (deal as any).customFields?.investmentAmount ||
+    matchingLead?.customFields?.investmentAmount ||
+    matchingCustomer?.customFields?.investmentAmount;
+  const num = Number(val);
+  return num && num > 0 ? formatKycCurrency(num) : '—';
+};
+
+/**
+ * Merge deal details, backend KYC records, lead/customer profiles, and local drafts for Customer Profile view
+ */
+export const buildMergedProfileData = (
+  deal: Deal,
+  dbKyc: any,
+  matchingLead?: any,
+  matchingCustomer?: any,
+  storageGetter: (key: string) => string | null = key => {
+    try { return localStorage.getItem(key); } catch { return null; }
+  }
+): Partial<KYCFormData> & Record<string, any> => {
+  const savedKycKey = `nexus_kyc_data_${deal.id}`;
+  let saved: Partial<KYCFormData> | null = null;
+  try {
+    const raw = storageGetter(savedKycKey);
+    if (raw) saved = JSON.parse(raw);
+  } catch { }
+
+  const dbNominees: NomineeItem[] = parseNomineesList(dbKyc?.nomineesJson);
+
+  const docFrom = (url?: string | null, label = 'Uploaded document') =>
+    url && String(url).trim() ? { name: label, size: '', type: '', url: String(url) } : null;
+
+  const savedNonEmpty: Record<string, any> = {};
+  if (saved && typeof saved === 'object') {
+    for (const [key, val] of Object.entries(saved)) {
+      if (val !== '' && val !== null && val !== undefined) {
+        if (Array.isArray(val)) {
+          if (val.length > 0) savedNonEmpty[key] = val;
+        } else {
+          savedNonEmpty[key] = val;
+        }
+      }
+    }
+  }
+
+  return {
+    ...savedNonEmpty,
+    investorName: dbKyc?.investorName || savedNonEmpty.investorName || deal.customerName || matchingLead?.name || matchingCustomer?.name || '',
+    phone: dbKyc?.phone || savedNonEmpty.phone || deal.phone || matchingLead?.phone || matchingCustomer?.phone || '',
+    email: dbKyc?.email || savedNonEmpty.email || deal.email || matchingLead?.email || matchingCustomer?.email || '',
+    gender: dbKyc?.gender || savedNonEmpty.gender || 'Male',
+    investorType: dbKyc?.investorType || savedNonEmpty.investorType || deal.investorType || 'Individual',
+    residentType: dbKyc?.residentType || savedNonEmpty.residentType || 'Resident Indian',
+    occupation: dbKyc?.occupation || savedNonEmpty.occupation || '',
+    city: dbKyc?.city || savedNonEmpty.city || deal.location || matchingLead?.location || matchingCustomer?.location || '',
+    state: dbKyc?.state || savedNonEmpty.state || '',
+    pincode: dbKyc?.pincode || savedNonEmpty.pincode || '',
+    address: dbKyc?.addressLine1 || dbKyc?.address || savedNonEmpty.address || '',
+    courierAddress: dbKyc?.addressLine2 || dbKyc?.courierAddress || savedNonEmpty.courierAddress || '',
+    country: dbKyc?.country || savedNonEmpty.country || 'India',
+    panNumber: dbKyc?.panNumber || savedNonEmpty.panNumber || (deal as any).pan || matchingLead?.customFields?.pan || matchingCustomer?.customFields?.pan || '',
+    nameAsPerPan: dbKyc?.nameAsPerPan || dbKyc?.investorName || savedNonEmpty.nameAsPerPan || deal.customerName || '',
+    aadhaarNumber: dbKyc?.aadhaarNumber || savedNonEmpty.aadhaarNumber || '',
+    fatherName: dbKyc?.fatherName || savedNonEmpty.fatherName || '',
+    dob: sanitizeDobString(dbKyc?.dateOfBirth || dbKyc?.dob || savedNonEmpty.dob || ''),
+    bankName: dbKyc?.bankName || savedNonEmpty.bankName || '',
+    accountNumber: dbKyc?.accountNumber || savedNonEmpty.accountNumber || '',
+    ifscCode: dbKyc?.ifscCode || savedNonEmpty.ifscCode || '',
+    swiftCode: dbKyc?.swiftCode || savedNonEmpty.swiftCode || '',
+    accountHolderName: dbKyc?.accountHolderName || dbKyc?.investorName || savedNonEmpty.accountHolderName || deal.customerName || '',
+    accountType: dbKyc?.accountType || savedNonEmpty.accountType || '',
+    branchName: dbKyc?.branchName || savedNonEmpty.branchName || '',
+    hasNoDemat: dbKyc?.hasNoDemat !== undefined ? Boolean(dbKyc.hasNoDemat) : Boolean(savedNonEmpty.hasNoDemat),
+    dematAccountNumber: dbKyc?.dematAccountNumber || savedNonEmpty.dematAccountNumber || '',
+    dematDepository: dbKyc?.dematDepository || savedNonEmpty.dematDepository || '',
+    dematDpId: dbKyc?.dpId || dbKyc?.dematDpId || savedNonEmpty.dematDpId || '',
+    dematClientId: dbKyc?.dematClientId || savedNonEmpty.dematClientId || '',
+    nominees: dbNominees.length ? dbNominees : (savedNonEmpty.nominees as NomineeItem[] | undefined) || [],
+    aadhaarDoc: docFrom(dbKyc?.aadhaarDocumentUrl, 'Aadhaar (uploaded)') || savedNonEmpty.aadhaarDoc || null,
+    panDoc: docFrom(dbKyc?.panDocumentUrl, 'PAN (uploaded)') || savedNonEmpty.panDoc || null,
+    bankProofDoc: docFrom(dbKyc?.bankChequeUrl, 'Bank proof (uploaded)') || savedNonEmpty.bankProofDoc || null,
+    dematDoc: docFrom(dbKyc?.dematDocumentUrl, 'Demat proof (uploaded)') || savedNonEmpty.dematDoc || null,
+    photoDoc: docFrom(dbKyc?.photoUrl || savedNonEmpty.photoUrl, 'Investor Photo (uploaded)') || savedNonEmpty.photoDoc || null,
+    photoUrl: dbKyc?.photoUrl || savedNonEmpty.photoUrl || (savedNonEmpty.photoDoc as any)?.url || null,
+    status: dbKyc?.status || savedNonEmpty.status || deal.kycStatus || 'Pending',
+    submittedAt: dbKyc?.submittedAt || savedNonEmpty.submittedAt || null,
+    customerConsentTimestamp: dbKyc?.customerConsentTimestamp || savedNonEmpty.customerConsentTimestamp || null,
+  };
+};
+
+/**
+ * Resolves the appropriate entity type and id for uploading KYC documents to /documents
+ */
+export const resolveDocUploadEntity = (
+  deal: Deal,
+  customers: Customer[] = [],
+  leads: Lead[] = []
+): { entityType: string; entityId: string } => {
+  // 1. Direct positive numeric customer ID on deal
+  const parsedCust = Number(deal.customerId);
+  if (Number.isInteger(parsedCust) && parsedCust > 0) {
+    return { entityType: 'investor', entityId: String(parsedCust) };
+  }
+
+  // 2. Prefixed numeric customer ID (e.g. 'customer-14', 'cust-14', 'db-14')
+  if (typeof deal.customerId === 'string') {
+    const stripped = deal.customerId.replace(/^(customer-|cust-|db-)/i, '');
+    const numStripped = Number(stripped);
+    if (Number.isInteger(numStripped) && numStripped > 0) {
+      return { entityType: 'investor', entityId: String(numStripped) };
+    }
+  }
+
+  // 3. Match against loaded customers by phone/email/id
+  const phoneDigits = (deal.phone || '').replace(/\D/g, '').slice(-10);
+  const matchCust = customers.find(c =>
+    (deal.customerId && (c.id === deal.customerId || String(c.id) === String(deal.customerId))) ||
+    (phoneDigits && c.phone && c.phone.replace(/\D/g, '').slice(-10) === phoneDigits) ||
+    (deal.email && c.email && c.email.trim().toLowerCase() === deal.email.trim().toLowerCase())
+  );
+  if (matchCust) {
+    const custNum = Number(matchCust.id);
+    if (Number.isInteger(custNum) && custNum > 0) {
+      return { entityType: 'investor', entityId: String(custNum) };
+    }
+  }
+
+  // 4. Match against loaded leads by phone/email/id
+  const matchLead = leads.find(l =>
+    (deal.customerId && (l.id === deal.customerId || String(l.id) === String(deal.customerId))) ||
+    (phoneDigits && l.phone && l.phone.replace(/\D/g, '').slice(-10) === phoneDigits) ||
+    (deal.email && l.email && l.email.trim().toLowerCase() === deal.email.trim().toLowerCase())
+  );
+  if (matchLead) {
+    const leadNum = Number(matchLead.id);
+    if (Number.isInteger(leadNum) && leadNum > 0) {
+      return { entityType: 'lead', entityId: String(leadNum) };
+    }
+  }
+
+  // 5. Deal numeric ID
+  const dealNum = Number(deal.id);
+  if (Number.isInteger(dealNum) && dealNum > 0) {
+    return { entityType: 'deal', entityId: String(dealNum) };
+  }
+
+  // 6. Explicit validation: Reject fallback '0' and invalid/missing identifiers
+  const candidateId = String(deal.id || deal.customerId || '').trim();
+  if (!candidateId || candidateId === '0' || candidateId === 'undefined' || candidateId === 'null') {
+    throw new Error(`Cannot upload document: Missing or invalid entity identifier for deal "${deal.customerName || deal.title || deal.id || 'Unknown'}".`);
+  }
+  return { entityType: 'deal', entityId: candidateId };
+};
+
+export interface KycDraftMetadata {
+  isAssisted: boolean;
+  step: number;
+  savedAt: string;
+  assistedByIrmId?: string | number;
+  assistedByIrmName?: string;
+  status: string;
+}
+
+/**
+ * Build serialized draft metadata payload for local and server draft tracking
+ */
+export const buildKycDraftMetadata = (
+  step: number,
+  user?: { id?: string | number; name?: string } | null,
+  nowIso: string = new Date().toISOString()
+): KycDraftMetadata => ({
+  isAssisted: true,
+  step,
+  savedAt: nowIso,
+  assistedByIrmId: user?.id,
+  assistedByIrmName: user?.name,
+  status: 'Assisted Draft',
+});
+
+/**
+ * Construct section form data for quick editing personal or address sections in Profile view
+ */
+export const buildSectionEditData = (
+  section: 'personal' | 'address',
+  deal: Deal | null,
+  current: Partial<KYCFormData> & Record<string, any>,
+  resolvedLocation: string,
+  preferredAssetClass: string
+): Record<string, any> => {
+  if (section === 'personal') {
+    return {
+      investorName: current.investorName || deal?.customerName || '',
+      email: current.email || deal?.email || '',
+      phone: current.phone || deal?.phone || '',
+      panNumber: current.panNumber || '',
+      city: current.city || (deal ? resolvedLocation : '') || '',
+      dob: current.dob || '',
+      occupation: current.occupation || '',
+      gender: current.gender || '',
+      investorType: current.investorType || '',
+      residentType: current.residentType || '',
+      preferredAssetClass: deal ? (preferredAssetClass === '—' ? '' : preferredAssetClass) : '',
+      preferredAssetClassConfirmed: deal ? preferredAssetClass !== '—' : false,
+    };
+  }
+  return {
+    nameAsPerPan: current.nameAsPerPan || current.investorName || deal?.customerName || '',
+    fatherName: current.fatherName || '',
+    aadhaarNumber: current.aadhaarNumber || '',
+    address: current.address || '',
+    courierAddress: current.courierAddress || current.address || '',
+    city: current.city || (deal ? resolvedLocation : '') || '',
+    state: current.state || '',
+    pincode: current.pincode || '',
+    country: current.country || 'India',
+  };
+};
+
 
 

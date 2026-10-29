@@ -88,6 +88,13 @@ import {
   filterOriginalKycDeals,
   countKpiMetrics,
   filterDealsByKpi,
+  enrichDealWithContact,
+  findBackendKyc,
+  resolveCustomerInvestmentAmount,
+  buildMergedProfileData,
+  resolveDocUploadEntity as resolveDocUploadEntityHelper,
+  buildKycDraftMetadata,
+  buildSectionEditData,
 } from './helpers/kycHelpers';
 import {
   KycToast,
@@ -333,20 +340,6 @@ const resolvePreferredAssetClass = (deal: Deal, leadsList: Lead[] = [], customer
   return '—';
 };
 
-const resolveCustomerInvestmentAmount = (
-  deal: Deal,
-  leadsList: Lead[] = [],
-  customersList: Customer[] = []
-): string => {
-  const { matchingLead, matchingCustomer } = findMatchingLeadAndCustomer(deal, leadsList, customersList);
-  const val =
-    deal.value ||
-    (deal as any).customFields?.investmentAmount ||
-    matchingLead?.customFields?.investmentAmount ||
-    matchingCustomer?.customFields?.investmentAmount;
-  const num = Number(val);
-  return num && num > 0 ? formatKycCurrency(num) : '—';
-};
 
 // ==============================================================================
 // GHL INDIA VENTURES -> IRM KYC EXPERIENCE
@@ -415,106 +408,6 @@ const GhlIrmKycView: React.FC = () => {
   const todayDateString = useMemo(() => new Date().toISOString().split('T')[0], []);
   const [validationErrorSummary, setValidationErrorSummary] = useState<string | null>(null);
 
-  const enrichDealWithContact = (d: Deal, leadsList: Lead[], customersList: Customer[]): Deal => {
-    // If the API already populated all three contact fields, nothing to do
-    if (d.phone && d.email && d.location) return d;
-
-    // Prefer ID-based match; fall back to normalised-phone match; then name match
-    const custIdStr = d.customerId ? String(d.customerId) : null;
-    const dealPhoneDigits = (d.phone || '').replace(/\D/g, '').slice(-10);
-    const dealNameLower = (d.customerName || '').trim().toLowerCase();
-
-    const matchCust = customersList.find(c => {
-      if (custIdStr && String(c.id) === custIdStr) return true;
-      const cDigits = (c.phone || '').replace(/\D/g, '').slice(-10);
-      if (cDigits && dealPhoneDigits && cDigits === dealPhoneDigits) return true;
-      if (dealNameLower && c.name && c.name.trim().toLowerCase() === dealNameLower) return true;
-      return false;
-    });
-
-    const matchLead = !matchCust ? leadsList.find(l => {
-      if (custIdStr && String(l.id) === custIdStr) return true;
-      const lDigits = (l.phone || '').replace(/\D/g, '').slice(-10);
-      if (lDigits && dealPhoneDigits && lDigits === dealPhoneDigits) return true;
-      if (dealNameLower && l.name && l.name.trim().toLowerCase() === dealNameLower) return true;
-      return false;
-    }) : null;
-
-    return {
-      ...d,
-      phone: d.phone || matchCust?.phone || matchLead?.phone || '',
-      email: d.email || matchCust?.email || matchLead?.email || '',
-      location: d.location || matchCust?.location || matchLead?.location || '',
-    };
-  };
-
-  const findBackendKyc = (
-    deal: Deal | null | undefined,
-    dbKycsMap: Record<string, any>,
-    companyId?: string | number
-  ): any => {
-    if (!deal) return null;
-    const allKycs: any[] = Array.from(new Set(Object.values(dbKycsMap || {})));
-    const compIdStr = companyId ? String(companyId) : deal.companyId ? String(deal.companyId) : '';
-
-    // 1. Stable direct KYC record ID
-    const directKycId = (deal as any).kycId || (deal as any).kycRecordId;
-    if (directKycId) {
-      const byId = dbKycsMap[`id_${directKycId}`] || allKycs.find(k => k && k.id === Number(directKycId));
-      if (byId) return byId;
-    }
-
-    // 2. Stable Investor ID (deal.customerId / deal.investorId) and company scope
-    const investorIdNum = deal.customerId ? Number(deal.customerId) : (deal as any).investorId ? Number((deal as any).investorId) : 0;
-    if (investorIdNum > 0) {
-      if (compIdStr) {
-        const scopedMatch = allKycs.find(
-          k => k && k.investorId === investorIdNum && (!k.companyId || String(k.companyId) === compIdStr)
-        );
-        if (scopedMatch) return scopedMatch;
-      }
-      const invMatch = dbKycsMap[`inv_${investorIdNum}`] || allKycs.find(k => k && k.investorId === investorIdNum);
-      if (invMatch) return invMatch;
-    }
-
-    // 3. Stable Deal ID match if tracked on KYC record
-    if (deal.id) {
-      const dealMatch = allKycs.find(k => k && (k as any).dealId && String((k as any).dealId) === String(deal.id));
-      if (dealMatch) return dealMatch;
-    }
-
-    // 4. Fallback to phone match (sanitized 10 digits)
-    const phoneDigits = (deal.phone || '').replace(/\D/g, '').slice(-10);
-    if (phoneDigits) {
-      const phoneMatch = allKycs.find(
-        k => k && (k.phone || '').replace(/\D/g, '').slice(-10) === phoneDigits &&
-          (!compIdStr || !k.companyId || String(k.companyId) === compIdStr)
-      );
-      if (phoneMatch) return phoneMatch;
-    }
-
-    // 5. Fallback to email match
-    const email = (deal.email || '').toLowerCase().trim();
-    if (email) {
-      const emailMatch = allKycs.find(
-        k => k && (k.email || '').toLowerCase().trim() === email &&
-          (!compIdStr || !k.companyId || String(k.companyId) === compIdStr)
-      );
-      if (emailMatch) return emailMatch;
-    }
-
-    // 6. Fallback to customer name match
-    const custName = (deal.customerName || '').toLowerCase().trim();
-    if (custName && custName.length > 2) {
-      const nameMatch = allKycs.find(
-        k => k && (k.investorName || '').toLowerCase().trim() === custName &&
-          (!compIdStr || !k.companyId || String(k.companyId) === compIdStr)
-      );
-      if (nameMatch) return nameMatch;
-    }
-
-    return null;
-  };
 
   const refreshDbKycs = async () => {
     try {
@@ -707,81 +600,6 @@ const GhlIrmKycView: React.FC = () => {
   const formatCurrency = (val: number) => formatKycCurrency(val);
 
   // getGhlId, getJoinedDate, calculateProfileCompletion imported directly from helpers
-
-  const buildMergedProfileData = (
-    deal: Deal,
-    dbKyc: any,
-    matchingLead?: any,
-    matchingCustomer?: any
-  ): Partial<KYCFormData> & Record<string, any> => {
-    const savedKycKey = `nexus_kyc_data_${deal.id}`;
-    let saved: Partial<KYCFormData> | null = null;
-    try {
-      const raw = localStorage.getItem(savedKycKey);
-      if (raw) saved = JSON.parse(raw);
-    } catch { }
-
-    const dbNominees: NomineeItem[] = parseNomineesList(dbKyc?.nomineesJson);
-
-    const docFrom = (url?: string | null, label = 'Uploaded document') =>
-      url && String(url).trim() ? { name: label, size: '', type: '', url: String(url) } : null;
-
-    const savedNonEmpty: Record<string, any> = {};
-    if (saved && typeof saved === 'object') {
-      for (const [key, val] of Object.entries(saved)) {
-        if (val !== '' && val !== null && val !== undefined) {
-          if (Array.isArray(val)) {
-            if (val.length > 0) savedNonEmpty[key] = val;
-          } else {
-            savedNonEmpty[key] = val;
-          }
-        }
-      }
-    }
-
-    return {
-      ...savedNonEmpty,
-      investorName: dbKyc?.investorName || savedNonEmpty.investorName || deal.customerName || matchingLead?.name || matchingCustomer?.name || '',
-      phone: dbKyc?.phone || savedNonEmpty.phone || deal.phone || matchingLead?.phone || matchingCustomer?.phone || '',
-      email: dbKyc?.email || savedNonEmpty.email || deal.email || matchingLead?.email || matchingCustomer?.email || '',
-      gender: dbKyc?.gender || savedNonEmpty.gender || 'Male',
-      investorType: dbKyc?.investorType || savedNonEmpty.investorType || deal.investorType || 'Individual',
-      residentType: dbKyc?.residentType || savedNonEmpty.residentType || 'Resident Indian',
-      occupation: dbKyc?.occupation || savedNonEmpty.occupation || '',
-      city: dbKyc?.city || savedNonEmpty.city || deal.location || matchingLead?.location || matchingCustomer?.location || '',
-      state: dbKyc?.state || savedNonEmpty.state || '',
-      pincode: dbKyc?.pincode || savedNonEmpty.pincode || '',
-      address: dbKyc?.addressLine1 || dbKyc?.address || savedNonEmpty.address || '',
-      courierAddress: dbKyc?.addressLine2 || dbKyc?.courierAddress || savedNonEmpty.courierAddress || '',
-      country: dbKyc?.country || savedNonEmpty.country || 'India',
-      panNumber: dbKyc?.panNumber || savedNonEmpty.panNumber || (deal as any).pan || matchingLead?.customFields?.pan || matchingCustomer?.customFields?.pan || '',
-      nameAsPerPan: dbKyc?.nameAsPerPan || dbKyc?.investorName || savedNonEmpty.nameAsPerPan || deal.customerName || '',
-      aadhaarNumber: dbKyc?.aadhaarNumber || savedNonEmpty.aadhaarNumber || '',
-      fatherName: dbKyc?.fatherName || savedNonEmpty.fatherName || '',
-      dob: sanitizeDobString(dbKyc?.dateOfBirth || dbKyc?.dob || savedNonEmpty.dob || ''),
-      bankName: dbKyc?.bankName || savedNonEmpty.bankName || '',
-      accountNumber: dbKyc?.accountNumber || savedNonEmpty.accountNumber || '',
-      ifscCode: dbKyc?.ifscCode || savedNonEmpty.ifscCode || '',
-      swiftCode: dbKyc?.swiftCode || savedNonEmpty.swiftCode || '',
-      accountHolderName: dbKyc?.accountHolderName || dbKyc?.investorName || savedNonEmpty.accountHolderName || deal.customerName || '',
-      accountType: dbKyc?.accountType || savedNonEmpty.accountType || '',
-      branchName: dbKyc?.branchName || savedNonEmpty.branchName || '',
-      hasNoDemat: dbKyc?.hasNoDemat !== undefined ? Boolean(dbKyc.hasNoDemat) : Boolean(savedNonEmpty.hasNoDemat),
-      dematAccountNumber: dbKyc?.dematAccountNumber || savedNonEmpty.dematAccountNumber || '',
-      dematDepository: dbKyc?.dematDepository || savedNonEmpty.dematDepository || '',
-      dematDpId: dbKyc?.dpId || dbKyc?.dematDpId || savedNonEmpty.dematDpId || '',
-      dematClientId: dbKyc?.dematClientId || savedNonEmpty.dematClientId || '',
-      nominees: dbNominees.length ? dbNominees : (savedNonEmpty.nominees as NomineeItem[] | undefined) || [],
-      aadhaarDoc: docFrom(dbKyc?.aadhaarDocumentUrl, 'Aadhaar (uploaded)') || savedNonEmpty.aadhaarDoc || null,
-      panDoc: docFrom(dbKyc?.panDocumentUrl, 'PAN (uploaded)') || savedNonEmpty.panDoc || null,
-      bankProofDoc: docFrom(dbKyc?.bankChequeUrl, 'Bank proof (uploaded)') || savedNonEmpty.bankProofDoc || null,
-      dematDoc: docFrom(dbKyc?.dematDocumentUrl, 'Demat proof (uploaded)') || savedNonEmpty.dematDoc || null,
-      photoDoc: docFrom(dbKyc?.photoUrl || savedNonEmpty.photoUrl, 'Investor Photo (uploaded)') || savedNonEmpty.photoDoc || null,
-      photoUrl: dbKyc?.photoUrl || savedNonEmpty.photoUrl || (savedNonEmpty.photoDoc as any)?.url || null,
-      submittedAt: dbKyc?.submittedAt || savedNonEmpty.submittedAt || null,
-      customerConsentTimestamp: dbKyc?.customerConsentTimestamp || savedNonEmpty.customerConsentTimestamp || null,
-    };
-  };
 
   const handleOpenCustomerProfile = (deal: Deal) => {
     setSelectedCustomerDeal(deal);
@@ -1070,63 +888,6 @@ const GhlIrmKycView: React.FC = () => {
     startAssistedKycFlow(deal, targetStep);
   };
 
-  /** Resolves the appropriate entity type and id for uploading KYC documents to /documents */
-  const resolveDocUploadEntity = (deal: Deal): { entityType: string; entityId: string } => {
-    // 1. Direct positive numeric customer ID on deal
-    const parsedCust = Number(deal.customerId);
-    if (Number.isInteger(parsedCust) && parsedCust > 0) {
-      return { entityType: 'investor', entityId: String(parsedCust) };
-    }
-
-    // 2. Prefixed numeric customer ID (e.g. 'customer-14', 'cust-14', 'db-14')
-    if (typeof deal.customerId === 'string') {
-      const stripped = deal.customerId.replace(/^(customer-|cust-|db-)/i, '');
-      const numStripped = Number(stripped);
-      if (Number.isInteger(numStripped) && numStripped > 0) {
-        return { entityType: 'investor', entityId: String(numStripped) };
-      }
-    }
-
-    // 3. Match against loaded customers by phone/email/id
-    const phoneDigits = (deal.phone || '').replace(/\D/g, '').slice(-10);
-    const matchCust = customers.find(c =>
-      (deal.customerId && (c.id === deal.customerId || String(c.id) === String(deal.customerId))) ||
-      (phoneDigits && c.phone && c.phone.replace(/\D/g, '').slice(-10) === phoneDigits) ||
-      (deal.email && c.email && c.email.trim().toLowerCase() === deal.email.trim().toLowerCase())
-    );
-    if (matchCust) {
-      const custNum = Number(matchCust.id);
-      if (Number.isInteger(custNum) && custNum > 0) {
-        return { entityType: 'investor', entityId: String(custNum) };
-      }
-    }
-
-    // 4. Match against loaded leads by phone/email/id
-    const matchLead = leads.find(l =>
-      (deal.customerId && (l.id === deal.customerId || String(l.id) === String(deal.customerId))) ||
-      (phoneDigits && l.phone && l.phone.replace(/\D/g, '').slice(-10) === phoneDigits) ||
-      (deal.email && l.email && l.email.trim().toLowerCase() === deal.email.trim().toLowerCase())
-    );
-    if (matchLead) {
-      const leadNum = Number(matchLead.id);
-      if (Number.isInteger(leadNum) && leadNum > 0) {
-        return { entityType: 'lead', entityId: String(leadNum) };
-      }
-    }
-
-    // 5. Deal numeric ID
-    const dealNum = Number(deal.id);
-    if (Number.isInteger(dealNum) && dealNum > 0) {
-      return { entityType: 'deal', entityId: String(dealNum) };
-    }
-
-    // 6. Explicit validation: Reject fallback '0' and invalid/missing identifiers
-    const candidateId = String(deal.id || deal.customerId || '').trim();
-    if (!candidateId || candidateId === '0' || candidateId === 'undefined' || candidateId === 'null') {
-      throw new Error(`Cannot upload document: Missing or invalid entity identifier for deal "${deal.customerName || deal.title || deal.id || 'Unknown'}".`);
-    }
-    return { entityType: 'deal', entityId: candidateId };
-  };
 
   /** Uploads a KYC document file to the server (once) and returns its stored URL. */
   const uploadKycDoc = async (
@@ -1149,7 +910,7 @@ const GhlIrmKycView: React.FC = () => {
         throw new Error(`Please re-attach the ${category} document and try again.`);
       }
 
-      const { entityType, entityId } = resolveDocUploadEntity(deal);
+      const { entityType, entityId } = resolveDocUploadEntityHelper(deal, customers, leads);
 
       const fd = new FormData();
       fd.append('Name', file.name);
@@ -1294,14 +1055,7 @@ const GhlIrmKycView: React.FC = () => {
 
     // 2. Save draft metadata
     const nowIso = new Date().toISOString();
-    const draftPayload = {
-      isAssisted: true,
-      step: currentStep,
-      savedAt: nowIso,
-      assistedByIrmId: user?.id,
-      assistedByIrmName: user?.name,
-      status: 'Assisted Draft',
-    };
+    const draftPayload = buildKycDraftMetadata(currentStep, user, nowIso);
     localStorage.setItem(`nexus_kyc_draft_${dealId}`, JSON.stringify(draftPayload));
     setLastSavedDraftAt(nowIso);
 
@@ -1338,35 +1092,9 @@ const GhlIrmKycView: React.FC = () => {
     setEditingSection(section);
     const deal = selectedCustomerDeal;
     const current = profileKycData || {};
-
-    if (section === 'personal') {
-      setSectionFormData({
-        investorName: current.investorName || deal?.customerName || '',
-        email: current.email || deal?.email || '',
-        phone: current.phone || deal?.phone || '',
-        panNumber: current.panNumber || '',
-        city: current.city || (deal ? getResolvedLocation(deal) : '') || '',
-        dob: current.dob || '',
-        occupation: current.occupation || '',
-        gender: current.gender || '',
-        investorType: current.investorType || '',
-        residentType: current.residentType || '',
-        preferredAssetClass: deal ? (getIrmPreferredAssetClass(deal) === '—' ? '' : getIrmPreferredAssetClass(deal)) : '',
-        preferredAssetClassConfirmed: deal ? getIrmPreferredAssetClass(deal) !== '—' : false,
-      });
-    } else {
-      setSectionFormData({
-        nameAsPerPan: current.nameAsPerPan || current.investorName || deal?.customerName || '',
-        fatherName: current.fatherName || '',
-        aadhaarNumber: current.aadhaarNumber || '',
-        address: current.address || '',
-        courierAddress: current.courierAddress || current.address || '',
-        city: current.city || (deal ? getResolvedLocation(deal) : '') || '',
-        state: current.state || '',
-        pincode: current.pincode || '',
-        country: current.country || 'India',
-      });
-    }
+    const loc = deal ? getResolvedLocation(deal) : '';
+    const pref = deal ? getIrmPreferredAssetClass(deal) : '';
+    setSectionFormData(buildSectionEditData(section, deal, current, loc, pref));
   };
   void handleOpenSectionEdit;
 
