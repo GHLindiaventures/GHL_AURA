@@ -968,3 +968,251 @@ export const buildSectionEditData = (
 
 
 
+
+export const BLANK_KYC_FORM: KYCFormData = {
+  investorName: '',
+  phone: '+91 ',
+  email: '',
+  gender: 'Male',
+  investorType: 'Individual / Retail HNW',
+  residentType: 'Resident Indian (RI)',
+  occupation: '',
+
+  panNumber: '',
+  nameAsPerPan: '',
+  aadhaarNumber: '',
+  fatherName: '',
+  dob: '',
+  address: '',
+  courierAddress: '',
+  country: 'India',
+  state: '',
+  city: '',
+  pincode: '',
+  aadhaarDoc: null,
+  panDoc: null,
+  photoDoc: null,
+
+  accountType: 'Savings Account',
+  accountNumber: '',
+  ifscCode: '',
+  swiftCode: '',
+  accountHolderName: '',
+  bankName: '',
+  branchName: '',
+  bankProofDoc: null,
+
+  hasNoDemat: false,
+  dematAccountNumber: '',
+  dematDepository: 'CDSL',
+  dematDpId: '',
+  dematClientId: '',
+  dematDoc: null,
+
+  hasNominee: false,
+  nominees: [],
+};
+
+/**
+ * Determine the step (1-5) to resume or correct KYC details based on flagged sections or remarks
+ */
+export const determineKycCorrectionStep = (deal?: { flaggedSections?: string[]; remarks?: string } | null): 1 | 2 | 3 | 4 | 5 => {
+  if (!deal) return 2;
+  const flagged = (deal.flaggedSections || []).map(s => String(s).toLowerCase());
+  const remarks = String(deal.remarks || '').toLowerCase();
+
+  if (flagged.some(s => s.includes('bank')) || remarks.includes('bank') || remarks.includes('ifsc') || remarks.includes('account')) {
+    return 3;
+  }
+  if (flagged.some(s => s.includes('demat')) || remarks.includes('demat') || remarks.includes('dp')) {
+    return 4;
+  }
+  if (flagged.some(s => s.includes('nominee')) || remarks.includes('nominee')) {
+    return 5;
+  }
+  if (flagged.some(s => s.includes('pan') || s.includes('aadhaar') || s.includes('identity')) || remarks.includes('pan') || remarks.includes('aadhaar')) {
+    return 2;
+  }
+  if (flagged.some(s => s.includes('basic') || s.includes('personal'))) {
+    return 1;
+  }
+  return 2;
+};
+
+/**
+ * Resolves the step (1-5) to resume from draft metadata or targetStep
+ */
+export const resolveKycResumeStep = (
+  targetStep?: 1 | 2 | 3 | 4 | 5,
+  draftMetaJson?: string | null
+): { resumeStep: 1 | 2 | 3 | 4 | 5; lastSavedDraftAt: string | null } => {
+  let resumeStep = targetStep;
+  let lastSavedDraftAt: string | null = null;
+
+  if (draftMetaJson) {
+    try {
+      const parsed = JSON.parse(draftMetaJson);
+      if (parsed.savedAt) {
+        lastSavedDraftAt = parsed.savedAt;
+      }
+      if (!resumeStep && parsed.step && parsed.step >= 1 && parsed.step <= 5) {
+        resumeStep = parsed.step as 1 | 2 | 3 | 4 | 5;
+      }
+    } catch {}
+  }
+
+  return {
+    resumeStep: resumeStep || 1,
+    lastSavedDraftAt,
+  };
+};
+
+export interface BuildInitialFormDataParams {
+  targetDeal: Deal | null;
+  leads?: Lead[];
+  customers?: Customer[];
+  dbKyc?: any;
+  savedKycData?: Partial<KYCFormData> | null;
+  blankForm?: KYCFormData;
+}
+
+/**
+ * Builds the prefilled KYC form data by layering:
+ * 1. Blank form
+ * 2. Saved local storage draft
+ * 3. Matching lead/customer custom fields & deal info
+ * 4. Genuine backend dbKyc record (including parsed nominees and saved document links)
+ */
+export const buildInitialKycFormData = ({
+  targetDeal,
+  leads = [],
+  customers = [],
+  dbKyc,
+  savedKycData,
+  blankForm = BLANK_KYC_FORM,
+}: BuildInitialFormDataParams): KYCFormData => {
+  let form: KYCFormData = { ...blankForm };
+
+  // 1. Layer saved local data if any
+  if (savedKycData && typeof savedKycData === 'object') {
+    form = { ...form, ...savedKycData };
+  }
+
+  // 2. If no saved local data and targetDeal exists, populate from matching lead/customer
+  if (targetDeal && !savedKycData) {
+    const phoneDigits = (targetDeal.phone || '').replace(/\D/g, '').slice(-10);
+    const matchLead = leads.find(l =>
+      (phoneDigits && l.phone && l.phone.replace(/\D/g, '').slice(-10) === phoneDigits) ||
+      (targetDeal.customerId && l.id === targetDeal.customerId)
+    );
+    const matchCust = customers.find(c =>
+      (phoneDigits && c.phone && c.phone.replace(/\D/g, '').slice(-10) === phoneDigits) ||
+      (targetDeal.customerId && c.id === targetDeal.customerId)
+    );
+    const custom = (matchLead?.customFields || matchCust?.customFields || {}) as Record<string, any>;
+
+    form = {
+      ...blankForm,
+      investorName: targetDeal.customerName || '',
+      phone: targetDeal.phone || '+91 ',
+      email: targetDeal.email || '',
+      city: targetDeal.location || custom.city || '',
+      nameAsPerPan: targetDeal.customerName || '',
+      accountHolderName: targetDeal.customerName || '',
+      panNumber: custom.panNumber || custom.pan || '',
+      aadhaarNumber: custom.aadhaarNumber || custom.aadhaar || '',
+      occupation: custom.occupation || '',
+      address: custom.address || '',
+      state: custom.state || '',
+      pincode: custom.pincode || '',
+    };
+  }
+
+  // 3. Layer genuine backend record if present
+  if (targetDeal && dbKyc) {
+    const dbNominees: NomineeItem[] = parseNomineesList(dbKyc.nomineesJson);
+    const hasNomineeFlag = dbNominees.length > 0 && Boolean(dbNominees[0]?.name);
+
+    const docFrom = (url?: string | null, label = 'Uploaded document') =>
+      url && String(url).trim() ? { name: label, size: 'Saved', type: 'application/pdf', url: String(url) } : null;
+
+    form = {
+      ...form,
+      investorName: dbKyc.investorName || form.investorName || targetDeal.customerName || '',
+      phone: dbKyc.phone || form.phone || targetDeal.phone || '',
+      email: dbKyc.email || form.email || targetDeal.email || '',
+      gender: dbKyc.gender || form.gender || 'Male',
+      investorType: dbKyc.investorType || form.investorType || 'Individual / Retail HNW',
+      residentType: dbKyc.residentType || form.residentType || 'Resident Indian (RI)',
+      occupation: dbKyc.occupation || form.occupation || '',
+      panNumber: dbKyc.panNumber || form.panNumber || '',
+      nameAsPerPan: dbKyc.nameAsPerPan || dbKyc.investorName || form.nameAsPerPan || '',
+      aadhaarNumber: dbKyc.aadhaarNumber || form.aadhaarNumber || '',
+      fatherName: dbKyc.fatherName || form.fatherName || '',
+      dob: sanitizeDobString(dbKyc.dateOfBirth || dbKyc.dob || form.dob || ''),
+      address: dbKyc.addressLine1 || dbKyc.address || form.address || '',
+      courierAddress: dbKyc.addressLine2 || dbKyc.courierAddress || form.courierAddress || '',
+      country: dbKyc.country || form.country || 'India',
+      state: dbKyc.state || form.state || '',
+      city: dbKyc.city || form.city || '',
+      pincode: dbKyc.pincode || form.pincode || '',
+      bankName: dbKyc.bankName || form.bankName || '',
+      accountNumber: dbKyc.accountNumber || form.accountNumber || '',
+      ifscCode: dbKyc.ifscCode || form.ifscCode || '',
+      accountType: dbKyc.accountType || form.accountType || 'Savings Account',
+      accountHolderName: dbKyc.accountHolderName || dbKyc.nameAsPerPan || dbKyc.investorName || form.accountHolderName || '',
+      hasNoDemat: dbKyc.dematAccountNumber ? false : form.hasNoDemat,
+      dematAccountNumber: dbKyc.dematAccountNumber || form.dematAccountNumber || '',
+      dematDepository: dbKyc.dematDepository || form.dematDepository || 'CDSL',
+      dematDpId: dbKyc.dpId || dbKyc.dematDpId || form.dematDpId || '',
+      dematClientId: dbKyc.dematClientId || form.dematClientId || '',
+      hasNominee: hasNomineeFlag,
+      nominees: dbNominees,
+      aadhaarDoc: docFrom(dbKyc.aadhaarDocumentUrl, 'Aadhaar (saved)') || form.aadhaarDoc,
+      panDoc: docFrom(dbKyc.panDocumentUrl, 'PAN (saved)') || form.panDoc,
+      bankProofDoc: docFrom(dbKyc.bankChequeUrl, 'Bank proof (saved)') || form.bankProofDoc,
+      dematDoc: docFrom(dbKyc.dematDocumentUrl, 'Demat statement (saved)') || form.dematDoc,
+      photoDoc: docFrom(dbKyc.photoUrl, 'Investor Photo (saved)') || form.photoDoc,
+    };
+  }
+
+  return form;
+};
+
+/**
+ * Construct assisted submission metadata for storage and deal tracking
+ */
+export const buildAssistedSubmissionMetadata = (
+  user?: { id?: string | number; name?: string } | null,
+  nowIso: string = new Date().toISOString()
+) => ({
+  isAssisted: true,
+  assistedByIrmId: user?.id,
+  assistedByIrmName: user?.name,
+  submittedAt: nowIso,
+  customerConsentObtained: true,
+  customerConsentTimestamp: nowIso,
+  status: 'Assisted KYC – Submitted for Verification',
+});
+
+/**
+ * Collect attached KYC documents with their display categories for document storage
+ */
+export const collectKycDocsForStorage = (
+  formData: KYCFormData
+): Array<{ name: string; size: string; type: string; category: string }> => {
+  const docsToSave: Array<{ name: string; size: string; type: string; category: string }> = [];
+  if (formData.aadhaarDoc) {
+    docsToSave.push({ ...formData.aadhaarDoc, category: 'KYC - Aadhaar' });
+  }
+  if (formData.panDoc) {
+    docsToSave.push({ ...formData.panDoc, category: 'KYC - PAN' });
+  }
+  if (formData.bankProofDoc) {
+    docsToSave.push({ ...formData.bankProofDoc, category: 'KYC - Bank Proof' });
+  }
+  if (formData.dematDoc && !formData.hasNoDemat) {
+    docsToSave.push({ ...formData.dematDoc, category: 'KYC - Demat Statement' });
+  }
+  return docsToSave;
+};

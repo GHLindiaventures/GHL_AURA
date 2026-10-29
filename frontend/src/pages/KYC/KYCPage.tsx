@@ -72,7 +72,6 @@ import {
   getDealDaysInStage,
   findMatchingLeadAndCustomer,
   buildKycRecordMap,
-  parseNomineesList,
   copyPanAndOpenPortal,
   buildAssistedKycPayload,
   formatBytes,
@@ -95,6 +94,12 @@ import {
   resolveDocUploadEntity as resolveDocUploadEntityHelper,
   buildKycDraftMetadata,
   buildSectionEditData,
+  BLANK_KYC_FORM,
+  determineKycCorrectionStep,
+  resolveKycResumeStep,
+  buildInitialKycFormData,
+  buildAssistedSubmissionMetadata,
+  collectKycDocsForStorage,
 } from './helpers/kycHelpers';
 import {
   KycToast,
@@ -129,50 +134,6 @@ export interface KYCFormData extends SharedKycFormData {
   photoDoc: KycDoc | null;
   photoUrl?: string;
 }
-
-const BLANK_KYC_FORM: KYCFormData = {
-  investorName: '',
-  phone: '+91 ',
-  email: '',
-  gender: 'Male',
-  investorType: 'Individual / Retail HNW',
-  residentType: 'Resident Indian (RI)',
-  occupation: '',
-
-  panNumber: '',
-  nameAsPerPan: '',
-  aadhaarNumber: '',
-  fatherName: '',
-  dob: '',
-  address: '',
-  courierAddress: '',
-  country: 'India',
-  state: '',
-  city: '',
-  pincode: '',
-  aadhaarDoc: null,
-  panDoc: null,
-  photoDoc: null,
-
-  accountType: 'Savings Account',
-  accountNumber: '',
-  ifscCode: '',
-  swiftCode: '',
-  accountHolderName: '',
-  bankName: '',
-  branchName: '',
-  bankProofDoc: null,
-
-  hasNoDemat: false,
-  dematAccountNumber: '',
-  dematDepository: 'CDSL',
-  dematDpId: '',
-  dematClientId: '',
-  dematDoc: null,
-
-  hasNominee: false,
-  nominees: [],
-};
 
 // formatBytes imported from helpers
 
@@ -750,116 +711,36 @@ const GhlIrmKycView: React.FC = () => {
     }
     setIsAssistedFlow(!!isAssisted);
 
-    // Check if there is existing saved KYC data for this deal
+    // Retrieve saved KYC data if any
     const savedKycKey = targetDeal ? `nexus_kyc_data_${targetDeal.id}` : null;
-    let initialForm = BLANK_KYC_FORM;
-
+    let savedKycData: Partial<KYCFormData> | null = null;
     if (savedKycKey) {
       try {
         const existing = localStorage.getItem(savedKycKey);
-        if (existing) {
-          initialForm = JSON.parse(existing);
-        }
-      } catch {
-        // fallback
-      }
-    }
-
-    if (targetDeal && (!savedKycKey || !localStorage.getItem(savedKycKey))) {
-      const matchLead = leads.find(l => (targetDeal.phone && l.phone && l.phone.replace(/\D/g, '').slice(-10) === targetDeal.phone.replace(/\D/g, '').slice(-10)) || (l.id === targetDeal.customerId));
-      const matchCust = customers.find(c => (targetDeal.phone && c.phone && c.phone.replace(/\D/g, '').slice(-10) === targetDeal.phone.replace(/\D/g, '').slice(-10)) || (c.id === targetDeal.customerId));
-      const custom = matchLead?.customFields || matchCust?.customFields || {};
-
-      initialForm = {
-        ...BLANK_KYC_FORM,
-        investorName: targetDeal.customerName || '',
-        phone: targetDeal.phone || '+91 ',
-        email: targetDeal.email || '',
-        city: targetDeal.location || custom.city || '',
-        nameAsPerPan: targetDeal.customerName || '',
-        accountHolderName: targetDeal.customerName || '',
-        panNumber: custom.panNumber || custom.pan || '',
-        aadhaarNumber: custom.aadhaarNumber || custom.aadhaar || '',
-        occupation: custom.occupation || '',
-        address: custom.address || '',
-        state: custom.state || '',
-        pincode: custom.pincode || '',
-      };
-    }
-
-    // If backend record exists in dbKycs, reload genuine submitted/drafted KYC data
-    if (targetDeal) {
-      const dbKyc = findBackendKyc(targetDeal, dbKycs, tenant?.id);
-
-      if (dbKyc) {
-        const dbNominees: NomineeItem[] = parseNomineesList(dbKyc.nomineesJson);
-        const hasNomineeFlag = dbNominees.length > 0 && Boolean(dbNominees[0]?.name);
-
-        const docFrom = (url?: string | null, label = 'Uploaded document') =>
-          url && String(url).trim() ? { name: label, size: 'Saved', type: 'application/pdf', url: String(url) } : null;
-
-        initialForm = {
-          ...initialForm,
-          investorName: dbKyc.investorName || initialForm.investorName || targetDeal.customerName || '',
-          phone: dbKyc.phone || initialForm.phone || targetDeal.phone || '',
-          email: dbKyc.email || initialForm.email || targetDeal.email || '',
-          gender: dbKyc.gender || initialForm.gender || 'Male',
-          investorType: dbKyc.investorType || initialForm.investorType || 'Individual / Retail HNW',
-          residentType: dbKyc.residentType || initialForm.residentType || 'Resident Indian (RI)',
-          occupation: dbKyc.occupation || initialForm.occupation || '',
-          panNumber: dbKyc.panNumber || initialForm.panNumber || '',
-          nameAsPerPan: dbKyc.nameAsPerPan || dbKyc.investorName || initialForm.nameAsPerPan || '',
-          aadhaarNumber: dbKyc.aadhaarNumber || initialForm.aadhaarNumber || '',
-          fatherName: dbKyc.fatherName || initialForm.fatherName || '',
-          dob: sanitizeDobString(dbKyc.dateOfBirth || dbKyc.dob || initialForm.dob || ''),
-          address: dbKyc.addressLine1 || dbKyc.address || initialForm.address || '',
-          courierAddress: dbKyc.addressLine2 || dbKyc.courierAddress || initialForm.courierAddress || '',
-          country: dbKyc.country || initialForm.country || 'India',
-          state: dbKyc.state || initialForm.state || '',
-          city: dbKyc.city || initialForm.city || '',
-          pincode: dbKyc.pincode || initialForm.pincode || '',
-          bankName: dbKyc.bankName || initialForm.bankName || '',
-          accountNumber: dbKyc.accountNumber || initialForm.accountNumber || '',
-          ifscCode: dbKyc.ifscCode || initialForm.ifscCode || '',
-          accountType: dbKyc.accountType || initialForm.accountType || 'Savings Account',
-          accountHolderName: dbKyc.accountHolderName || dbKyc.nameAsPerPan || dbKyc.investorName || initialForm.accountHolderName || '',
-          hasNoDemat: dbKyc.dematAccountNumber ? false : initialForm.hasNoDemat,
-          dematAccountNumber: dbKyc.dematAccountNumber || initialForm.dematAccountNumber || '',
-          dematDepository: dbKyc.dematDepository || initialForm.dematDepository || 'CDSL',
-          dematDpId: dbKyc.dpId || dbKyc.dematDpId || initialForm.dematDpId || '',
-          dematClientId: dbKyc.dematClientId || initialForm.dematClientId || '',
-          hasNominee: hasNomineeFlag,
-          nominees: dbNominees,
-          aadhaarDoc: docFrom(dbKyc.aadhaarDocumentUrl, 'Aadhaar (saved)') || initialForm.aadhaarDoc,
-          panDoc: docFrom(dbKyc.panDocumentUrl, 'PAN (saved)') || initialForm.panDoc,
-          bankProofDoc: docFrom(dbKyc.bankChequeUrl, 'Bank proof (saved)') || initialForm.bankProofDoc,
-          dematDoc: docFrom(dbKyc.dematDocumentUrl, 'Demat statement (saved)') || initialForm.dematDoc,
-          photoDoc: docFrom(dbKyc.photoUrl, 'Investor Photo (saved)') || initialForm.photoDoc,
-        };
-      }
-    }
-
-    // Check if there was a saved draft with step info
-    let resumeStep = targetStep;
-    if (targetDeal) {
-      try {
-        const draftMeta = localStorage.getItem(`nexus_kyc_draft_${targetDeal.id}`);
-        if (draftMeta) {
-          const parsed = JSON.parse(draftMeta);
-          if (parsed.savedAt) {
-            setLastSavedDraftAt(parsed.savedAt);
-          }
-          if (!resumeStep && parsed.step && parsed.step >= 1 && parsed.step <= 5) {
-            resumeStep = parsed.step;
-          }
-        }
+        if (existing) savedKycData = JSON.parse(existing);
       } catch {}
+    }
+
+    const dbKyc = targetDeal ? findBackendKyc(targetDeal, dbKycs, tenant?.id) : null;
+    const initialForm = buildInitialKycFormData({
+      targetDeal,
+      leads,
+      customers,
+      dbKyc,
+      savedKycData,
+      blankForm: BLANK_KYC_FORM,
+    });
+
+    const draftMetaJson = targetDeal ? localStorage.getItem(`nexus_kyc_draft_${targetDeal.id}`) : null;
+    const { resumeStep, lastSavedDraftAt } = resolveKycResumeStep(targetStep, draftMetaJson);
+    if (lastSavedDraftAt) {
+      setLastSavedDraftAt(lastSavedDraftAt);
     }
 
     setFormData(initialForm);
     setFormErrors({});
     setValidationErrorSummary(null);
-    setCurrentStep(resumeStep || 1);
+    setCurrentStep(resumeStep);
     setViewMode('flow');
   };
 
@@ -868,23 +749,7 @@ const GhlIrmKycView: React.FC = () => {
   };
 
   const handleCorrectKycDetails = (deal: Deal) => {
-    // Determine the flagged step from flaggedSections or remarks
-    const flagged = (deal.flaggedSections || []).map(s => String(s).toLowerCase());
-    const remarks = String(deal.remarks || '').toLowerCase();
-    let targetStep: 1 | 2 | 3 | 4 | 5 = 2; // Default to identity (PAN/Aadhaar)
-
-    if (flagged.some(s => s.includes('bank')) || remarks.includes('bank') || remarks.includes('ifsc') || remarks.includes('account')) {
-      targetStep = 3;
-    } else if (flagged.some(s => s.includes('demat')) || remarks.includes('demat') || remarks.includes('dp')) {
-      targetStep = 4;
-    } else if (flagged.some(s => s.includes('nominee')) || remarks.includes('nominee')) {
-      targetStep = 5;
-    } else if (flagged.some(s => s.includes('pan') || s.includes('aadhaar') || s.includes('identity')) || remarks.includes('pan') || remarks.includes('aadhaar')) {
-      targetStep = 2;
-    } else if (flagged.some(s => s.includes('basic') || s.includes('personal'))) {
-      targetStep = 1;
-    }
-
+    const targetStep = determineKycCorrectionStep(deal);
     startAssistedKycFlow(deal, targetStep);
   };
 
@@ -1443,15 +1308,7 @@ const GhlIrmKycView: React.FC = () => {
     const dealId = selectedDeal.id;
     const nowIso = new Date().toISOString();
 
-    const assistedMetadata = {
-      isAssisted: true,
-      assistedByIrmId: user?.id,
-      assistedByIrmName: user?.name,
-      submittedAt: nowIso,
-      customerConsentObtained: true,
-      customerConsentTimestamp: nowIso,
-      status: 'Assisted KYC – Submitted for Verification',
-    };
+    const assistedMetadata = buildAssistedSubmissionMetadata(user, nowIso);
 
     // 1. Persist full KYC form data in localStorage
     saveKycLocal(dealId, {
@@ -1473,19 +1330,7 @@ const GhlIrmKycView: React.FC = () => {
       year: 'numeric',
     });
 
-    const docsToSave: Array<{ name: string; size: string; type: string; category: string }> = [];
-    if (formData.aadhaarDoc) {
-      docsToSave.push({ ...formData.aadhaarDoc, category: 'KYC - Aadhaar' });
-    }
-    if (formData.panDoc) {
-      docsToSave.push({ ...formData.panDoc, category: 'KYC - PAN' });
-    }
-    if (formData.bankProofDoc) {
-      docsToSave.push({ ...formData.bankProofDoc, category: 'KYC - Bank Proof' });
-    }
-    if (formData.dematDoc && !formData.hasNoDemat) {
-      docsToSave.push({ ...formData.dematDoc, category: 'KYC - Demat Statement' });
-    }
+    const docsToSave = collectKycDocsForStorage(formData);
 
     docsToSave.forEach(d => {
       const docItem: DocumentItem = {

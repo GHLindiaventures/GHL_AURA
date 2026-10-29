@@ -30,6 +30,12 @@ import {
   resolveDocUploadEntity,
   buildKycDraftMetadata,
   buildSectionEditData,
+  BLANK_KYC_FORM,
+  determineKycCorrectionStep,
+  resolveKycResumeStep,
+  buildInitialKycFormData,
+  buildAssistedSubmissionMetadata,
+  collectKycDocsForStorage,
 } from '../pages/KYC/helpers/kycHelpers';
 import { Deal, Lead, Customer } from '../types';
 import { KYCFormData } from '../pages/KYC/KYCPage';
@@ -1000,6 +1006,171 @@ describe('kycHelpers Unit Tests', () => {
       const personalData = buildSectionEditData('personal', null, current, '', '—');
       expect(personalData.preferredAssetClassConfirmed).toBe(false);
       expect(personalData.city).toBe('Mumbai');
+    });
+  });
+
+
+  describe('determineKycCorrectionStep', () => {
+    it('returns default step 2 when deal is null, undefined, or empty', () => {
+      expect(determineKycCorrectionStep(null)).toBe(2);
+      expect(determineKycCorrectionStep(undefined)).toBe(2);
+      expect(determineKycCorrectionStep({})).toBe(2);
+    });
+
+    it('routes to step 3 for bank, ifsc, or account issues in flaggedSections or remarks', () => {
+      expect(determineKycCorrectionStep({ flaggedSections: ['bank details'] })).toBe(3);
+      expect(determineKycCorrectionStep({ remarks: 'Please update IFSC code' })).toBe(3);
+      expect(determineKycCorrectionStep({ remarks: 'account number mismatch' })).toBe(3);
+    });
+
+    it('routes to step 4 for demat or dp issues in flaggedSections or remarks', () => {
+      expect(determineKycCorrectionStep({ flaggedSections: ['demat statement'] })).toBe(4);
+      expect(determineKycCorrectionStep({ remarks: 'Check DP ID' })).toBe(4);
+    });
+
+    it('routes to step 5 for nominee issues in flaggedSections or remarks', () => {
+      expect(determineKycCorrectionStep({ flaggedSections: ['nominee'] })).toBe(5);
+      expect(determineKycCorrectionStep({ remarks: 'Nominee signature missing' })).toBe(5);
+    });
+
+    it('routes to step 2 for pan, aadhaar, or identity issues', () => {
+      expect(determineKycCorrectionStep({ flaggedSections: ['pan card'] })).toBe(2);
+      expect(determineKycCorrectionStep({ remarks: 'aadhaar unreadable' })).toBe(2);
+      expect(determineKycCorrectionStep({ flaggedSections: ['identity document'] })).toBe(2);
+    });
+
+    it('routes to step 1 for basic or personal issues', () => {
+      expect(determineKycCorrectionStep({ flaggedSections: ['basic information'] })).toBe(1);
+      expect(determineKycCorrectionStep({ flaggedSections: ['personal details'] })).toBe(1);
+    });
+  });
+
+  describe('resolveKycResumeStep', () => {
+    it('returns targetStep when provided even without draft metadata', () => {
+      const res = resolveKycResumeStep(4, null);
+      expect(res.resumeStep).toBe(4);
+      expect(res.lastSavedDraftAt).toBeNull();
+    });
+
+    it('returns step 1 as fallback when neither targetStep nor draft exists', () => {
+      const res = resolveKycResumeStep(undefined, null);
+      expect(res.resumeStep).toBe(1);
+      expect(res.lastSavedDraftAt).toBeNull();
+    });
+
+    it('resumes from parsed draft metadata step and extracts savedAt', () => {
+      const draftJson = JSON.stringify({ step: 3, savedAt: '2026-03-01T10:00:00.000Z' });
+      const res = resolveKycResumeStep(undefined, draftJson);
+      expect(res.resumeStep).toBe(3);
+      expect(res.lastSavedDraftAt).toBe('2026-03-01T10:00:00.000Z');
+    });
+
+    it('prioritizes explicit targetStep over draft metadata step', () => {
+      const draftJson = JSON.stringify({ step: 3, savedAt: '2026-03-01T10:00:00.000Z' });
+      const res = resolveKycResumeStep(5, draftJson);
+      expect(res.resumeStep).toBe(5);
+      expect(res.lastSavedDraftAt).toBe('2026-03-01T10:00:00.000Z');
+    });
+
+    it('handles malformed JSON gracefully', () => {
+      const res = resolveKycResumeStep(undefined, 'invalid-json');
+      expect(res.resumeStep).toBe(1);
+      expect(res.lastSavedDraftAt).toBeNull();
+    });
+  });
+
+  describe('buildInitialKycFormData', () => {
+    it('returns blank form when targetDeal is null and no saved data exists', () => {
+      const res = buildInitialKycFormData({ targetDeal: null, blankForm: BLANK_KYC_FORM });
+      expect(res.investorName).toBe('');
+      expect(res.gender).toBe('Male');
+      expect(res.panNumber).toBe('');
+    });
+
+    it('merges saved local KYC data if available', () => {
+      const saved = { investorName: 'Saved Person', panNumber: 'ABCDE1234F' };
+      const res = buildInitialKycFormData({ targetDeal: null, savedKycData: saved });
+      expect(res.investorName).toBe('Saved Person');
+      expect(res.panNumber).toBe('ABCDE1234F');
+    });
+
+    it('prefills from deal and matching lead or customer customFields when no saved data', () => {
+      const deal = { id: 'd1', customerName: 'Rajesh', phone: '9876543210', email: 'r@ex.com', location: 'Delhi' } as Deal;
+      const leads = [{ phone: '9876543210', customFields: { panNumber: 'XYZAB1234C', occupation: 'Self-Employed' } }] as any;
+      const res = buildInitialKycFormData({ targetDeal: deal, leads });
+      expect(res.investorName).toBe('Rajesh');
+      expect(res.email).toBe('r@ex.com');
+      expect(res.city).toBe('Delhi');
+      expect(res.panNumber).toBe('XYZAB1234C');
+      expect(res.occupation).toBe('Self-Employed');
+    });
+
+    it('layers genuine backend dbKyc record on top of initial form', () => {
+      const deal = { id: 'd2', customerName: 'Deal Name' } as Deal;
+      const dbKyc = {
+        investorName: 'Genuine Investor',
+        panNumber: 'ABCDE5678G',
+        bankName: 'SBI',
+        accountNumber: '9988776655',
+        nomineesJson: JSON.stringify([{ name: 'Anita', relationship: 'Daughter', dob: '2005-01-01', allocationPercentage: 100 }]),
+        aadhaarDocumentUrl: 'https://cdn.example.com/aadhaar.pdf',
+      };
+      const res = buildInitialKycFormData({ targetDeal: deal, dbKyc });
+      expect(res.investorName).toBe('Genuine Investor');
+      expect(res.panNumber).toBe('ABCDE5678G');
+      expect(res.bankName).toBe('SBI');
+      expect(res.hasNominee).toBe(true);
+      expect(res.nominees.length).toBe(1);
+      expect(res.aadhaarDoc?.url).toBe('https://cdn.example.com/aadhaar.pdf');
+    });
+  });
+
+  describe('buildAssistedSubmissionMetadata', () => {
+    it('constructs assisted submission metadata payload', () => {
+      const now = '2026-03-01T15:00:00.000Z';
+      const meta = buildAssistedSubmissionMetadata({ id: 'u1', name: 'Agent 007' }, now);
+      expect(meta).toEqual({
+        isAssisted: true,
+        assistedByIrmId: 'u1',
+        assistedByIrmName: 'Agent 007',
+        submittedAt: now,
+        customerConsentObtained: true,
+        customerConsentTimestamp: now,
+        status: 'Assisted KYC – Submitted for Verification',
+      });
+    });
+  });
+
+  describe('collectKycDocsForStorage', () => {
+    it('collects all attached docs with categories', () => {
+      const form: KYCFormData = {
+        ...BLANK_KYC_FORM,
+        aadhaarDoc: { name: 'aadhaar.pdf', size: '1MB', type: 'application/pdf' },
+        panDoc: { name: 'pan.pdf', size: '500KB', type: 'application/pdf' },
+        bankProofDoc: { name: 'cheque.png', size: '2MB', type: 'image/png' },
+        dematDoc: { name: 'demat.pdf', size: '1.5MB', type: 'application/pdf' },
+        hasNoDemat: false,
+      };
+      const docs = collectKycDocsForStorage(form);
+      expect(docs.length).toBe(4);
+      expect(docs.map(d => d.category)).toEqual([
+        'KYC - Aadhaar',
+        'KYC - PAN',
+        'KYC - Bank Proof',
+        'KYC - Demat Statement',
+      ]);
+    });
+
+    it('omits demat statement if hasNoDemat is true', () => {
+      const form: KYCFormData = {
+        ...BLANK_KYC_FORM,
+        panDoc: { name: 'pan.pdf', size: '500KB', type: 'application/pdf' },
+        dematDoc: { name: 'demat.pdf', size: '1.5MB', type: 'application/pdf' },
+        hasNoDemat: true,
+      };
+      const docs = collectKycDocsForStorage(form);
+      expect(docs.length).toBe(1);
+      expect(docs[0].category).toBe('KYC - PAN');
     });
   });
 

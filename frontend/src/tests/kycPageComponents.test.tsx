@@ -148,6 +148,9 @@ describe('KYCPage Component Tests', () => {
     sessionStorage.clear();
     localStorage.clear();
 
+    vi.mocked(ghlApiService.persistDeal).mockResolvedValue({} as any);
+    vi.mocked(ghlApiService.addDealActivity).mockResolvedValue({} as any);
+
     vi.mocked(authContext.useAuth).mockReturnValue({
       user: mockUserIrm,
       tenant: mockTenantGhl,
@@ -176,11 +179,21 @@ describe('KYCPage Component Tests', () => {
       setIsDialpadOpen: vi.fn(),
     } as any);
 
-    globalThis.fetch = vi.fn().mockResolvedValue({
-      ok: true,
-      status: 200,
-      json: async () => ({ success: true, data: [] }),
-    } as any);
+    globalThis.fetch = vi.fn().mockImplementation((url: unknown) => {
+      const urlStr = String(url);
+      if (urlStr.includes('/documents')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ success: true, data: { fileUrl: 'https://cdn.example.com/mock.pdf' } }),
+        } as any);
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, data: [] }),
+      } as any);
+    });
   });
 
   afterEach(() => {
@@ -356,6 +369,9 @@ describe('KYCPage Component Tests', () => {
   });
 
   it('renders OriginalKYCView when user is in a non-GHL tenant', async () => {
+    vi.mocked(ghlApiService.persistDeal).mockResolvedValue({} as any);
+    vi.mocked(ghlApiService.addDealActivity).mockResolvedValue({} as any);
+
     vi.mocked(authContext.useAuth).mockReturnValue({
       user: { id: 'agent-1', name: 'Agent', role: { code: 'sales_executive' } },
       tenant: { id: 'other-1', slug: 'other-tenant', name: 'Other Org' },
@@ -378,4 +394,602 @@ describe('KYCPage Component Tests', () => {
     expect(container.querySelector('.kyc-kpi-container')).toBeNull();
     expect(screen.getByText('Aarav Sharma')).toBeDefined();
   });
+
+  it('opens assisted KYC flow and prefills form fields from deal and customer data', async () => {
+    vi.mocked(ghlApiService.getDeals).mockResolvedValue(mockDeals);
+    vi.mocked(ghlApiService.getLeads).mockResolvedValue(mockLeads);
+    vi.mocked(ghlApiService.getCustomers).mockResolvedValue(mockCustomers);
+
+    render(<KYCPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Aarav Sharma')).toBeDefined();
+    });
+
+    // Open profile
+    fireEvent.click(screen.getByRole('button', { name: 'Aarav Sharma' }));
+    await waitFor(() => {
+      expect(screen.getByTitle(/Update or submit Assisted KYC details/i)).toBeDefined();
+    });
+
+    // Click Update Dossier
+    fireEvent.click(screen.getByTitle(/Update or submit Assisted KYC details/i));
+
+    // Verify viewMode is 'flow' and step 1 is displayed
+    await waitFor(() => {
+      expect(screen.getByText(/Assisted KYC Mode • IRM Onboarding on Behalf/i)).toBeDefined();
+      expect(screen.getByLabelText(/Investor Full Name/i)).toBeDefined();
+    });
+
+    const nameInput = screen.getByLabelText(/Investor Full Name/i) as HTMLInputElement;
+    expect(nameInput.value).toBe('Aarav Sharma');
+  });
+
+  it('validates Step 1 required fields and shows validation summary on invalid submission', async () => {
+    vi.mocked(ghlApiService.getDeals).mockResolvedValue(mockDeals);
+    vi.mocked(ghlApiService.getLeads).mockResolvedValue(mockLeads);
+    vi.mocked(ghlApiService.getCustomers).mockResolvedValue(mockCustomers);
+
+    render(<KYCPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Aarav Sharma')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aarav Sharma' }));
+    await waitFor(() => {
+      expect(screen.getByTitle(/Update or submit Assisted KYC details/i)).toBeDefined();
+    });
+    fireEvent.click(screen.getByTitle(/Update or submit Assisted KYC details/i));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Investor Full Name/i)).toBeDefined();
+    });
+
+    // Clear name to trigger validation error
+    const nameInput = screen.getByLabelText(/Investor Full Name/i);
+    fireEvent.change(nameInput, { target: { value: '' } });
+
+    // Click Continue
+    const continueBtn = screen.getByRole('button', { name: /Continue to Identity Details/i });
+    fireEvent.click(continueBtn);
+
+    // Expect validation error
+    await waitFor(() => {
+      expect(screen.getByText(/Full Name is required/i)).toBeDefined();
+    });
+  });
+
+  it('successfully saves draft and persists metadata locally and to backend', async () => {
+    vi.mocked(ghlApiService.getDeals).mockResolvedValue(mockDeals);
+    vi.mocked(ghlApiService.getLeads).mockResolvedValue(mockLeads);
+    vi.mocked(ghlApiService.getCustomers).mockResolvedValue(mockCustomers);
+
+    render(<KYCPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Aarav Sharma')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aarav Sharma' }));
+    await waitFor(() => {
+      expect(screen.getByTitle(/Update or submit Assisted KYC details/i)).toBeDefined();
+    });
+    fireEvent.click(screen.getByTitle(/Update or submit Assisted KYC details/i));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /save draft/i })).toBeDefined();
+    });
+
+    const saveDraftBtn = screen.getByRole('button', { name: /save draft/i });
+    fireEvent.click(saveDraftBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Assisted KYC draft saved at Step 1 of 5/i)).toBeDefined();
+    });
+
+    const savedDraft = localStorage.getItem('nexus_kyc_draft_deal-101');
+    expect(savedDraft).toBeDefined();
+    expect(JSON.parse(savedDraft!).isAssisted).toBe(true);
+  });
+
+  it('handles save draft failure gracefully and displays warning toast', async () => {
+    vi.mocked(ghlApiService.getDeals).mockResolvedValue(mockDeals);
+    vi.mocked(ghlApiService.getLeads).mockResolvedValue(mockLeads);
+    vi.mocked(ghlApiService.getCustomers).mockResolvedValue(mockCustomers);
+
+    // Mock backend draft save failure
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (String(url).includes('/irm/kyc/assisted-draft')) {
+        return Promise.resolve({
+          ok: false,
+          status: 500,
+          json: async () => ({ message: 'Database down' }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, data: [] }),
+      });
+    });
+
+    render(<KYCPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Aarav Sharma')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aarav Sharma' }));
+    await waitFor(() => {
+      expect(screen.getByTitle(/Update or submit Assisted KYC details/i)).toBeDefined();
+    });
+    fireEvent.click(screen.getByTitle(/Update or submit Assisted KYC details/i));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /save draft/i })).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /save draft/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Save \/ Upload failed: Database down/i)).toBeDefined();
+    });
+  });
+
+  it('routes to the correct step when handleCorrectKycDetails is triggered', async () => {
+    const dealsWithCorrection: Deal[] = [
+      {
+        ...mockDeals[0],
+        id: 'deal-bank-issue',
+        flaggedSections: ['Bank Details'],
+        remarks: 'Please update IFSC code',
+        kycStatus: 'Needs Correction',
+      },
+    ];
+
+    vi.mocked(ghlApiService.getDeals).mockResolvedValue(dealsWithCorrection);
+    vi.mocked(ghlApiService.getLeads).mockResolvedValue(mockLeads);
+    vi.mocked(ghlApiService.getCustomers).mockResolvedValue(mockCustomers);
+
+    render(<KYCPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Aarav Sharma')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aarav Sharma' }));
+    await waitFor(() => {
+      expect(screen.getByTitle(/Update or submit Assisted KYC details/i)).toBeDefined();
+    });
+
+    // Save a draft pointing to Step 3 so resolveKycResumeStep or correction step works
+    localStorage.setItem('nexus_kyc_draft_deal-bank-issue', JSON.stringify({ step: 3, savedAt: '2026-03-01' }));
+    fireEvent.click(screen.getByTitle(/Update or submit Assisted KYC details/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Step 3 of 5/i)).toBeDefined();
+      expect(screen.getByLabelText(/Bank Name/i)).toBeDefined();
+    });
+  });
+
+  it('submits assisted KYC successfully with consent and moves to review', async () => {
+    vi.mocked(ghlApiService.getDeals).mockResolvedValue(mockDeals);
+    vi.mocked(ghlApiService.getLeads).mockResolvedValue(mockLeads);
+    vi.mocked(ghlApiService.getCustomers).mockResolvedValue(mockCustomers);
+
+    // Save full draft data at step 5
+    const fullForm = {
+      investorName: 'Aarav Sharma',
+      phone: '+91 9876543210',
+      email: 'aarav@example.com',
+      gender: 'Male',
+      investorType: 'Individual / Retail HNW',
+      residentType: 'Resident Indian (RI)',
+      occupation: 'Business',
+      panNumber: 'ABCDE1234F',
+      nameAsPerPan: 'AARAV SHARMA',
+      aadhaarNumber: '123456789012',
+      fatherName: 'Rajesh Sharma',
+      dob: '1990-01-01',
+      address: '123 Marine Drive',
+      courierAddress: '123 Marine Drive',
+      country: 'India',
+      state: 'Maharashtra',
+      city: 'Mumbai',
+      pincode: '400001',
+      aadhaarDoc: { name: 'aadhaar.pdf', size: '1MB', type: 'application/pdf', url: 'https://ex.com/a.pdf' },
+      panDoc: { name: 'pan.pdf', size: '1MB', type: 'application/pdf', url: 'https://ex.com/p.pdf' },
+      bankName: 'HDFC Bank',
+      accountNumber: '1234567890',
+      ifscCode: 'HDFC0001234',
+      accountHolderName: 'AARAV SHARMA',
+      accountType: 'Savings Account',
+      bankProofDoc: { name: 'cheque.pdf', size: '1MB', type: 'application/pdf', url: 'https://ex.com/b.pdf' },
+      hasNoDemat: true,
+      hasNominee: false,
+      nominees: [],
+    };
+    localStorage.setItem('nexus_kyc_data_deal-101', JSON.stringify(fullForm));
+    localStorage.setItem('nexus_kyc_draft_deal-101', JSON.stringify({ step: 5, savedAt: '2026-03-01' }));
+
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (String(url).includes('/irm/kyc/assisted-submit')) {
+        return Promise.resolve({
+          ok: true,
+          status: 200,
+          json: async () => ({ success: true, data: { id: 999 } }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, data: [] }),
+      });
+    });
+
+    render(<KYCPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Aarav Sharma')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aarav Sharma' }));
+    await waitFor(() => {
+      expect(screen.getByTitle(/Update or submit Assisted KYC details/i)).toBeDefined();
+    });
+    fireEvent.click(screen.getByTitle(/Update or submit Assisted KYC details/i));
+
+    await waitFor(() => {
+      expect(screen.getByText(/Step 5 of 5/i)).toBeDefined();
+      expect(screen.getByRole('button', { name: /Review & Submit on Behalf/i })).toBeDefined();
+    });
+
+    // Click Review & Submit
+    fireEvent.click(screen.getByRole('button', { name: /Review & Submit on Behalf/i }));
+
+    // Review Modal appears
+    await waitFor(() => {
+      expect(screen.getByText('Review & Submit Assisted KYC')).toBeDefined();
+    });
+
+    // Check customer consent checkbox
+    const consentCheck = screen.getByLabelText(/Customer Consent & Authorization/i);
+    fireEvent.click(consentCheck);
+
+    // Submit button is now active
+    const submitBtn = screen.getByRole('button', { name: /Confirm & Submit for Verification/i });
+    expect(submitBtn).toBeDefined();
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Assisted KYC for "Aarav Sharma" submitted for verification!/i)).toBeDefined();
+    });
+  });
+
+  it('shows error toast when assisted submission fails on backend', async () => {
+    vi.mocked(ghlApiService.getDeals).mockResolvedValue(mockDeals);
+    vi.mocked(ghlApiService.getLeads).mockResolvedValue(mockLeads);
+    vi.mocked(ghlApiService.getCustomers).mockResolvedValue(mockCustomers);
+
+    const fullForm = {
+      investorName: 'Aarav Sharma',
+      phone: '+91 9876543210',
+      email: 'aarav@example.com',
+      gender: 'Male',
+      investorType: 'Individual / Retail HNW',
+      residentType: 'Resident Indian (RI)',
+      occupation: 'Business',
+      panNumber: 'ABCDE1234F',
+      nameAsPerPan: 'AARAV SHARMA',
+      aadhaarNumber: '123456789012',
+      fatherName: 'Rajesh Sharma',
+      dob: '1990-01-01',
+      address: '123 Marine Drive',
+      courierAddress: '123 Marine Drive',
+      country: 'India',
+      state: 'Maharashtra',
+      city: 'Mumbai',
+      pincode: '400001',
+      aadhaarDoc: { name: 'aadhaar.pdf', size: '1MB', type: 'application/pdf', url: 'https://ex.com/a.pdf' },
+      panDoc: { name: 'pan.pdf', size: '1MB', type: 'application/pdf', url: 'https://ex.com/p.pdf' },
+      bankName: 'HDFC Bank',
+      accountNumber: '1234567890',
+      ifscCode: 'HDFC0001234',
+      accountHolderName: 'AARAV SHARMA',
+      accountType: 'Savings Account',
+      bankProofDoc: { name: 'cheque.pdf', size: '1MB', type: 'application/pdf', url: 'https://ex.com/b.pdf' },
+      hasNoDemat: true,
+      hasNominee: false,
+      nominees: [],
+    };
+    localStorage.setItem('nexus_kyc_data_deal-101', JSON.stringify(fullForm));
+    localStorage.setItem('nexus_kyc_draft_deal-101', JSON.stringify({ step: 5, savedAt: '2026-03-01' }));
+
+    globalThis.fetch = vi.fn().mockImplementation((url: string) => {
+      if (String(url).includes('/irm/kyc/assisted-submit')) {
+        return Promise.resolve({
+          ok: false,
+          status: 400,
+          json: async () => ({ message: 'Invalid PAN signature' }),
+        });
+      }
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: async () => ({ success: true, data: [] }),
+      });
+    });
+
+    render(<KYCPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Aarav Sharma')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aarav Sharma' }));
+    await waitFor(() => {
+      expect(screen.getByTitle(/Update or submit Assisted KYC details/i)).toBeDefined();
+    });
+    fireEvent.click(screen.getByTitle(/Update or submit Assisted KYC details/i));
+
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Review & Submit on Behalf/i })).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: /Review & Submit on Behalf/i }));
+
+    await waitFor(() => {
+      expect(screen.getByText('Review & Submit Assisted KYC')).toBeDefined();
+    });
+
+    const consentCheck = screen.getByLabelText(/Customer Consent & Authorization/i);
+    fireEvent.click(consentCheck);
+
+    const submitBtn = screen.getByRole('button', { name: /Confirm & Submit for Verification/i });
+    fireEvent.click(submitBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText(/Failed to submit assisted KYC: Invalid PAN signature/i)).toBeDefined();
+    });
+  });
+
+
+  it('navigates through all 5 steps of the KYC flow with form inputs', async () => {
+    vi.mocked(ghlApiService.getDeals).mockResolvedValue(mockDeals);
+    vi.mocked(ghlApiService.getLeads).mockResolvedValue(mockLeads);
+    vi.mocked(ghlApiService.getCustomers).mockResolvedValue(mockCustomers);
+
+    render(<KYCPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Aarav Sharma')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aarav Sharma' }));
+    await waitFor(() => {
+      expect(screen.getByTitle(/Update or submit Assisted KYC details/i)).toBeDefined();
+    });
+    fireEvent.click(screen.getByTitle(/Update or submit Assisted KYC details/i));
+
+    // Step 1: Basic Details
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /Step 1: Basic Details/i })).toBeDefined();
+    });
+
+    // Populate Step 1 inputs
+    fireEvent.change(screen.getByLabelText(/Investor Full Name/i), { target: { value: 'Aarav Sharma' } });
+    fireEvent.change(screen.getByLabelText(/Phone Number/i), { target: { value: '+91 9876543210' } });
+    fireEvent.change(screen.getByLabelText(/Email Address/i), { target: { value: 'aarav@example.com' } });
+
+    // Step 1 -> Step 2
+    fireEvent.click(screen.getByRole('button', { name: /Continue to Identity Details/i }));
+
+    // Step 2: Identity & Address
+    await waitFor(() => {
+      expect(screen.getByLabelText(/PAN Number/i)).toBeDefined();
+    });
+
+    fireEvent.change(screen.getByLabelText(/PAN Number/i), { target: { value: 'ABCPE1234F' } });
+    fireEvent.change(screen.getByLabelText(/Name \(As per PAN\)/i), { target: { value: 'AARAV SHARMA' } });
+    fireEvent.change(screen.getByLabelText(/Aadhaar Number/i), { target: { value: '234567890123' } });
+    fireEvent.change(screen.getByLabelText(/Father's Full Name/i), { target: { value: 'Rajesh Sharma' } });
+    fireEvent.change(screen.getByLabelText(/Date of Birth/i), { target: { value: '1990-01-01' } });
+    fireEvent.change(screen.getByLabelText(/^Permanent Address/i), { target: { value: '123 Marine Drive' } });
+    fireEvent.change(screen.getByLabelText(/City/i), { target: { value: 'Mumbai' } });
+    fireEvent.change(screen.getByLabelText(/Pincode/i), { target: { value: '400001' } });
+    fireEvent.change(screen.getByLabelText(/State/i), { target: { value: 'Maharashtra' } });
+
+    // Upload identity docs for Step 2
+    const fileInputs = document.querySelectorAll('input[type="file"]');
+    const mockFile = new File(['mock content'], 'id_proof.pdf', { type: 'application/pdf' });
+    if (fileInputs[0]) fireEvent.change(fileInputs[0], { target: { files: [mockFile] } });
+    if (fileInputs[1]) fireEvent.change(fileInputs[1], { target: { files: [mockFile] } });
+    if (fileInputs[2]) fireEvent.change(fileInputs[2], { target: { files: [mockFile] } });
+
+    // Step 2 -> Step 3
+    fireEvent.click(screen.getByRole('button', { name: /Continue to Bank Details/i }));
+    
+    // Step 3: Bank Details
+    await waitFor(() => {
+      expect(screen.getByLabelText(/Account Number/i)).toBeDefined();
+    });
+
+    fireEvent.change(screen.getByLabelText(/Account Number/i), { target: { value: '1234567890' } });
+    fireEvent.change(screen.getByLabelText(/IFSC Code/i), { target: { value: 'HDFC0001234' } });
+    fireEvent.change(screen.getByLabelText(/Account Holder Name/i), { target: { value: 'AARAV SHARMA' } });
+
+    // Upload bank proof doc for Step 3
+    const bankFileInputs = document.querySelectorAll('input[type="file"]');
+    if (bankFileInputs[0]) fireEvent.change(bankFileInputs[0], { target: { files: [mockFile] } });
+
+    // Step 3 -> Step 4
+    fireEvent.click(screen.getByRole('button', { name: /Continue to Demat Details/i }));
+
+    // Step 4: Demat Details
+    await waitFor(() => {
+      expect(screen.getByText(/I don't have a Demat account/i)).toBeDefined();
+    });
+
+    // Check "I don't have a Demat account" to skip demat docs
+    fireEvent.click(screen.getByText(/I don't have a Demat account/i));
+
+    // Step 4 -> Step 5
+    fireEvent.click(screen.getByRole('button', { name: /Continue to Nominee Details/i }));
+
+    // Step 5: Nominee Details
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /Nominee Details/i })).toBeDefined();
+      expect(screen.getByRole('button', { name: /Review & Submit on Behalf/i })).toBeDefined();
+    });
+
+    // Test Previous Step button
+    fireEvent.click(screen.getByRole('button', { name: /Previous Step/i }));
+    await waitFor(() => {
+      expect(screen.getByText(/I don't have a Demat account/i)).toBeDefined();
+    });
+
+    // Test Exit Flow button
+    const backToListBtn = screen.getByTitle(/Exit KYC flow and return to Qualified Investors list/i);
+    fireEvent.click(backToListBtn);
+
+    await waitFor(() => {
+      expect(screen.getByText('Aarav Sharma')).toBeDefined();
+    });
+  });
+
+  it('handles nominee declaration toggling, adding, and removing nominees in Step 5', async () => {
+    vi.mocked(ghlApiService.getDeals).mockResolvedValue(mockDeals);
+    vi.mocked(ghlApiService.getLeads).mockResolvedValue(mockLeads);
+    vi.mocked(ghlApiService.getCustomers).mockResolvedValue(mockCustomers);
+
+    // Load straight into Step 5 with existing draft
+    localStorage.setItem('nexus_kyc_draft_deal-101', JSON.stringify({ step: 5, savedAt: '2026-03-01' }));
+
+    render(<KYCPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Aarav Sharma')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aarav Sharma' }));
+    await waitFor(() => {
+      expect(screen.getByTitle(/Update or submit Assisted KYC details/i)).toBeDefined();
+    });
+    fireEvent.click(screen.getByTitle(/Update or submit Assisted KYC details/i));
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: /Step 5: Nominee Details/i })).toBeDefined();
+    });
+
+    // Toggle Declare a Nominee
+    const declareNomineeCheckbox = screen.getByRole('checkbox', { name: /Register Nominee/i });
+    fireEvent.click(declareNomineeCheckbox);
+
+    // Nominee form fields appear
+    await waitFor(() => {
+      expect(screen.getByRole('button', { name: /Add Nominee/i })).toBeDefined();
+    });
+
+    // Add another nominee
+    fireEvent.click(screen.getByRole('button', { name: /Add Nominee/i }));
+
+    // Remove a nominee
+    const removeBtns = screen.getAllByRole('button', { name: /Remove/i });
+    expect(removeBtns.length).toBeGreaterThan(0);
+    fireEvent.click(removeBtns[0]);
+  });
+
+  it('switches tabs in Customer Profile view and triggers copy actions', async () => {
+    vi.mocked(ghlApiService.getDeals).mockResolvedValue(mockDeals);
+    vi.mocked(ghlApiService.getLeads).mockResolvedValue(mockLeads);
+    vi.mocked(ghlApiService.getCustomers).mockResolvedValue(mockCustomers);
+
+    render(<KYCPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Aarav Sharma')).toBeDefined();
+    });
+
+    // Open Profile
+    fireEvent.click(screen.getByRole('button', { name: 'Aarav Sharma' }));
+
+    await waitFor(() => {
+      expect(screen.getByRole('heading', { name: 'Personal Details' })).toBeDefined();
+    });
+
+    // Switch to Bank Details tab
+    const bankTab = screen.getByRole('button', { name: /Bank Details/i });
+    fireEvent.click(bankTab);
+
+    // Switch to Demat Details tab
+    const dematTab = screen.getByRole('button', { name: /Demat Account/i });
+    fireEvent.click(dematTab);
+
+    // Switch to All Sections tab
+    const allTab = screen.getByRole('button', { name: /All Sections/i });
+    fireEvent.click(allTab);
+
+    // Click Copy Email button
+    const copyEmailBtn = screen.getAllByTitle('Copy Email')[0];
+    fireEvent.click(copyEmailBtn);
+
+    // Click Copy Phone button
+    const copyPhoneBtn = screen.getAllByTitle('Copy Phone')[0];
+    fireEvent.click(copyPhoneBtn);
+  });
+
+  it('validates file uploads and rejects files exceeding MAX_KYC_UPLOAD_BYTES', async () => {
+    vi.mocked(ghlApiService.getDeals).mockResolvedValue(mockDeals);
+    vi.mocked(ghlApiService.getLeads).mockResolvedValue(mockLeads);
+    vi.mocked(ghlApiService.getCustomers).mockResolvedValue(mockCustomers);
+
+    const alertSpy = vi.spyOn(window, 'alert').mockImplementation(() => {});
+
+    // Open Step 2
+    localStorage.setItem('nexus_kyc_draft_deal-101', JSON.stringify({ step: 2, savedAt: '2026-03-01' }));
+
+    render(<KYCPage />);
+
+    await waitFor(() => {
+      expect(screen.getByText('Aarav Sharma')).toBeDefined();
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: 'Aarav Sharma' }));
+    await waitFor(() => {
+      expect(screen.getByTitle(/Update or submit Assisted KYC details/i)).toBeDefined();
+    });
+    fireEvent.click(screen.getByTitle(/Update or submit Assisted KYC details/i));
+
+    await waitFor(() => {
+      expect(screen.getByLabelText(/PAN Number/i)).toBeDefined();
+    });
+
+    // Find file inputs
+    const fileInputs = document.querySelectorAll('input[type="file"]');
+    expect(fileInputs.length).toBeGreaterThan(0);
+
+    // Create an oversized file (> 10MB)
+    const largeFile = new File(['x'.repeat(100)], 'huge.pdf', { type: 'application/pdf' });
+    Object.defineProperty(largeFile, 'size', { value: 15 * 1024 * 1024 });
+
+    fireEvent.change(fileInputs[0], { target: { files: [largeFile] } });
+    expect(alertSpy).toHaveBeenCalledWith(expect.stringContaining('File is too large'));
+
+    // Upload a valid file (< 10MB)
+    const validFile = new File(['valid content'], 'pan_proof.pdf', { type: 'application/pdf' });
+    Object.defineProperty(validFile, 'size', { value: 1024 * 500 });
+
+    fireEvent.change(fileInputs[0], { target: { files: [validFile] } });
+
+    // Expect the file card to render with uploaded status
+    await waitFor(() => {
+      expect(screen.getByText('pan_proof.pdf')).toBeDefined();
+    });
+
+    // Remove the uploaded file
+    const removeBtn = screen.getByTitle('Remove document');
+    fireEvent.click(removeBtn);
+  });
+
 });
