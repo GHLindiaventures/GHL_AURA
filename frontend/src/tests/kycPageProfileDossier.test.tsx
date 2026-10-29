@@ -5,7 +5,7 @@ import { KYCPage } from '../pages/KYC/KYCPage';
 import * as ghlApiService from '../services/ghlApiService';
 import * as authContext from '../context/AuthContext';
 import * as callContext from '../context/CallContext';
-import { Deal } from '../types';
+import { Deal, Lead, Customer } from '../types';
 
 vi.mock('../services/ghlApiService', () => ({
   getDeals: vi.fn(),
