@@ -144,9 +144,9 @@ describe('KYCPage Component Tests', () => {
   ];
 
   beforeEach(() => {
-    vi.restoreAllMocks();
-    sessionStorage.clear();
     localStorage.clear();
+    sessionStorage.clear();
+    vi.clearAllMocks();
 
     vi.mocked(ghlApiService.persistDeal).mockResolvedValue({} as any);
     vi.mocked(ghlApiService.addDealActivity).mockResolvedValue({} as any);
@@ -198,6 +198,8 @@ describe('KYCPage Component Tests', () => {
 
   afterEach(() => {
     cleanup();
+    localStorage.clear();
+    sessionStorage.clear();
     globalThis.fetch = originalFetch;
   });
 
@@ -991,5 +993,6 @@ describe('KYCPage Component Tests', () => {
     const removeBtn = screen.getByTitle('Remove document');
     fireEvent.click(removeBtn);
   });
+
 
 });
