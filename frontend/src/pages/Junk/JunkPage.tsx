@@ -12,6 +12,7 @@ import { Drawer } from '../../components/common/Drawer';
 import { Timeline, TimelineEvent } from '../../components/common/Timeline';
 import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawerContent';
 import { canPlaceCalls } from '../../utils/agentRoleUtils';
+import { markRouteSeen } from '../../components/layout/Sidebar';
 import './JunkPage.css';
 
 export const JunkPage: React.FC = () => {
@@ -53,6 +54,11 @@ export const JunkPage: React.FC = () => {
 
       setLeads(scopedLeads);
       setCalls(allCalls);
+
+      const tenantId = tenant?.id || tenant?.slug || '1';
+      const uid = user?.id ? String(user.id) : '';
+      markRouteSeen(tenantId, uid, 'junk', scopedLeads, (l) => String(l.id || l.phone || l.name));
+      window.dispatchEvent(new Event('nexus_storage_updated'));
     } catch (err) {
       console.error('Failed to load junk leads', err);
     }

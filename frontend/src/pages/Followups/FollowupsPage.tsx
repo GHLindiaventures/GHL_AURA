@@ -37,6 +37,7 @@ import { StatusChip } from '../../components/common/StatusChip';
 import { Modal } from '../../components/common/Modal';
 import { Drawer } from '../../components/common/Drawer';
 import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawerContent';
+import { markRouteSeen, markSeenIds } from '../../components/layout/Sidebar';
 type FollowupRoleFilter = 'all' | 'sales_executive' | 'irm';
 import { DateRangePreset } from '../../types/kanban';
 import { adminUserService } from '../../services/adminUserService';
@@ -477,6 +478,10 @@ export const FollowupsPage: React.FC = () => {
       });
 
       setFollowups(followupsList);
+      const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+      const tenantId = tenant?.id || tenant?.slug || 'ghl';
+      const getFuKey = (f: any) => String(f.id || f.followupId || `${f.contactName || f.contactPhone}_${f.scheduledAt || f.date || ''}`);
+      markRouteSeen(tenantId, uid, 'followups', followupsList, getFuKey);
       setCallsList(calls || []);
       setIrmSummaryData(irmSummary);
 

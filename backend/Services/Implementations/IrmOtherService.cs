@@ -388,6 +388,21 @@ public class IrmOtherService : IIrmOtherService
             ? $"[Moved back to {(call.CallModule ?? "original module")} on {timestampStr}]"
             : $"{call.Notes} [Moved back to {(call.CallModule ?? "original module")} on {timestampStr}]";
 
+        _context.AuditLogs.Add(new AuditLog
+        {
+            CompanyId = companyId,
+            Timestamp = DateTime.UtcNow,
+            ActorName = $"IRM (ID: {call.AgentId})",
+            Action = "RESTORE_MODULE",
+            EntityType = "CallRecord",
+            EntityId = call.Id.ToString(),
+            LeadId = call.LeadId,
+            CustomerId = call.CustomerId,
+            Details = $"Contact '{call.ContactName}' ({call.ContactPhone}) restored from Other to module '{call.CallModule}'.",
+            Module = call.CallModule ?? "Leads",
+            Status = "success"
+        });
+
         await _context.SaveChangesAsync(ct);
         return ApiResponse<bool>.SuccessResponse(true, "Contact successfully moved back to original module.");
     }

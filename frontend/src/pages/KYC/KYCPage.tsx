@@ -74,6 +74,7 @@ import {
   RESIDENT_TYPE_OPTIONS,
   ACCOUNT_TYPE_OPTIONS,
 } from '../../utils/kycValidators';
+import { markRouteSeen, markSeenIds } from '../../components/layout/Sidebar';
 import './KYCPage.css';
 
 // ── Types for GHL IRM 5-Step Flow ──────────────────────────────────────────────
@@ -752,6 +753,9 @@ const GhlIrmKycView: React.FC = () => {
         }
       }
       setDeals(dedupedDeals);
+      const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+      const tenantId = tenant?.id || tenant?.slug || 'ghl';
+      markRouteSeen(tenantId, uid, 'kyc', dedupedDeals, (d: any) => String(d.id || d.dealId || d.customerId));
       setLeads(leadsList);
       setCustomers(customersList);
     } catch {
@@ -5424,7 +5428,11 @@ const OriginalKYCView: React.FC = () => {
 
   const loadData = () => {
     const allDeals = storageService.getDeals(tenant?.id);
-    setDeals(allDeals.filter(d => d.stage === 'qualified_investor'));
+    const kycDeals = allDeals.filter(d => d.stage === 'qualified_investor');
+    setDeals(kycDeals);
+    const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+    const tenantId = tenant?.id || tenant?.slug || 'ghl';
+    markRouteSeen(tenantId, uid, 'kyc', kycDeals, (d: any) => String(d.id || d.dealId || d.customerId));
   };
 
   useEffect(() => {

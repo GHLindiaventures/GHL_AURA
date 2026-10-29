@@ -27,6 +27,7 @@ import { Drawer } from '../../components/common/Drawer';
 import { Modal } from '../../components/common/Modal';
 import { getAuthHeaders } from '../../utils/authHeaders';
 import { canPlaceCalls } from '../../utils/agentRoleUtils';
+import { markRouteSeen, markSeenIds } from '../../components/layout/Sidebar';
 import './AssignedLeadsPage.css';
 
 interface AssignedLeadsPageProps {
@@ -368,6 +369,9 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
       setLoadError(null);
       const allLeads = storageService.getLeads(tenant?.id);
       setLeads(allLeads);
+      const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+      const tenantId = tenant?.id || tenant?.slug || 'ghl';
+      markRouteSeen(tenantId, uid, 'assigned-leads', allLeads, (l: any) => String(l.id || l.phone || l.name));
       setSelectedLead(prev => {
         if (!prev) return null;
         return allLeads.find(l => l.id === prev.id) || null;
@@ -400,6 +404,9 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
           customFields: item.customFields || {}
         }));
         setLeads(apiLeads);
+        const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+        const tenantId = tenant?.id || tenant?.slug || 'ghl';
+        markRouteSeen(tenantId, uid, 'assigned-leads', apiLeads, (l: any) => String(l.id || l.phone || l.name));
         setSelectedLead(prev => {
           if (!prev) return null;
           return apiLeads.find((l: any) => l.id === prev.id) || null;
@@ -962,6 +969,9 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
         keyExtractor={l => l.id}
         rowActions={rowActions}
         onRowClick={l => {
+          const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+          const tenantId = tenant?.id || tenant?.slug || 'ghl';
+          markSeenIds(tenantId, uid, 'assigned-leads', [String(l.id || l.phone || l.name)]);
           setSelectedLead(l);
           setIsDetailDrawerOpen(true);
         }}

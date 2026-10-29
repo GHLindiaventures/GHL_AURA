@@ -11,9 +11,24 @@ public class AuditLogResponseDto
     public string Action { get; set; } = string.Empty;
     public string EntityType { get; set; } = string.Empty;
     public string EntityId { get; set; } = string.Empty;
+    public string? EntityName { get; set; }
     public string Details { get; set; } = string.Empty;
     public string? IpAddress { get; set; }
     public string? UserAgent { get; set; }
     public string? Module { get; set; }
     public string Status { get; set; } = string.Empty;
 }
+
+public class CreateAuditLogRequestDto
+{
+    public string Action { get; set; } = string.Empty;
+    public string EntityType { get; set; } = string.Empty;
+    public string EntityId { get; set; } = string.Empty;
+    public string? EntityName { get; set; }
+    public int? LeadId { get; set; }
+    public int? CustomerId { get; set; }
+    public string Details { get; set; } = string.Empty;
+    public string? Module { get; set; }
+    public string? Status { get; set; } = "success";
+}
+

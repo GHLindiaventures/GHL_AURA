@@ -31,6 +31,7 @@ import {
 import { DEFAULT_TENANTS } from '../constants/defaultTenants';
 import { isMockMode } from '../config/environment';
 import { DEFAULT_CUSTOM_FIELD_DEFINITIONS } from '../constants/customFields';
+import { apiClient } from './apiClient';
 
 export type PopupPosition = 'top-right' | 'top-left' | 'bottom-right' | 'bottom-left';
 
@@ -484,7 +485,20 @@ class StorageService {
   // Leads (Defaults to empty [] - real-time data only)
   getLeads(companyId?: string): Lead[] {
     const leads = this.get<Lead[]>('leads', []);
-    return companyId ? leads.filter(l => l.companyId === companyId) : leads;
+    if (!companyId) return leads;
+    return leads.filter(l => {
+      if (!l.companyId) return true;
+      if (l.companyId === companyId || String(l.companyId) === String(companyId)) return true;
+      const t = String(companyId).toLowerCase().trim();
+      const c = String(l.companyId).toLowerCase().trim();
+      const isJaminTarget = t === '2' || t === 't-jamin-02' || t === 'jamin' || t === 'jaminbazaar';
+      const isGhlTarget = t === '1' || t === 't-ghl-01' || t === 'ghl' || t === 'ghlindiatrust';
+      const isJaminItem = c === '2' || c === 't-jamin-02' || c === 'jamin' || c === 'jaminbazaar';
+      const isGhlItem = c === '1' || c === 't-ghl-01' || c === 'ghl' || c === 'ghlindiatrust';
+      if (isJaminTarget) return isJaminItem;
+      if (isGhlTarget) return isGhlItem;
+      return false;
+    });
   }
 
   findLeadByPhone(phone: string, companyId?: string): Lead | undefined {
@@ -943,6 +957,29 @@ class StorageService {
     const logs = this.getAuditLogs();
     logs.unshift(log);
     this.set('audit_logs', logs);
+
+    // Persist to backend database asynchronously so Admin audit log is comprehensive
+    try {
+      const parsedEntityId = parseInt(log.entityId, 10);
+      const isLead = (log.entityType || '').toLowerCase().includes('lead');
+      const isCustomer = (log.entityType || '').toLowerCase().includes('customer') || (log.entityType || '').toLowerCase().includes('investor');
+
+      apiClient.post('/audit-logs', {
+        action: (log.action || 'ACTIVITY').toUpperCase(),
+        entityType: log.entityType || 'General',
+        entityId: log.entityId || '0',
+        entityName: log.entityName,
+        details: log.details || '',
+        module: log.module || (isLead ? 'Leads' : 'CRM'),
+        leadId: isLead && !isNaN(parsedEntityId) ? parsedEntityId : undefined,
+        customerId: isCustomer && !isNaN(parsedEntityId) ? parsedEntityId : undefined,
+        status: log.status || 'success',
+      }).catch(() => {
+        // Silently catch background errors
+      });
+    } catch {
+      // ignore
+    }
   }
 
   // Notifications (Multi-tenant scoped with strict cross-tenant isolation)

@@ -35,6 +35,7 @@ import {
   Sun,
   Sunset
 } from 'lucide-react';
+import { markRouteSeen, markSeenIds } from '../../components/layout/Sidebar';
 import './LeaveRequestsPage.css';
 
 interface LeaveRequestsPageProps {
@@ -118,14 +119,22 @@ export const LeaveRequestsPage: React.FC<LeaveRequestsPageProps> = ({ onNavigate
           leaveRequestService.getAllRequests(),
           leaveRequestService.getWorkforceAvailability()
         ]);
-        setRequests(allReqs.filter(r => r != null));
+        const validAllReqs = allReqs.filter(r => r != null);
+        setRequests(validAllReqs);
+        const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+        const tenantId = tenant?.id || tenant?.slug || 'ghl';
+        markRouteSeen(tenantId, uid, 'leave-requests', validAllReqs, (r: any) => String(r.id));
         setWorkforce(wf);
       } else {
         const [myReqs, bal] = await Promise.all([
           leaveRequestService.getMyRequests(),
           leaveRequestService.getMyBalance()
         ]);
-        setRequests(myReqs.filter(r => r != null));
+        const validMyReqs = myReqs.filter(r => r != null);
+        setRequests(validMyReqs);
+        const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+        const tenantId = tenant?.id || tenant?.slug || 'ghl';
+        markRouteSeen(tenantId, uid, 'leave-requests', validMyReqs, (r: any) => String(r.id));
         setMyBalances(bal);
       }
     } catch (err: any) {

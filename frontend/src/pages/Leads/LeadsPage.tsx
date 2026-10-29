@@ -46,6 +46,7 @@ import { Drawer } from '../../components/common/Drawer';
 import { Modal } from '../../components/common/Modal';
 import { getAgentRoleInfo, getAssigningSalesAgentInfo, canPlaceCalls } from '../../utils/agentRoleUtils';
 import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawerContent';
+import { markRouteSeen, markSeenIds } from '../../components/layout/Sidebar';
 import './LeadsPage.css';
 
 export const normalizePhone = (phone?: string): string | null => {
@@ -503,6 +504,9 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
     if (apiClient.isMockMode()) {
       const updated = storageService.getLeads(tenant?.id);
       setLeads(updated);
+      const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+      const tenantId = tenant?.id || tenant?.slug || 'ghl';
+      markRouteSeen(tenantId, uid, 'leads', updated, (l: any) => String(l.id || l.phone || l.name));
       const allFus = storageService.getFollowups ? storageService.getFollowups(tenant?.id) : [];
       const pendingFus = (allFus || []).filter((f: any) => f.status === 'Pending');
       setAllFollowups(pendingFus);
@@ -559,6 +563,9 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
         loadedLeads = await getLeads(tenant?.id);
       }
       setLeads(loadedLeads);
+      const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+      const tenantId = tenant?.id || tenant?.slug || 'ghl';
+      markRouteSeen(tenantId, uid, 'leads', loadedLeads, (l: any) => String(l.id || l.phone || l.name));
       setSelectedLead(prev => {
         if (!prev) return null;
         const found = loadedLeads.find((l: any) => l.id === prev.id);
@@ -1816,6 +1823,9 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
       label: 'View 360 Drawer',
       icon: <ExternalLink size={14} className="leads-action-icon" />,
       onClick: l => {
+        const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+        const tenantId = tenant?.id || tenant?.slug || 'ghl';
+        markSeenIds(tenantId, uid, 'leads', [l.id]);
         setSelectedLead(l);
         setIsDetailDrawerOpen(true);
       },
@@ -1901,6 +1911,9 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
         keyExtractor={l => l.id}
         rowActions={rowActions}
         onRowClick={l => {
+          const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+          const tenantId = tenant?.id || tenant?.slug || 'ghl';
+          markSeenIds(tenantId, uid, 'leads', [l.id]);
           setSelectedLead(l);
           setIsDetailDrawerOpen(true);
         }}

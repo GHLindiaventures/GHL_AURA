@@ -22,6 +22,34 @@ public class FollowupService : IFollowupService
         _otherService = otherService ?? new IrmOtherService(context);
     }
 
+    private async Task<(string Name, string Email, string RoleTitle)> GetActorInfoAsync(int? userId, CancellationToken ct = default)
+    {
+        if (!userId.HasValue || userId.Value <= 0)
+        {
+            var fallbackRole = _currentUser.Role ?? "User";
+            var rTitle = fallbackRole == "sales_executive" ? "Sales Executive" : (fallbackRole == "irm" ? "IRM" : (fallbackRole == "company_admin" || fallbackRole == "super_admin" ? "Admin" : fallbackRole));
+            return (_currentUser.Email ?? "System User", _currentUser.Email ?? "system@ghl.com", rTitle);
+        }
+
+        var user = await _context.Users.Include(u => u.Role).AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId.Value, ct);
+        if (user != null)
+        {
+            var roleCode = user.Role?.Code?.ToLowerInvariant() ?? _currentUser.Role?.ToLowerInvariant() ?? "user";
+            var roleTitle = roleCode switch
+            {
+                "sales_executive" => "Sales Executive",
+                "irm" => "IRM",
+                "company_admin" => "Company Admin",
+                "super_admin" => "Super Admin",
+                "admin" or "ghl_admin" => "Admin",
+                _ => user.Role?.Name ?? "User"
+            };
+            return (user.Name, user.Email, roleTitle);
+        }
+
+        return (_currentUser.Email ?? $"User #{userId.Value}", _currentUser.Email ?? "user@ghl.com", "User");
+    }
+
     private IQueryable<Followup> GetScopedFollowupsQuery()
     {
         var role = _currentUser.Role;
@@ -460,6 +488,21 @@ public class FollowupService : IFollowupService
                 }
             }
 
+            var actorExisting = await GetActorInfoAsync(agentId, ct);
+            _context.AuditLogs.Add(new AuditLog
+            {
+                CompanyId = existingPending.CompanyId,
+                Timestamp = DateTime.UtcNow,
+                ActorName = actorExisting.Name,
+                ActorEmail = actorExisting.Email,
+                Action = "FOLLOWUP_RESCHEDULED",
+                EntityType = "Followup",
+                EntityId = existingPending.Id.ToString(),
+                LeadId = targetLead?.Id,
+                Module = currentRole == "irm" ? "IRM" : "Followups",
+                Details = $"{actorExisting.RoleTitle} {actorExisting.Name} rescheduled follow-up for '{existingPending.ContactName}' to {existingPending.ScheduledAt:MMM dd, yyyy hh:mm tt} (Assigned: {existingPending.AssignedToName}, Priority: {existingPending.Priority}). Notes: {existingPending.Notes}",
+                Status = "success"
+            });
             await _context.SaveChangesAsync(ct);
             try { await _context.Entry(existingPending).Reference(f => f.AssignedAgent).LoadAsync(ct); } catch { }
             return ApiResponse<FollowupResponseDto>.SuccessResult(MapToDto(existingPending, targetLead), "Existing pending follow-up updated.");
@@ -594,6 +637,21 @@ public class FollowupService : IFollowupService
                 targetLead.UpdatedAt = DateTime.UtcNow;
             }
 
+            var actorResched = await GetActorInfoAsync(agentId, ct);
+            _context.AuditLogs.Add(new AuditLog
+            {
+                CompanyId = primaryFollowup.CompanyId,
+                Timestamp = DateTime.UtcNow,
+                ActorName = actorResched.Name,
+                ActorEmail = actorResched.Email,
+                Action = "FOLLOWUP_RESCHEDULED",
+                EntityType = "Followup",
+                EntityId = primaryFollowup.Id.ToString(),
+                LeadId = targetLead?.Id,
+                Module = currentRole == "irm" ? "IRM" : "Followups",
+                Details = $"{actorResched.RoleTitle} {actorResched.Name} rescheduled follow-up for '{primaryFollowup.ContactName}' to {primaryFollowup.ScheduledAt:MMM dd, yyyy hh:mm tt} (Assigned: {primaryFollowup.AssignedToName}, Priority: {primaryFollowup.Priority}). Notes: {primaryFollowup.Notes}",
+                Status = "success"
+            });
             await _context.SaveChangesAsync(ct);
             try { await _context.Entry(primaryFollowup).Reference(f => f.AssignedAgent).LoadAsync(ct); } catch { }
             return ApiResponse<FollowupResponseDto>.SuccessResult(MapToDto(primaryFollowup, targetLead), "Follow-up rescheduled successfully.");
@@ -631,6 +689,23 @@ public class FollowupService : IFollowupService
         followup.HandoverId = inheritedHandoverId;
         followup.OriginalOwnerId = inheritedOriginalOwnerId;
 
+        await _context.SaveChangesAsync(ct);
+
+        var actorNew = await GetActorInfoAsync(agentId, ct);
+        _context.AuditLogs.Add(new AuditLog
+        {
+            CompanyId = followup.CompanyId,
+            Timestamp = DateTime.UtcNow,
+            ActorName = actorNew.Name,
+            ActorEmail = actorNew.Email,
+            Action = "FOLLOWUP_SCHEDULED",
+            EntityType = "Followup",
+            EntityId = followup.Id.ToString(),
+            LeadId = targetLead?.Id,
+            Module = currentRole == "irm" ? "IRM" : "Followups",
+            Details = $"{actorNew.RoleTitle} {actorNew.Name} scheduled a follow-up for '{followup.ContactName}' on {followup.ScheduledAt:MMM dd, yyyy hh:mm tt} (Assigned to: {followup.AssignedToName}, Priority: {followup.Priority}). Notes: {followup.Notes}",
+            Status = "success"
+        });
         await _context.SaveChangesAsync(ct);
 
         if (inheritedHandoverId.HasValue)
@@ -759,6 +834,24 @@ public class FollowupService : IFollowupService
             lead = await _context.Leads.AsNoTracking().Include(l => l.AssignedBy).Include(l => l.AssignedAgent).FirstOrDefaultAsync(l => l.CompanyId == followup.CompanyId && l.Phone.Contains(p10), ct);
         }
 
+        var actorUpdate = await GetActorInfoAsync(_currentUser.UserId, ct);
+        _context.AuditLogs.Add(new AuditLog
+        {
+            CompanyId = followup.CompanyId,
+            Timestamp = DateTime.UtcNow,
+            ActorName = actorUpdate.Name,
+            ActorEmail = actorUpdate.Email,
+            Action = dto.ScheduledAt.HasValue ? "FOLLOWUP_RESCHEDULED" : "FOLLOWUP_UPDATED",
+            EntityType = "Followup",
+            EntityId = followup.Id.ToString(),
+            LeadId = lead?.Id,
+            Module = IsIrmFollowup(followup) ? "IRM" : "Followups",
+            Details = $"{actorUpdate.RoleTitle} {actorUpdate.Name} updated follow-up for '{followup.ContactName}' (Scheduled: {followup.ScheduledAt:MMM dd, yyyy hh:mm tt}, Status: {followup.Status}, Priority: {followup.Priority}). Notes: {followup.Notes}",
+            Status = "success"
+        });
+
+        await _context.SaveChangesAsync(ct);
+
         return ApiResponse<FollowupResponseDto>.SuccessResult(MapToDto(followup, lead), "Follow-up updated successfully.");
     }
 
@@ -827,23 +920,39 @@ public class FollowupService : IFollowupService
             }
         }
 
+        var actorComplete = await GetActorInfoAsync(_currentUser.UserId, ct);
+        _context.AuditLogs.Add(new AuditLog
+        {
+            CompanyId = followup.CompanyId,
+            Timestamp = DateTime.UtcNow,
+            ActorName = actorComplete.Name,
+            ActorEmail = actorComplete.Email,
+            Action = "FOLLOWUP_COMPLETED",
+            EntityType = "Followup",
+            EntityId = followup.Id.ToString(),
+            LeadId = followupLead?.Id,
+            Module = IsIrmFollowup(followup) ? "IRM" : "Followups",
+            Details = $"{actorComplete.RoleTitle} {actorComplete.Name} marked follow-up completed for '{followup.ContactName}' (Outcome notes: {followup.OutcomeNotes ?? followup.Notes ?? "Completed"}).",
+            Status = "success"
+        });
+
         await _context.SaveChangesAsync(ct);
 
-        Lead? lead = followupLead;
-        if (lead == null)
+        Lead? leadComplete = followupLead;
+        if (leadComplete == null)
         {
             if (!string.IsNullOrWhiteSpace(followup.ContactId) && int.TryParse(followup.ContactId, out var ccid))
             {
-                lead = await _context.Leads.AsNoTracking().Include(l => l.AssignedBy).Include(l => l.AssignedAgent).FirstOrDefaultAsync(l => l.Id == ccid, ct);
+                leadComplete = await _context.Leads.AsNoTracking().Include(l => l.AssignedBy).Include(l => l.AssignedAgent).FirstOrDefaultAsync(l => l.Id == ccid, ct);
             }
             else if (!string.IsNullOrWhiteSpace(followup.ContactPhone))
             {
                 var p10 = followup.ContactPhone.Length >= 10 ? followup.ContactPhone[^10..] : followup.ContactPhone;
-                lead = await _context.Leads.AsNoTracking().Include(l => l.AssignedBy).Include(l => l.AssignedAgent).FirstOrDefaultAsync(l => l.CompanyId == followup.CompanyId && l.Phone.Contains(p10), ct);
+                leadComplete = await _context.Leads.AsNoTracking().Include(l => l.AssignedBy).Include(l => l.AssignedAgent).FirstOrDefaultAsync(l => l.CompanyId == followup.CompanyId && l.Phone.Contains(p10), ct);
             }
         }
 
-        return ApiResponse<FollowupResponseDto>.SuccessResult(MapToDto(followup, lead), "Follow-up completed successfully.");
+        return ApiResponse<FollowupResponseDto>.SuccessResult(MapToDto(followup, leadComplete), "Follow-up completed successfully.");
     }
 
     public async Task<ApiResponse<bool>> DeleteFollowupAsync(int id, CancellationToken ct = default)
@@ -856,6 +965,21 @@ public class FollowupService : IFollowupService
         {
             return ApiResponse<bool>.FailureResult("Access denied: GHL Admin has read-only access to IRM follow-up data.");
         }
+
+        var actorDelete = await GetActorInfoAsync(_currentUser.UserId, ct);
+        _context.AuditLogs.Add(new AuditLog
+        {
+            CompanyId = followup.CompanyId,
+            Timestamp = DateTime.UtcNow,
+            ActorName = actorDelete.Name,
+            ActorEmail = actorDelete.Email,
+            Action = "DELETE",
+            EntityType = "Followup",
+            EntityId = followup.Id.ToString(),
+            Module = IsIrmFollowup(followup) ? "IRM" : "Followups",
+            Details = $"{actorDelete.RoleTitle} {actorDelete.Name} deleted follow-up for '{followup.ContactName}'.",
+            Status = "success"
+        });
 
         _context.Followups.Remove(followup);
         await _context.SaveChangesAsync(ct);

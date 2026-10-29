@@ -6,12 +6,13 @@ import { apiClient } from '../../services/apiClient';
 import { DataTable, Column } from '../../components/common/DataTable';
 import { StatusChip } from '../../components/common/StatusChip';
 import { adminUserService } from '../../services/adminUserService';
-import { getCompanyIrms } from '../../services/ghlApiService';
+import { getCompanyIrms, getArchivedLeads } from '../../services/ghlApiService';
 import { storageService } from '../../services/storageService';
+import { markRouteSeen, getArchivedLeadKey } from '../../components/layout/Sidebar';
 import '../Leads/LeadsPage.css';
 
 export const ArchivedLeadsPage: React.FC = () => {
-  const { tenant } = useAuth();
+  const { tenant, user } = useAuth();
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -53,15 +54,39 @@ export const ArchivedLeadsPage: React.FC = () => {
   const loadData = async () => {
     setLoading(true);
     try {
+      let loadedLeads: Lead[] = [];
       const params = new URLSearchParams();
       if (startDate) params.append('startDate', startDate);
       if (endDate) params.append('endDate', endDate);
 
-      const res: any = await apiClient.get(`/ghl/archived-leads?${params.toString()}`);
-      
-      if (res.success) {
-        setLeads(res.data);
+      try {
+        const res: any = await apiClient.get(`/ghl/archived-leads?${params.toString()}`);
+        if (res && res.success && Array.isArray(res.data)) {
+          loadedLeads = res.data;
+        }
+      } catch (err) {
+        console.warn('API /ghl/archived-leads failed, trying fallback getArchivedLeads', err);
       }
+
+      if (!loadedLeads.length && !startDate && !endDate) {
+        loadedLeads = await getArchivedLeads(tenant?.id || tenant?.slug || '1').catch(() => []);
+      }
+
+      if (!loadedLeads.length) {
+        const all = storageService.getLeads(tenant?.id || tenant?.slug || '1') || [];
+        loadedLeads = all.filter((l: any) => {
+          const s = (l.status || '').trim().toLowerCase();
+          return s === 'junk' || s === 'wrong number' || s === 'not interested';
+        });
+      }
+
+      setLeads(loadedLeads);
+
+      // Mark seen immediately so badge disappears as soon as admin views the page
+      const tenantId = tenant?.id || tenant?.slug || '1';
+      const uid = user?.id ? String(user.id) : '';
+      markRouteSeen(tenantId, uid, 'archived-leads', loadedLeads, getArchivedLeadKey);
+      window.dispatchEvent(new Event('nexus_storage_updated'));
     } catch (err) {
       console.error('Failed to load archived leads', err);
     } finally {

@@ -59,6 +59,34 @@ public class LeadService : ILeadService
         return string.IsNullOrEmpty(clean) ? null : clean;
     }
 
+    private async Task<(string Name, string Email, string RoleTitle)> GetActorInfoAsync(int? userId, CancellationToken ct = default)
+    {
+        if (!userId.HasValue || userId.Value <= 0)
+        {
+            var fallbackRole = _currentUser.Role ?? "User";
+            var rTitle = fallbackRole == "sales_executive" ? "Sales Executive" : (fallbackRole == "irm" ? "IRM" : (fallbackRole == "company_admin" || fallbackRole == "super_admin" ? "Admin" : fallbackRole));
+            return (_currentUser.Email ?? "System User", _currentUser.Email ?? "system@ghl.com", rTitle);
+        }
+
+        var user = await _context.Users.Include(u => u.Role).AsNoTracking().FirstOrDefaultAsync(u => u.Id == userId.Value, ct);
+        if (user != null)
+        {
+            var roleCode = user.Role?.Code?.ToLowerInvariant() ?? _currentUser.Role?.ToLowerInvariant() ?? "user";
+            var roleTitle = roleCode switch
+            {
+                "sales_executive" => "Sales Executive",
+                "irm" => "IRM",
+                "company_admin" => "Company Admin",
+                "super_admin" => "Super Admin",
+                "admin" or "ghl_admin" => "Admin",
+                _ => user.Role?.Name ?? "User"
+            };
+            return (user.Name, user.Email, roleTitle);
+        }
+
+        return (_currentUser.Email ?? $"User #{userId.Value}", _currentUser.Email ?? "user@ghl.com", "User");
+    }
+
     private IQueryable<Lead> GetScopedLeadsQuery(LeadFilterDto? filter = null)
     {
         var role = (_currentUser.Role ?? string.Empty).ToLowerInvariant();
@@ -768,6 +796,21 @@ public class LeadService : ILeadService
                     }
 
                     existingLead.UpdatedAt = DateTime.UtcNow;
+                    var actorExisting = await GetActorInfoAsync(callerId, ct);
+                    _context.AuditLogs.Add(new AuditLog
+                    {
+                        CompanyId = existingLead.CompanyId,
+                        Timestamp = DateTime.UtcNow,
+                        ActorName = actorExisting.Name,
+                        ActorEmail = actorExisting.Email,
+                        Action = "LEAD_UPDATED",
+                        EntityType = "Lead",
+                        EntityId = existingLead.Id.ToString(),
+                        LeadId = existingLead.Id,
+                        Module = role == "irm" ? "IRM" : "Leads",
+                        Details = $"{actorExisting.RoleTitle} {actorExisting.Name} updated existing lead '{existingLead.Name}' in active queue (Status: {existingLead.Status}, Priority: {existingLead.Priority}).",
+                        Status = "success"
+                    });
                     await _context.SaveChangesAsync(ct);
 
                     return ApiResponse<LeadResponseDto>.SuccessResult(MapToDto(existingLead), "Existing lead updated and ready in your active list.");
@@ -819,6 +862,24 @@ public class LeadService : ILeadService
 
             await _context.SaveChangesAsync(ct);
 
+            var actor = await GetActorInfoAsync(callerId, ct);
+            var assignedIrmStr = !string.IsNullOrWhiteSpace(dto.AssignedIrmName) ? $", Assigned IRM: {dto.AssignedIrmName}" : "";
+            _context.AuditLogs.Add(new AuditLog
+            {
+                CompanyId = companyId,
+                Timestamp = DateTime.UtcNow,
+                ActorName = actor.Name,
+                ActorEmail = actor.Email,
+                Action = "LEAD_CREATED",
+                EntityType = "Lead",
+                EntityId = lead.Id.ToString(),
+                LeadId = lead.Id,
+                Module = role == "irm" ? "IRM" : "Leads",
+                Details = $"{actor.RoleTitle} {actor.Name} created lead '{lead.Name}' (Phone: {lead.Phone}, Source: {lead.Source}, Status: {lead.Status}, Priority: {lead.Priority}{assignedIrmStr}).",
+                Status = "success"
+            });
+            await _context.SaveChangesAsync(ct);
+
             // Reload agent navigation for DTO
             if (lead.AssignedAgentId.HasValue)
             {
@@ -843,6 +904,10 @@ public class LeadService : ILeadService
             return ApiResponse<LeadResponseDto>.FailureResult("Lead not found or access denied.");
 
         var previousStatus = lead.Status;
+        var previousPriority = lead.Priority;
+        var previousNotes = lead.Notes;
+        var previousAssignedAgentId = lead.AssignedAgentId;
+        User? targetUser = null;
 
         if (dto.Name != null) lead.Name = dto.Name.Trim();
 
@@ -930,7 +995,7 @@ public class LeadService : ILeadService
                 });
             }
 
-            var targetUser = await _context.Users
+            targetUser = await _context.Users
                 .Include(u => u.Role)
                 .FirstOrDefaultAsync(u => u.Id == dto.AssignedAgentId.Value && u.CompanyId == lead.CompanyId, ct);
 
@@ -1020,6 +1085,81 @@ public class LeadService : ILeadService
         lead.CustomFieldsJson = customFields.Count > 0 ? JsonSerializer.Serialize(customFields) : null;
         lead.UpdatedAt = DateTime.UtcNow;
 
+        var changes = new List<string>();
+        if (dto.Status != null && dto.Status.Trim() != previousStatus)
+        {
+            changes.Add($"Status changed from '{previousStatus}' to '{lead.Status}'");
+        }
+        if (irmChanged && (!string.IsNullOrEmpty(dto.AssignedIrmName) || (dto.AssignedIrmId.HasValue && dto.AssignedIrmId.Value > 0)))
+        {
+            changes.Add($"Assigned to IRM {dto.AssignedIrmName ?? $"IRM #{dto.AssignedIrmId}"}");
+        }
+        if (dto.AssignedAgentId.HasValue && dto.AssignedAgentId.Value != previousAssignedAgentId)
+        {
+            var targetAgentName = targetUser?.Name ?? $"Agent #{dto.AssignedAgentId.Value}";
+            changes.Add($"Reassigned to Sales Executive {targetAgentName}");
+        }
+        if (dto.Priority != null && dto.Priority.Trim() != previousPriority)
+        {
+            changes.Add($"Priority changed to '{lead.Priority}'");
+        }
+        if (dto.InvestmentCapacity != null)
+        {
+            changes.Add($"Investment capacity set to '{dto.InvestmentCapacity}'");
+        }
+        if (!string.IsNullOrWhiteSpace(dto.InvestmentAmount))
+        {
+            changes.Add($"Investment amount set to '{dto.InvestmentAmount.Trim()}'");
+        }
+        if (dto.AssetClass != null || dto.PreferredAssetClass != null)
+        {
+            changes.Add($"Preferred asset class set to '{dto.PreferredAssetClass ?? dto.AssetClass}'");
+        }
+        if (dto.NextFollowupDate.HasValue)
+        {
+            changes.Add($"Follow-up date set to {dto.NextFollowupDate.Value:MMM dd, yyyy hh:mm tt}");
+        }
+        if (dto.Notes != null && dto.Notes.Trim() != previousNotes && !string.IsNullOrWhiteSpace(dto.Notes))
+        {
+            changes.Add($"Notes updated: '{dto.Notes.Trim()}'");
+        }
+        if (dto.Phone != null || dto.Email != null || dto.Location != null)
+        {
+            changes.Add($"Contact info updated (Phone: {lead.Phone}, Email: {lead.Email}, Location: {lead.Location})");
+        }
+
+        string actionVerb = "LEAD_UPDATED";
+        if (irmChanged && (!string.IsNullOrEmpty(dto.AssignedIrmName) || (dto.AssignedIrmId.HasValue && dto.AssignedIrmId.Value > 0)))
+        {
+            actionVerb = "ASSIGN_TO_IRM";
+        }
+        else if (dto.Status != null && dto.Status.Trim() != previousStatus)
+        {
+            actionVerb = "STATUS_CHANGE";
+        }
+        else if (dto.AssignedAgentId.HasValue && dto.AssignedAgentId.Value != previousAssignedAgentId)
+        {
+            actionVerb = "REASSIGN";
+        }
+
+        var actor = await GetActorInfoAsync(_currentUser.UserId, ct);
+        var changeText = changes.Count > 0 ? string.Join("; ", changes) : "Lead details updated";
+
+        _context.AuditLogs.Add(new AuditLog
+        {
+            CompanyId = lead.CompanyId,
+            Timestamp = DateTime.UtcNow,
+            ActorName = actor.Name,
+            ActorEmail = actor.Email,
+            Action = actionVerb,
+            EntityType = "Lead",
+            EntityId = lead.Id.ToString(),
+            LeadId = lead.Id,
+            Module = (_currentUser.Role?.ToLowerInvariant() == "irm") ? "IRM" : "Leads",
+            Details = $"{actor.RoleTitle} {actor.Name} updated lead '{lead.Name}': {changeText}.",
+            Status = "success"
+        });
+
         await _context.SaveChangesAsync(ct);
 
         if (isNewCustomer && newCustomer?.HandoverId.HasValue == true)
@@ -1098,6 +1238,23 @@ public class LeadService : ILeadService
         lead.Status = "Converted";
         lead.UpdatedAt = DateTime.UtcNow;
 
+        var actor = await GetActorInfoAsync(_currentUser.UserId, ct);
+        _context.AuditLogs.Add(new AuditLog
+        {
+            CompanyId = companyId,
+            Timestamp = DateTime.UtcNow,
+            ActorName = actor.Name,
+            ActorEmail = actor.Email,
+            Action = "CONVERT",
+            EntityType = "Lead",
+            EntityId = lead.Id.ToString(),
+            LeadId = lead.Id,
+            CustomerId = customer.Id,
+            Module = "Leads",
+            Details = $"{actor.RoleTitle} {actor.Name} converted lead '{lead.Name}' to Customer 360 (Customer ID: {customer.Id}, Deal Value: ₹{(dto.DealValue ?? 0):N0}).",
+            Status = "success"
+        });
+
         await _context.SaveChangesAsync(ct);
 
         if (isNewCustomer && customer.HandoverId.HasValue)
@@ -1162,6 +1319,7 @@ public class LeadService : ILeadService
         if (lead == null)
             return ApiResponse<LeadResponseDto>.FailureResult("Lead not found or access denied.");
 
+        var oldStatus = lead.Status;
         lead.Status = "Follow-up Required";
         lead.UpdatedAt = DateTime.UtcNow;
 
@@ -1209,6 +1367,22 @@ public class LeadService : ILeadService
         };
         _context.Followups.Add(freshFollowup);
         lead.NextFollowupDate = candidateTime;
+
+        var actor = await GetActorInfoAsync(_currentUser.UserId, ct);
+        _context.AuditLogs.Add(new AuditLog
+        {
+            CompanyId = lead.CompanyId,
+            Timestamp = DateTime.UtcNow,
+            ActorName = actor.Name,
+            ActorEmail = actor.Email,
+            Action = "REENGAGE",
+            EntityType = "Lead",
+            EntityId = lead.Id.ToString(),
+            LeadId = lead.Id,
+            Module = "Leads",
+            Details = $"{actor.RoleTitle} {actor.Name} re-engaged lead '{lead.Name}' from '{oldStatus}' to 'Follow-up Required' and scheduled follow-up for {candidateTime:g}.",
+            Status = "success"
+        });
 
         await _context.SaveChangesAsync(ct);
 
@@ -1408,6 +1582,22 @@ public class LeadService : ILeadService
         var lead = await FindScopedLeadAsync(id, ct);
         if (lead == null) return ApiResponse<object>.FailureResult("Lead not found or access denied.");
 
+        var actor = await GetActorInfoAsync(_currentUser.UserId, ct);
+        _context.AuditLogs.Add(new AuditLog
+        {
+            CompanyId = lead.CompanyId,
+            Timestamp = DateTime.UtcNow,
+            ActorName = actor.Name,
+            ActorEmail = actor.Email,
+            Action = "DELETE",
+            EntityType = "Lead",
+            EntityId = lead.Id.ToString(),
+            LeadId = lead.Id,
+            Module = "Leads",
+            Details = $"{actor.RoleTitle} {actor.Name} deleted lead '{lead.Name}' (Phone: {lead.Phone}).",
+            Status = "success"
+        });
+
         _context.Leads.Remove(lead);
         await _context.SaveChangesAsync(ct);
 
@@ -1456,6 +1646,25 @@ public class LeadService : ILeadService
                     : $"Skipped '{item.Name}': {createResult.Message}";
                 result.SkipReasons.Add(reason);
             }
+        }
+
+        if (result.Created > 0)
+        {
+            var actor = await GetActorInfoAsync(_currentUser.UserId, ct);
+            _context.AuditLogs.Add(new AuditLog
+            {
+                CompanyId = _currentUser.CompanyId ?? 1,
+                Timestamp = DateTime.UtcNow,
+                ActorName = actor.Name,
+                ActorEmail = actor.Email,
+                Action = "LEADS_BULK_IMPORTED",
+                EntityType = "Lead",
+                EntityId = $"Batch-{DateTime.UtcNow:yyyyMMddHHmmss}",
+                Details = $"{actor.RoleTitle} {actor.Name} bulk imported {result.Created} leads via CSV ({result.Skipped} skipped).",
+                Module = "Leads",
+                Status = "success"
+            });
+            await _context.SaveChangesAsync(ct);
         }
 
         return ApiResponse<BulkImportLeadsResultDto>.SuccessResult(result,

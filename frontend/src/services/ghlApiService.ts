@@ -423,6 +423,7 @@ function mapAuditLog(l: Record<string, any>): AuditLog {
     action: l.action ?? '',
     entityType: l.entityType ?? '',
     entityId: sid(l.entityId),
+    entityName: l.entityName ?? undefined,
     companyId: sid(l.companyId),
     details: l.details ?? '',
     ipAddress: l.ipAddress,
@@ -447,6 +448,28 @@ export async function getAuditLogs(
   );
   if (!res.success || !res.data) return [];
   return res.data.items.map(mapAuditLog);
+}
+
+export async function createAuditLog(payload: {
+  action: string;
+  entityType: string;
+  entityId: string;
+  entityName?: string;
+  leadId?: number;
+  customerId?: number;
+  details: string;
+  module?: string;
+  status?: string;
+}): Promise<AuditLog | null> {
+  try {
+    const res = await apiClient.post<any>('/audit-logs', payload);
+    if (res.success && res.data) {
+      return mapAuditLog(res.data);
+    }
+  } catch (err) {
+    console.warn('Failed to dispatch audit log to backend:', err);
+  }
+  return null;
 }
 
 // ══════════════════════════════════════════════════════════════════════════════
@@ -488,8 +511,8 @@ function mapLead(l: Record<string, any>): Lead {
     isReturnedFromHandover: l.isReturnedFromHandover ?? (l.customFields?.returnedFromHandover === 'true' || l.customFields?.returnedFromHandover === true) ?? false,
     returnedFromCoveringUserName: l.returnedFromCoveringUserName ?? l.customFields?.returnedFromCoveringUserName ?? undefined,
     returnedAt: l.returnedAt ?? l.customFields?.returnedAt ?? undefined,
-    nextFollowupDate: l.nextFollowupDate,
-    createdAt: l.createdAt ?? new Date().toISOString(),
+    createdAt: l.createdAt ?? l.CreatedAt ?? (l.updatedAt ? l.updatedAt : undefined) ?? (l.UpdatedAt ? l.UpdatedAt : undefined) ?? '2026-01-01T00:00:00.000Z',
+    updatedAt: l.updatedAt ?? l.UpdatedAt ?? l.createdAt ?? l.CreatedAt ?? undefined,
     notes: l.notes ?? '',
     customFields: l.customFields ?? {},
   };
@@ -552,6 +575,48 @@ export async function getJunkLeads(companyId?: string): Promise<Lead[]> {
     return true;
   });
   return unique.map(mapLead);
+}
+
+export async function getArchivedLeads(companyId?: string): Promise<Lead[]> {
+  if (isMockMode()) {
+    const all = storageService.getLeads(companyId);
+    return all.filter(l => {
+      const s = (l.status || '').trim().toLowerCase();
+      return s === 'junk' || s === 'wrong number' || s === 'not interested';
+    });
+  }
+  try {
+    const res: any = await apiClient.get('/ghl/archived-leads');
+    if (res && res.success && Array.isArray(res.data)) {
+      return res.data.map(mapLead);
+    }
+    if (Array.isArray(res)) {
+      return res.map(mapLead);
+    }
+    if (Array.isArray(res?.data)) {
+      return res.data.map(mapLead);
+    }
+  } catch (err) {
+    console.warn('[ghlApiService] /ghl/archived-leads failed, falling back to not-interested and junk endpoints', err);
+  }
+
+  try {
+    const [notInterested, junk] = await Promise.all([
+      getNotInterestedLeads(companyId).catch(() => []),
+      getJunkLeads(companyId).catch(() => []),
+    ]);
+    const map = new Map<string, Lead>();
+    [...notInterested, ...junk].forEach(l => {
+      if (l.id) map.set(String(l.id), l);
+    });
+    return Array.from(map.values());
+  } catch {
+    const all = storageService.getLeads(companyId);
+    return all.filter(l => {
+      const s = (l.status || '').trim().toLowerCase();
+      return s === 'junk' || s === 'wrong number' || s === 'not interested';
+    });
+  }
 }
 
 export async function saveLead(lead: Lead): Promise<Lead> {

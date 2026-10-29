@@ -17,6 +17,7 @@ import { Drawer } from '../../components/common/Drawer';
 import { Timeline, TimelineEvent } from '../../components/common/Timeline';
 import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawerContent';
 import { canPlaceCalls } from '../../utils/agentRoleUtils';
+import { markRouteSeen } from '../../components/layout/Sidebar';
 import './NotInterestedPage.css';
 
 export const NotInterestedPage: React.FC = () => {
@@ -59,6 +60,11 @@ export const NotInterestedPage: React.FC = () => {
 
       setLeads(scopedLeads);
       setCalls(allCalls);
+
+      const tenantId = tenant?.id || tenant?.slug || '1';
+      const uid = user?.id ? String(user.id) : '';
+      markRouteSeen(tenantId, uid, 'not-interested', scopedLeads, (l) => String(l.id || l.phone || l.name));
+      window.dispatchEvent(new Event('nexus_storage_updated'));
     } catch (err) {
       console.error('Failed to load not-interested leads', err);
     }

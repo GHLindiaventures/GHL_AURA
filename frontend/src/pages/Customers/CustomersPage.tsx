@@ -42,6 +42,7 @@ import { DocumentList } from '../../components/common/DocumentList';
 import { Modal } from '../../components/common/Modal';
 import { Timeline, TimelineEvent } from '../../components/common/Timeline';
 import { formatSmartScheduleDate } from '../../utils/dateUtils';
+import { markRouteSeen, markSeenIds } from '../../components/layout/Sidebar';
 
 import './CustomersPage.css';
 
@@ -253,6 +254,10 @@ export const CustomersPage: React.FC = () => {
         getCompanyIrms(tenant?.id).catch(() => storageService.getIrms(tenant?.id)),
       ]);
       setCustomers(custs);
+      const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+      const tenantId = tenant?.id || tenant?.slug || 'ghl';
+      const getCustKey = (c: any) => String(c.id || c.customerId || c.phone || c.email || c.name);
+      markRouteSeen(tenantId, uid, 'customers', custs, getCustKey);
       setCalls(cCalls);
       setFollowups(cFollowups);
       setDeals(cDeals);

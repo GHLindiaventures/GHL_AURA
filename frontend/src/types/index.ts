@@ -581,6 +581,7 @@ export interface AuditLog {
   action: string;
   entityType: string;
   entityId: string;
+  entityName?: string;
   companyId?: string;
   companyName?: string;
   details: string;

@@ -5,6 +5,7 @@ using backend.DTOs.Common;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
+using backend.Models.Entities;
 
 namespace backend.Controllers.GhlAdmin;
 
@@ -16,7 +17,7 @@ namespace backend.Controllers.GhlAdmin;
 /// </summary>
 [ApiController]
 [Route("api/audit-logs")]
-[Authorize(Roles = "company_admin,super_admin")]
+[Authorize]
 public class AuditLogsController : ControllerBase
 {
     private readonly ApplicationDbContext _db;
@@ -30,6 +31,7 @@ public class AuditLogsController : ControllerBase
 
     // ── GET /api/audit-logs ───────────────────────────────────────────────────
     [HttpGet]
+    [Authorize(Roles = "company_admin,super_admin,admin,ghl_admin")]
     public async Task<ActionResult<ApiResponse<PagedResult<AuditLogResponseDto>>>> GetAuditLogs(
         [FromQuery] string? companyId,
         [FromQuery] string? entityType,
@@ -192,8 +194,214 @@ public class AuditLogsController : ControllerBase
             }
         }
 
+        // Resolve Target Entity Names so Admin knows who the target person is
+        var leadIdsToFetch = new HashSet<int>();
+        var kycIdsToFetch = new HashSet<int>();
+        var customerIdsToFetch = new HashSet<int>();
+        var investorIdsToFetch = new HashSet<int>();
+        var followupIdsToFetch = new HashSet<int>();
+        var callIdsToFetch = new HashSet<int>();
+        var consultationIdsToFetch = new HashSet<int>();
+        var leaveIdsToFetch = new HashSet<int>();
+        var handoverIdsToFetch = new HashSet<int>();
+        var dealIdsToFetch = new HashSet<int>();
+        var targetUserIdsToFetch = new HashSet<int>();
+
+        foreach (var item in items)
+        {
+            if (int.TryParse(item.EntityId, out var eid) && eid > 0)
+            {
+                var et = (item.EntityType ?? string.Empty).Trim().ToLowerInvariant();
+                if (et == "lead" || et == "leads") leadIdsToFetch.Add(eid);
+                else if (et == "investorkyc" || et == "kyc") kycIdsToFetch.Add(eid);
+                else if (et == "customer" || et == "customers") customerIdsToFetch.Add(eid);
+                else if (et == "investor" || et == "investors" || et == "ghlinvestor") investorIdsToFetch.Add(eid);
+                else if (et == "followup" || et == "followups") followupIdsToFetch.Add(eid);
+                else if (et == "callrecord" || et == "call" || et == "callrecords") callIdsToFetch.Add(eid);
+                else if (et == "consultation" || et == "consultations") consultationIdsToFetch.Add(eid);
+                else if (et == "leaverequest" || et == "leave" || et == "leaverequests") leaveIdsToFetch.Add(eid);
+                else if (et == "workhandover" || et == "handover" || et == "workhandovers") handoverIdsToFetch.Add(eid);
+                else if (et == "ghldeal" || et == "deal" || et == "deals" || et == "opportunity") dealIdsToFetch.Add(eid);
+                else if (et == "user" || et == "users") targetUserIdsToFetch.Add(eid);
+            }
+        }
+
+        var leadNames = leadIdsToFetch.Count > 0
+            ? await _db.Leads.AsNoTracking().Where(l => leadIdsToFetch.Contains(l.Id)).Select(l => new { l.Id, l.Name }).ToDictionaryAsync(l => l.Id, l => l.Name, ct)
+            : new Dictionary<int, string>();
+
+        var kycNames = kycIdsToFetch.Count > 0
+            ? await _db.InvestorKycs.AsNoTracking().Where(k => kycIdsToFetch.Contains(k.Id)).Select(k => new { k.Id, k.InvestorName }).ToDictionaryAsync(k => k.Id, k => k.InvestorName, ct)
+            : new Dictionary<int, string>();
+
+        var customerNames = customerIdsToFetch.Count > 0
+            ? await _db.Customers.AsNoTracking().Where(c => customerIdsToFetch.Contains(c.Id)).Select(c => new { c.Id, c.Name }).ToDictionaryAsync(c => c.Id, c => c.Name, ct)
+            : new Dictionary<int, string>();
+
+        var investorNames = investorIdsToFetch.Count > 0
+            ? await _db.Investors.AsNoTracking().Where(i => investorIdsToFetch.Contains(i.Id)).Select(i => new { i.Id, i.Name }).ToDictionaryAsync(i => i.Id, i => i.Name, ct)
+            : new Dictionary<int, string>();
+
+        var followupNames = followupIdsToFetch.Count > 0
+            ? await _db.Followups.AsNoTracking().Where(f => followupIdsToFetch.Contains(f.Id)).Select(f => new { f.Id, f.ContactName }).ToDictionaryAsync(f => f.Id, f => f.ContactName, ct)
+            : new Dictionary<int, string>();
+
+        var callNames = callIdsToFetch.Count > 0
+            ? await _db.CallRecords.AsNoTracking().Where(c => callIdsToFetch.Contains(c.Id)).Select(c => new { c.Id, c.ContactName }).ToDictionaryAsync(c => c.Id, c => c.ContactName, ct)
+            : new Dictionary<int, string>();
+
+        var consultationNames = consultationIdsToFetch.Count > 0
+            ? await _db.Consultations.AsNoTracking().Where(c => consultationIdsToFetch.Contains(c.Id)).Select(c => new { c.Id, Name = c.InvestorName }).ToDictionaryAsync(c => c.Id, c => c.Name, ct)
+            : new Dictionary<int, string>();
+
+        var leaveNames = leaveIdsToFetch.Count > 0
+            ? await _db.LeaveRequests.AsNoTracking().Include(l => l.User).Where(l => leaveIdsToFetch.Contains(l.Id)).Select(l => new { l.Id, UserName = l.User != null ? l.User.Name : $"User #{l.UserId}" }).ToDictionaryAsync(l => l.Id, l => l.UserName, ct)
+            : new Dictionary<int, string>();
+
+        var handoverNames = handoverIdsToFetch.Count > 0
+            ? await _db.WorkHandovers.AsNoTracking().Include(h => h.OriginalUser).Include(h => h.CoveringUser).Where(h => handoverIdsToFetch.Contains(h.Id)).Select(h => new { h.Id, Name = $"{(h.OriginalUser != null ? h.OriginalUser.Name : "User #" + h.OriginalUserId)} -> {(h.CoveringUser != null ? h.CoveringUser.Name : "User #" + h.CoveringUserId)}" }).ToDictionaryAsync(h => h.Id, h => h.Name, ct)
+            : new Dictionary<int, string>();
+
+        var dealNames = dealIdsToFetch.Count > 0
+            ? await _db.GhlDeals.AsNoTracking().Where(d => dealIdsToFetch.Contains(d.Id)).Select(d => new { d.Id, Name = !string.IsNullOrWhiteSpace(d.CustomerName) ? d.CustomerName : d.Title }).ToDictionaryAsync(d => d.Id, d => d.Name, ct)
+            : new Dictionary<int, string>();
+
+        var targetUserNames = targetUserIdsToFetch.Count > 0
+            ? await _db.Users.AsNoTracking().Where(u => targetUserIdsToFetch.Contains(u.Id)).Select(u => new { u.Id, u.Name }).ToDictionaryAsync(u => u.Id, u => u.Name, ct)
+            : new Dictionary<int, string>();
+
+        foreach (var item in items)
+        {
+            if (int.TryParse(item.EntityId, out var eid) && eid > 0)
+            {
+                var et = (item.EntityType ?? string.Empty).Trim().ToLowerInvariant();
+                if ((et == "lead" || et == "leads") && leadNames.TryGetValue(eid, out var ln)) item.EntityName = ln;
+                else if ((et == "investorkyc" || et == "kyc") && kycNames.TryGetValue(eid, out var kn)) item.EntityName = kn;
+                else if ((et == "customer" || et == "customers") && customerNames.TryGetValue(eid, out var cn)) item.EntityName = cn;
+                else if ((et == "investor" || et == "investors" || et == "ghlinvestor") && investorNames.TryGetValue(eid, out var iname)) item.EntityName = iname;
+                else if ((et == "followup" || et == "followups") && followupNames.TryGetValue(eid, out var fn)) item.EntityName = fn;
+                else if ((et == "callrecord" || et == "call" || et == "callrecords") && callNames.TryGetValue(eid, out var crn)) item.EntityName = crn;
+                else if ((et == "consultation" || et == "consultations") && consultationNames.TryGetValue(eid, out var csn)) item.EntityName = csn;
+                else if ((et == "leaverequest" || et == "leave" || et == "leaverequests") && leaveNames.TryGetValue(eid, out var lrn)) item.EntityName = lrn;
+                else if ((et == "workhandover" || et == "handover" || et == "workhandovers") && handoverNames.TryGetValue(eid, out var hon)) item.EntityName = hon;
+                else if ((et == "ghldeal" || et == "deal" || et == "deals" || et == "opportunity") && dealNames.TryGetValue(eid, out var dn)) item.EntityName = dn;
+                else if ((et == "user" || et == "users") && targetUserNames.TryGetValue(eid, out var un)) item.EntityName = un;
+            }
+
+            if (string.IsNullOrWhiteSpace(item.EntityName))
+            {
+                item.EntityName = ExtractPersonNameFromDetails(item.Details);
+            }
+        }
+
         return Ok(ApiResponse<PagedResult<AuditLogResponseDto>>.SuccessResult(
             PagedResult<AuditLogResponseDto>.Create(items, total, page, pageSize),
             "Audit logs retrieved."));
     }
+
+    private static string? ExtractPersonNameFromDetails(string? details)
+    {
+        if (string.IsNullOrWhiteSpace(details)) return null;
+
+        var m = System.Text.RegularExpressions.Regex.Match(details, @"for investor ['""]([^'""]+)['""]", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (m.Success && !string.IsNullOrWhiteSpace(m.Groups[1].Value)) return m.Groups[1].Value.Trim();
+
+        m = System.Text.RegularExpressions.Regex.Match(details, @"corrected for\s+([A-Za-z0-9_ -]+?)(?:\s*\.|\s*,|$)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (m.Success && !string.IsNullOrWhiteSpace(m.Groups[1].Value)) return m.Groups[1].Value.Trim();
+
+        m = System.Text.RegularExpressions.Regex.Match(details, @"(?:assigned|created|updated)\s+lead ['""]([^'""]+)['""]", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (m.Success && !string.IsNullOrWhiteSpace(m.Groups[1].Value)) return m.Groups[1].Value.Trim();
+
+        m = System.Text.RegularExpressions.Regex.Match(details, @"lead record\s+([^(]+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (m.Success && !string.IsNullOrWhiteSpace(m.Groups[1].Value)) return m.Groups[1].Value.Trim();
+
+        m = System.Text.RegularExpressions.Regex.Match(details, @"(?:investor|contact)\s+['""]([^'""]+)['""]", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (m.Success && !string.IsNullOrWhiteSpace(m.Groups[1].Value)) return m.Groups[1].Value.Trim();
+
+        m = System.Text.RegularExpressions.Regex.Match(details, @"leave request (?:for|by|from)\s+([A-Za-z0-9_ -]+?)(?:\s*\(|\.|\s*,|$)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (m.Success && !string.IsNullOrWhiteSpace(m.Groups[1].Value)) return m.Groups[1].Value.Trim();
+
+        m = System.Text.RegularExpressions.Regex.Match(details, @"handover from\s+([A-Za-z0-9_ -]+?)\s+to", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+        if (m.Success && !string.IsNullOrWhiteSpace(m.Groups[1].Value)) return m.Groups[1].Value.Trim();
+
+        return null;
+    }
+
+    // ── POST /api/audit-logs ──────────────────────────────────────────────────
+    [HttpPost]
+    [Authorize(Roles = "sales_executive,irm,company_admin,super_admin,admin,ghl_admin")]
+    public async Task<ActionResult<ApiResponse<AuditLogResponseDto>>> CreateAuditLog(
+        [FromBody] CreateAuditLogRequestDto dto,
+        CancellationToken ct = default)
+    {
+        var callerId = _currentUser.UserId;
+        var companyId = _currentUser.CompanyId;
+
+        User? callerUser = null;
+        if (callerId.HasValue && callerId.Value > 0)
+        {
+            callerUser = await _db.Users.Include(u => u.Company).FirstOrDefaultAsync(u => u.Id == callerId.Value, ct);
+        }
+
+        int finalCompanyId = companyId ?? callerUser?.CompanyId ?? 1;
+        var actorName = callerUser?.Name ?? User.FindFirst("name")?.Value ?? "User";
+        var actorEmail = callerUser?.Email ?? _currentUser.Email ?? "user@ghl.com";
+
+        var log = new AuditLog
+        {
+            CompanyId = finalCompanyId,
+            Timestamp = DateTime.UtcNow,
+            ActorName = actorName,
+            ActorEmail = actorEmail,
+            Action = string.IsNullOrWhiteSpace(dto.Action) ? "ACTIVITY" : dto.Action.Trim(),
+            EntityType = string.IsNullOrWhiteSpace(dto.EntityType) ? "General" : dto.EntityType.Trim(),
+            EntityId = dto.EntityId ?? string.Empty,
+            LeadId = dto.LeadId,
+            CustomerId = dto.CustomerId,
+            Details = dto.Details ?? string.Empty,
+            Module = dto.Module,
+            IpAddress = HttpContext.Connection.RemoteIpAddress?.ToString(),
+            UserAgent = Request.Headers["User-Agent"].ToString(),
+            Status = dto.Status ?? "success"
+        };
+
+        _db.AuditLogs.Add(log);
+        await _db.SaveChangesAsync(ct);
+
+        string? resolvedEntityName = dto.EntityName;
+        if (string.IsNullOrWhiteSpace(resolvedEntityName) && dto.LeadId.HasValue && dto.LeadId.Value > 0)
+        {
+            var l = await _db.Leads.AsNoTracking().FirstOrDefaultAsync(x => x.Id == dto.LeadId.Value, ct);
+            resolvedEntityName = l?.Name;
+        }
+        else if (string.IsNullOrWhiteSpace(resolvedEntityName) && dto.CustomerId.HasValue && dto.CustomerId.Value > 0)
+        {
+            var c = await _db.Customers.AsNoTracking().FirstOrDefaultAsync(x => x.Id == dto.CustomerId.Value, ct);
+            resolvedEntityName = c?.Name;
+        }
+        if (string.IsNullOrWhiteSpace(resolvedEntityName))
+        {
+            resolvedEntityName = ExtractPersonNameFromDetails(dto.Details);
+        }
+
+        return Ok(ApiResponse<AuditLogResponseDto>.SuccessResult(new AuditLogResponseDto
+        {
+            Id = log.Id,
+            CompanyId = log.CompanyId,
+            CompanyName = callerUser?.Company?.Name ?? "GHL India Ventures",
+            Timestamp = log.Timestamp,
+            ActorName = log.ActorName,
+            ActorEmail = log.ActorEmail,
+            Action = log.Action,
+            EntityType = log.EntityType,
+            EntityId = log.EntityId,
+            EntityName = resolvedEntityName,
+            Details = log.Details,
+            IpAddress = log.IpAddress,
+            UserAgent = log.UserAgent,
+            Module = log.Module,
+            Status = log.Status
+        }, "Audit log recorded successfully."));
+    }
 }
+

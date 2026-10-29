@@ -34,6 +34,7 @@ import { Drawer } from '../../components/common/Drawer';
 import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawerContent';
 import { formatSmartScheduleDate } from '../../utils/dateUtils';
 import { canPlaceCalls } from '../../utils/agentRoleUtils';
+import { markRouteSeen, markSeenIds } from '../../components/layout/Sidebar';
 import './ConsultationsPage.css';
 
 // ─── Status Options ──────────────────────────────────────────────────────────
@@ -156,6 +157,10 @@ export const ConsultationsPage: React.FC = () => {
         loadAgentDirectory(tenant?.id, user?.id),
       ]);
       setConsultations(consList || []);
+      const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+      const tenantId = tenant?.id || tenant?.slug || 'ghl';
+      const getConsKey = (c: any) => String(c.id || c.consultationId || `${c.clientName || c.contactPhone}_${c.dateTime || c.date || ''}`);
+      markRouteSeen(tenantId, uid, 'consultations', consList || [], getConsKey);
       setInvestors(invList || []);
       setFollowups(fList || []);
       setLeads(lList || []);

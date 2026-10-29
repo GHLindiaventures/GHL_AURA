@@ -664,6 +664,34 @@ public class SalesExecutiveCallsController : ControllerBase
             // Suppress if navigation is already loaded or in test contexts
         }
 
+        var callerName = call.Agent?.Name ?? User.FindFirst("name")?.Value ?? "Agent";
+        var callerEmail = call.Agent?.Email ?? _currentUser.Email ?? "agent@ghl.com";
+        var isIrmCaller = role == "irm" || (call.Agent?.Role?.Code == "irm");
+        var callerRoleTitle = isIrmCaller ? "IRM" : "Sales Executive";
+
+        var minutes = call.Duration / 60;
+        var seconds = call.Duration % 60;
+        var detailsMsg = $"{callerRoleTitle} {callerName} logged {call.Direction} call ({minutes}m {seconds}s) with lead '{call.ContactName}' ({call.ContactPhone}) - Disposition: '{call.Disposition}'" +
+                         (!string.IsNullOrWhiteSpace(call.Notes) ? $", Notes: {call.Notes}" : "") +
+                         (!string.IsNullOrWhiteSpace(call.Reason) ? $", Reason: {call.Reason}" : "");
+
+        _context.AuditLogs.Add(new AuditLog
+        {
+            CompanyId = call.CompanyId,
+            Timestamp = DateTime.UtcNow,
+            ActorName = callerName,
+            ActorEmail = callerEmail,
+            Action = "CALL_LOGGED",
+            EntityType = "CallRecord",
+            EntityId = call.Id.ToString(),
+            LeadId = call.LeadId,
+            CustomerId = call.CustomerId,
+            Module = isIrmCaller ? "IRM" : "Leads",
+            Details = detailsMsg,
+            Status = "success"
+        });
+        await _context.SaveChangesAsync(ct);
+
         var response = MapToResponseDto(call);
 
         return Ok(ApiResponse<CallRecordResponseDto>.SuccessResult(response, "Call record logged successfully."));
@@ -729,6 +757,33 @@ public class SalesExecutiveCallsController : ControllerBase
                 return Unauthorized(result);
             return BadRequest(result);
         }
+
+        var callerDispoName = User.FindFirst("name")?.Value ?? "Agent";
+        var callerDispoEmail = _currentUser.Email ?? "agent@ghl.com";
+        var isIrmDispoCaller = role == "irm";
+        var callerDispoRoleTitle = isIrmDispoCaller ? "IRM" : "Sales Executive";
+        if (result.Data != null)
+        {
+            _context.AuditLogs.Add(new AuditLog
+            {
+                CompanyId = result.Data.CompanyId,
+                Timestamp = DateTime.UtcNow,
+                ActorName = callerDispoName,
+                ActorEmail = callerDispoEmail,
+                Action = "CALL_DISPOSITION",
+                EntityType = "CallRecord",
+                EntityId = result.Data.Id.ToString(),
+                LeadId = result.Data.LeadId,
+                CustomerId = result.Data.CustomerId,
+                Module = isIrmDispoCaller ? "IRM" : "Leads",
+                Details = $"{callerDispoRoleTitle} {callerDispoName} processed call disposition '{result.Data.Disposition}' for lead/contact '{result.Data.ContactName}'" +
+                          (!string.IsNullOrWhiteSpace(result.Data.Notes) ? $", Notes: {result.Data.Notes}" : "") +
+                          (!string.IsNullOrWhiteSpace(result.Data.Reason) ? $", Reason: {result.Data.Reason}" : ""),
+                Status = "success"
+            });
+            await _context.SaveChangesAsync(ct);
+        }
+
         return Ok(result);
     }
 
