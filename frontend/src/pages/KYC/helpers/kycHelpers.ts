@@ -1,8 +1,8 @@
 import { Deal, Lead, Customer } from '../../../types';
-import { normalizeLegacyKycStatus } from '../../../services/kycService';
-import { NomineeItem } from '../../../utils/kycValidators';
+import { normalizeLegacyKycStatus, getCustomerKycStatus, CustomerKycStatus } from '../../../services/kycService';
+import { NomineeItem, validateKycStep } from '../../../utils/kycValidators';
 import { EXTERNAL_VERIFICATION_LINKS } from '../../../constants/externalLinks';
-import type { KYCFormData } from '../KYCPage';
+import type { KYCFormData, KycDoc } from '../KYCPage';
 
 /**
  * Check if a toast message indicates an error or failure
@@ -237,4 +237,465 @@ export const buildAssistedKycPayload = (
     isFinalSubmit: options.isFinalSubmit,
   };
 };
+
+/**
+ * Format raw byte size into human readable string (B, KB, MB)
+ */
+export const formatBytes = (bytes: number): string => {
+  if (bytes === 0) return '0 B';
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
+/**
+ * Deterministically format or hash deal ID to 6-digit GHL identifier
+ */
+export const getGhlId = (deal: Deal): string => {
+  const digits = (deal.id || '').replace(/\D/g, '');
+  if (digits.length >= 6) return `GHL${digits.slice(-6)}`;
+  let hash = 0;
+  for (let i = 0; i < (deal.id || '').length; i++) {
+    hash = (hash << 5) - hash + deal.id.charCodeAt(i);
+    hash = Math.trunc(hash);
+  }
+  const clean = Math.abs(hash).toString().padEnd(6, '7').slice(0, 6);
+  return `GHL${clean}`;
+};
+
+/**
+ * Format deal created timestamp into Month Year string
+ */
+export const getJoinedDate = (deal: Deal): string => {
+  const d = deal.createdAt ? new Date(deal.createdAt) : new Date();
+  return d.toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+};
+
+/**
+ * Calculate KYC profile completion percentage (minimum 25%)
+ */
+export const calculateProfileCompletion = (
+  data: Partial<KYCFormData> | null,
+  deal: Deal
+): number => {
+  if (!data) return 25;
+  const fields = [
+    data.investorName || deal.customerName,
+    data.phone || deal.phone,
+    data.email || deal.email,
+    data.panNumber,
+    data.dob,
+    data.city || deal.location,
+    data.occupation,
+    data.aadhaarNumber,
+    data.address,
+    data.courierAddress,
+    data.bankName,
+    data.accountNumber,
+    data.ifscCode,
+    data.nominees?.[0]?.name,
+    data.nominees?.[0]?.relationship,
+    data.hasNoDemat || data.dematAccountNumber || data.dematDpId,
+  ];
+  const filled = fields.filter(f => Boolean(f && String(f).trim() && f !== 'Not provided')).length;
+  const pct = Math.round((filled / fields.length) * 100);
+  return Math.max(25, Math.min(100, pct));
+};
+
+export interface StepValidationResult {
+  isValid: boolean;
+  errors: Record<string, string>;
+  summary: string | null;
+}
+
+/**
+ * Validate 5-step KYC form data including required document attachments for Assisted KYC
+ */
+export const validateKycStepWithDocs = (
+  step: number,
+  formData: KYCFormData,
+  isDocAttached: (doc: KycDoc | null | undefined) => boolean = doc => Boolean(doc?.url)
+): StepValidationResult => {
+  const errs = validateKycStep(step as 1 | 2 | 3 | 4 | 5, formData);
+
+  // In Assisted KYC flow, validate document uploads:
+  if (step === 2) {
+    if (!formData.aadhaarDoc) {
+      errs.aadhaarDoc = 'Upload Aadhaar is required';
+    } else if (!isDocAttached(formData.aadhaarDoc)) {
+      errs.aadhaarDoc = 'Please re-attach the Aadhaar document.';
+    }
+    if (!formData.panDoc) {
+      errs.panDoc = 'Upload PAN is required';
+    } else if (!isDocAttached(formData.panDoc)) {
+      errs.panDoc = 'Please re-attach the PAN document.';
+    }
+    if (!formData.photoDoc) {
+      errs.photoDoc = 'Upload Investor Face Photo is required for biometric verification';
+    } else if (!isDocAttached(formData.photoDoc)) {
+      errs.photoDoc = 'Please re-attach the Investor Face Photo.';
+    }
+  }
+  if (step === 3) {
+    if (!formData.bankProofDoc) {
+      errs.bankProofDoc = 'Upload Bank Statement / Cheque / Passbook is required';
+    } else if (!isDocAttached(formData.bankProofDoc)) {
+      errs.bankProofDoc = 'Please re-attach the Bank Statement / Cheque.';
+    }
+  }
+  if (step === 4) {
+    if (!formData.hasNoDemat) {
+      if (!formData.dematDoc) {
+        errs.dematDoc = 'Upload Demat Statement is required';
+      } else if (!isDocAttached(formData.dematDoc)) {
+        errs.dematDoc = 'Please re-attach the Demat Statement.';
+      }
+    }
+  }
+
+  const count = Object.keys(errs).length;
+  const summary = count > 0 ? `Please correct the ${count} required field(s) marked in red below before continuing.` : null;
+  return {
+    isValid: count === 0,
+    errors: errs,
+    summary,
+  };
+};
+
+/**
+ * Locate matching backend KYC record from server/database map by ID, investorId, dealId, phone, email, or name
+ */
+export const findBackendKyc = (
+  deal: Deal | null | undefined,
+  dbKycsMap: Record<string, any> = {},
+  companyId?: string | number
+): any => {
+  if (!deal) return null;
+  const allKycs: any[] = Array.from(new Set(Object.values(dbKycsMap || {})));
+  const compIdStr = companyId ? String(companyId) : deal.companyId ? String(deal.companyId) : '';
+
+  // 1. Stable direct KYC record ID
+  const directKycId = (deal as any).kycId || (deal as any).kycRecordId;
+  if (directKycId) {
+    const byId = dbKycsMap[`id_${directKycId}`] || allKycs.find(k => k && k.id === Number(directKycId));
+    if (byId) return byId;
+  }
+
+  // 2. Stable Investor ID (deal.customerId / deal.investorId) and company scope
+  const investorIdNum = deal.customerId ? Number(deal.customerId) : (deal as any).investorId ? Number((deal as any).investorId) : 0;
+  if (investorIdNum > 0) {
+    if (compIdStr) {
+      const scopedMatch = allKycs.find(
+        k => k && k.investorId === investorIdNum && (!k.companyId || String(k.companyId) === compIdStr)
+      );
+      if (scopedMatch) return scopedMatch;
+    }
+    const invMatch = dbKycsMap[`inv_${investorIdNum}`] || allKycs.find(k => k && k.investorId === investorIdNum);
+    if (invMatch) return invMatch;
+  }
+
+  // 3. Stable Deal ID match if tracked on KYC record
+  if (deal.id) {
+    const dealMatch = allKycs.find(k => k && (k as any).dealId && String((k as any).dealId) === String(deal.id));
+    if (dealMatch) return dealMatch;
+  }
+
+  // 4. Fallback to phone match (sanitized 10 digits)
+  const phoneDigits = (deal.phone || '').replace(/\D/g, '').slice(-10);
+  if (phoneDigits) {
+    const phoneMatch = allKycs.find(
+      k => k && (k.phone || '').replace(/\D/g, '').slice(-10) === phoneDigits &&
+        (!compIdStr || !k.companyId || String(k.companyId) === compIdStr)
+    );
+    if (phoneMatch) return phoneMatch;
+  }
+
+  // 5. Fallback to email match
+  const email = (deal.email || '').toLowerCase().trim();
+  if (email) {
+    const emailMatch = allKycs.find(
+      k => k && (k.email || '').toLowerCase().trim() === email &&
+        (!compIdStr || !k.companyId || String(k.companyId) === compIdStr)
+    );
+    if (emailMatch) return emailMatch;
+  }
+
+  // 6. Fallback to customer name match
+  const custName = (deal.customerName || '').toLowerCase().trim();
+  if (custName && custName.length > 2) {
+    const nameMatch = allKycs.find(
+      k => k && (k.investorName || '').toLowerCase().trim() === custName &&
+        (!compIdStr || !k.companyId || String(k.companyId) === compIdStr)
+    );
+    if (nameMatch) return nameMatch;
+  }
+
+  return null;
+};
+
+export interface ResolveKycStatusOptions {
+  dbKycs?: Record<string, any>;
+  tenantId?: string | number;
+  sentDealIds?: Record<string, boolean>;
+  storageGetter?: (key: string) => string | null;
+}
+
+/**
+ * Resolve unified KYC status for a deal combining local storage, database sync records, and deal state
+ */
+export const resolveCustomerKycStatus = (
+  deal: Deal,
+  options: ResolveKycStatusOptions = {}
+): CustomerKycStatus => {
+  const { dbKycs = {}, tenantId, sentDealIds = {}, storageGetter = key => {
+    try { return localStorage.getItem(key); } catch { return null; }
+  }} = options;
+
+  // 1. IRM has explicitly set kycStatus on the deal
+  if (deal.kycStatus === 'Verified') return 'Verified';
+  if (deal.kycStatus === 'Wrong') return 'Needs Correction';
+
+  // 1.5 Check if Assisted KYC was submitted for this deal locally
+  const assistedKey = `nexus_kyc_assisted_${deal.id}`;
+  const assistedRaw = storageGetter(assistedKey);
+  if (assistedRaw) {
+    try {
+      const parsed = JSON.parse(assistedRaw);
+      if (parsed.status === 'Assisted KYC – Submitted for Verification') {
+        return 'Assisted KYC – Submitted for Verification';
+      }
+    } catch {}
+  }
+  if ((deal as any).customerKycStatus === 'Assisted KYC – Submitted for Verification') {
+    return 'Assisted KYC – Submitted for Verification';
+  }
+
+  // 2. Check DB KYC record by stable IDs and scope first
+  const rec = findBackendKyc(deal, dbKycs, tenantId);
+
+  if (rec) {
+    const recStatus = (rec.status || '').toLowerCase();
+    if (recStatus === 'approved') return 'Verified';
+    if (recStatus === 'reuploadrequested') return 'Needs Correction';
+    if (recStatus === 'rejected') return 'Rejected';
+
+    // Confirmed backend submission awaiting verification
+    if (rec.submittedAt || recStatus === 'pendingreview') {
+      if (rec.isAssisted) {
+        return 'Assisted KYC – Submitted for Verification';
+      }
+      return 'Submitted';
+    }
+
+    if (recStatus === 'draft') {
+      if (rec.isAssisted) return 'Assisted Draft';
+      if (rec.kycLinkSent) return 'Link Sent';
+      return 'Pending';
+    }
+    if (recStatus === 'linksent') return 'Link Sent';
+  }
+
+  // 2.5 Check if there is an active Assisted KYC Draft
+  const draftKey = `nexus_kyc_draft_${deal.id}`;
+  const draftRaw = storageGetter(draftKey);
+  if (draftRaw) {
+    try {
+      const parsed = JSON.parse(draftRaw);
+      if (parsed && (parsed.isAssisted || parsed.step)) {
+        return 'Assisted Draft';
+      }
+    } catch {}
+  }
+  if ((deal as any).customerKycStatus === 'Assisted Draft') {
+    return 'Assisted Draft';
+  }
+  if (rec && (rec.status || '').toLowerCase() === 'draft' && !rec.kycLinkSent && rec.isAssisted) {
+    return 'Assisted Draft';
+  }
+
+  // 3. IRM clicked "Send Link" in this session but DB hasn't refreshed yet
+  if (rec?.kycLinkSent || sentDealIds[deal.id]) return 'Link Sent';
+
+  // 4. Legacy deal property / mock KYC status
+  const existing = (deal as any).customerKycStatus;
+  if (existing) return existing as CustomerKycStatus;
+
+  return getCustomerKycStatus(deal.id, undefined);
+};
+
+/**
+ * Resolve investor location falling back to matching lead and customer records
+ */
+export const getResolvedLocation = (
+  deal: Deal,
+  leads: Lead[] = [],
+  customers: Customer[] = []
+): string => {
+  if (deal.location && deal.location !== '—') return deal.location;
+  const { matchingLead, matchingCustomer } = findMatchingLeadAndCustomer(deal, leads, customers);
+  return matchingLead?.location || matchingCustomer?.location || '—';
+};
+
+/**
+ * Resolve investment capacity explicitly provided in lead/customer custom fields
+ */
+export const getCustomerFilledCapacity = (
+  deal: Deal,
+  leads: Lead[] = [],
+  customers: Customer[] = []
+): string => {
+  const { matchingLead, matchingCustomer } = findMatchingLeadAndCustomer(deal, leads, customers);
+
+  // Only use explicitly provided values — never fall back to deal.value
+  return (
+    matchingLead?.customFields?.investmentCapacity ||
+    matchingLead?.customFields?.capacityRange ||
+    matchingLead?.customFields?.investmentRange ||
+    (matchingLead as any)?.investmentRange ||
+    matchingCustomer?.customFields?.investmentCapacity ||
+    (deal.investmentRange && deal.investmentRange.trim() ? deal.investmentRange : null) ||
+    '—'
+  );
+};
+
+/**
+ * Resolve investment horizon preference across leads, customers, and local preferences
+ */
+export const getIrmInvestmentHorizon = (
+  deal: Deal,
+  leads: Lead[] = [],
+  customers: Customer[] = [],
+  storageGetter: (key: string) => string | null = key => {
+    try { return localStorage.getItem(key); } catch { return null; }
+  }
+): string => {
+  const fDigits = (deal.phone || '').replace(/\D/g, '').slice(-10);
+  const matchingLead = leads.find(l => {
+    if (deal.customerId && (l.id === deal.customerId || String(l.id) === String(deal.customerId))) return true;
+    const lDigits = (l.phone || '').replace(/\D/g, '').slice(-10);
+    return Boolean(lDigits && fDigits && lDigits === fDigits);
+  });
+  const matchingCustomer = customers.find(c => {
+    if (deal.customerId && (c.id === deal.customerId || String(c.id) === String(deal.customerId))) return true;
+    const cDigits = (c.phone || '').replace(/\D/g, '').slice(-10);
+    return Boolean(cDigits && fDigits && cDigits === fDigits);
+  });
+  let savedLocal: any = null;
+  try {
+    const raw =
+      (deal.customerId ? storageGetter(`nexus_irm_pref_${deal.customerId}`) : null) ||
+      (fDigits ? storageGetter(`nexus_irm_pref_${fDigits}`) : null) ||
+      storageGetter(`nexus_irm_pref_${deal.id}`);
+    if (raw) savedLocal = JSON.parse(raw);
+  } catch { }
+  return (
+    matchingLead?.customFields?.horizon ||
+    matchingLead?.customFields?.investmentHorizon ||
+    matchingCustomer?.customFields?.horizon ||
+    matchingCustomer?.customFields?.investmentHorizon ||
+    savedLocal?.horizon ||
+    '—'
+  );
+};
+
+/**
+ * Build sorted unique agent options for OriginalKYCView
+ */
+export const buildOriginalKycAgentOptions = (
+  deals: Deal[]
+): { value: string; label: string }[] => {
+  return Array.from(new Set(deals.map(d => d.assignedAgentName).filter(Boolean) as string[]))
+    .sort((a, b) => a.localeCompare(b))
+    .map(name => ({ value: name, label: name }));
+};
+
+export interface OriginalKycFilterOptions {
+  agentFilter?: string;
+  statusFilter?: string;
+  investmentRangeFilter?: string;
+  searchQuery?: string;
+}
+
+/**
+ * Filter deals for OriginalKYCView by agent, status, investment range, and search keyword
+ */
+export const filterOriginalKycDeals = (
+  deals: Deal[],
+  options: OriginalKycFilterOptions
+): Deal[] => {
+  const {
+    agentFilter = 'All',
+    statusFilter = 'All',
+    investmentRangeFilter = 'All',
+    searchQuery = '',
+  } = options;
+  const q = searchQuery.toLowerCase().trim();
+
+  return deals.filter(deal => {
+    if (agentFilter !== 'All' && deal.assignedAgentName !== agentFilter) return false;
+    if (statusFilter !== 'All') {
+      const s = normalizeLegacyKycStatus(deal.kycStatus, deal.verifiedBy);
+      if (statusFilter === 'Pending' && s !== 'Pending') return false;
+      if (statusFilter === 'Verified' && s !== 'Verified') return false;
+      if (statusFilter === 'Wrong' && s !== 'Wrong') return false;
+    }
+    if (investmentRangeFilter !== 'All' && deal.investmentRange !== investmentRangeFilter) return false;
+    if (q) {
+      const name = (deal.customerName || '').toLowerCase();
+      const phone = (deal.phone || '').toLowerCase();
+      const email = (deal.email || '').toLowerCase();
+      const city = (deal.location || '').toLowerCase();
+      if (!name.includes(q) && !phone.includes(q) && !email.includes(q) && !city.includes(q)) {
+        return false;
+      }
+    }
+    return true;
+  });
+};
+
+/**
+ * Count KPI summary metrics across deals
+ */
+export const countKpiMetrics = (
+  deals: Deal[],
+  resolveStatusFn: (d: Deal) => CustomerKycStatus
+) => {
+  const total = deals.length;
+  let awaiting = 0;
+  let pending = 0;
+  let verified = 0;
+
+  for (const d of deals) {
+    if (isDealAwaitingVerification(d, resolveStatusFn)) {
+      awaiting++;
+    }
+    if (isDealPendingSubmission(d, resolveStatusFn)) {
+      pending++;
+    }
+    if (normalizeLegacyKycStatus(d.kycStatus, d.verifiedBy) === 'Verified') {
+      verified++;
+    }
+  }
+
+  return { total, awaiting, pending, verified };
+};
+
+/**
+ * Filter deals in GHL IRM KYC view according to the active KPI card selection
+ */
+export const filterDealsByKpi = (
+  deals: Deal[],
+  activeKpiFilter: 'all' | 'awaiting' | 'pending' | 'verified',
+  resolveStatusFn: (d: Deal) => CustomerKycStatus
+): Deal[] => {
+  if (activeKpiFilter === 'all') return deals;
+  if (activeKpiFilter === 'awaiting') {
+    return deals.filter(d => isDealAwaitingVerification(d, resolveStatusFn));
+  }
+  if (activeKpiFilter === 'pending') {
+    return deals.filter(d => isDealPendingSubmission(d, resolveStatusFn));
+  }
+  return deals.filter(d => normalizeLegacyKycStatus(d.kycStatus, d.verifiedBy) === 'Verified');
+};
+
 
