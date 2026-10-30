@@ -104,6 +104,7 @@ jobs:
             /o:"$SONAR_ORGANIZATION" \
             /d:sonar.host.url="https://sonarcloud.io" \
             /d:sonar.token="$SONAR_TOKEN" \
+            /d:sonar.exclusions="frontend/**" \
             /d:sonar.qualitygate.wait=true
           dotnet build backend/backend.csproj --configuration Release
           dotnet sonarscanner end /d:sonar.token="$SONAR_TOKEN"
