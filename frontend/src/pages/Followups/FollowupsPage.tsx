@@ -46,6 +46,7 @@ import { fetchIrmAllLeads, IrmAllLeadsSummary } from '../../services/irmAllLeads
 import { User as UserModel } from '../../types';
 import { getAgentRoleInfo, getAssigningSalesAgentInfo } from '../../utils/agentRoleUtils';
 import { formatSmartScheduleDate, isDateToday, isDateOverdue } from '../../utils/dateUtils';
+import { FollowupBookingDialog, type BookingSelection } from '../../components/common/FollowupBookingDialog';
 import './FollowupsPage.css';
 import '../Leads/LeadsPage.css';
 
@@ -275,6 +276,20 @@ export const FollowupsPage: React.FC = () => {
     ];
   }, [followups]);
   const [rescheduleItem, setRescheduleItem] = useState<Followup | null>(null);
+
+  // Booking from a follow-up (Jamin): shows the plots the customer visited, or asks for the plot and location.
+  const [bookingFollowup, setBookingFollowup] = useState<Followup | null>(null);
+  const canBookFromFollowup = tenant?.slug === 'jamin';
+  const handleProceedToBooking = (sel: BookingSelection) => {
+    try {
+      sessionStorage.setItem('booking_prefill', JSON.stringify(sel));
+    } catch {
+      /* storage unavailable: Plot Inventory still opens, the booking form just starts empty */
+    }
+    setBookingFollowup(null);
+    setDrawerFollowup(null);
+    window.dispatchEvent(new CustomEvent('nexus_navigate', { detail: 'plots' }));
+  };
   const [newDate, setNewDate] = useState('');
   const [conflictModalData, setConflictModalData] = useState<{
     conflictTime: string;
@@ -1690,7 +1705,7 @@ export const FollowupsPage: React.FC = () => {
               >
                 <option value="all">All</option>
                 <option value="sales_executive">Sales Executive</option>
-                <option value="irm">IRM (Investor Relations)</option>
+                {tenant?.slug !== 'jamin' && <option value="irm">IRM (Investor Relations)</option>}
               </select>
             </div>
 
@@ -2172,12 +2187,37 @@ export const FollowupsPage: React.FC = () => {
                       <Phone size={13} /> Call
                     </button>
                   )}
+                  {canBookFromFollowup && (
+                    <button
+                      className="btn btn-primary btn-sm"
+                      title="Book a plot for this customer"
+                      onClick={e => {
+                        e.stopPropagation();
+                        setBookingFollowup(f);
+                      }}
+                    >
+                      Booking
+                    </button>
+                  )}
                 </div>
               </div>
             );
           })
         )}
       </div>
+
+      {/* Booking from a follow-up: visited plots, or ask for the plot and location */}
+      <FollowupBookingDialog
+        isOpen={!!bookingFollowup}
+        onClose={() => setBookingFollowup(null)}
+        contact={bookingFollowup ? {
+          id: bookingFollowup.contactId,
+          name: bookingFollowup.contactName,
+          phone: bookingFollowup.contactPhone,
+          type: bookingFollowup.contactType,
+        } : null}
+        onProceed={handleProceedToBooking}
+      />
 
       {/* Reschedule Modal */}
       <Modal
@@ -2293,6 +2333,14 @@ export const FollowupsPage: React.FC = () => {
                       }}
                     >
                       <Phone size={14} /> Call Contact
+                    </button>
+                  )}
+                  {canBookFromFollowup && (
+                    <button
+                      className="btn btn-primary"
+                      onClick={() => setBookingFollowup(drawerFollowup)}
+                    >
+                      Booking
                     </button>
                   )}
                 </div>
@@ -2512,7 +2560,8 @@ export const FollowupsPage: React.FC = () => {
                   </div>
                 </div>
 
-                {/* ── Investment Capacity ── */}
+                {/* ── Investment Capacity (not used by Jamin: plots, not investments) ── */}
+                {tenant?.slug !== 'jamin' && (
                 <div className="card lead-custom-card">
                   <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                     <h4 className="lead-custom-title" style={{ margin: 0 }}>Investment Details</h4>
@@ -2654,9 +2703,10 @@ export const FollowupsPage: React.FC = () => {
                     </div>
                   </div>
                 </div>
+                )}
 
                 {/* ── GHL India Ventures Custom Attributes (with Set by IRM Checkbox) ── */}
-                {!isExec && (
+                {!isExec && tenant?.slug !== 'jamin' && (
                   <div className="card lead-custom-card">
                     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
                       <h4 className="lead-custom-title" style={{ margin: 0 }}>

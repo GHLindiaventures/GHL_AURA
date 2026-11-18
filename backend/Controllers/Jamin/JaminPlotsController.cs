@@ -96,15 +96,19 @@ public class JaminPlotsController : JaminTenantControllerBase
             result.Add(new LeadPlotSelectionDto { PlotId = p.Id, ProjectId = p.ProjectId, PlotNumber = p.PlotNumber, Facing = p.Facing, AreaSqFt = p.AreaSqFt, Price = p.Price, PlotStatus = p.Status, Source = "Booking", SourceStatus = b.Status, SelectedAt = b.CreatedAt });
         }
 
+        // A site visit can cover several plots; list each one (older visits only have the single PlotId).
         var visits = await _db.SiteVisits.AsNoTracking()
             .Include(v => v.Plot)
+            .Include(v => v.VisitPlots).ThenInclude(vp => vp.Plot)
             .Where(v => v.TenantId == companyId && v.LeadId == leadId && v.PlotId != null
                         && v.Status != "Cancelled")
             .ToListAsync(ct);
-        foreach (var v in visits.Where(v => v.Plot != null))
+        foreach (var v in visits)
         {
-            var p = v.Plot!;
-            result.Add(new LeadPlotSelectionDto { PlotId = p.Id, ProjectId = p.ProjectId, PlotNumber = p.PlotNumber, Facing = p.Facing, AreaSqFt = p.AreaSqFt, Price = p.Price, PlotStatus = p.Status, Source = "SiteVisit", SourceStatus = v.Status, SelectedAt = v.CreatedAt });
+            var plots = v.VisitPlots.Where(vp => vp.Plot != null).Select(vp => vp.Plot!).ToList();
+            if (plots.Count == 0 && v.Plot != null) plots.Add(v.Plot);
+            foreach (var p in plots)
+                result.Add(new LeadPlotSelectionDto { PlotId = p.Id, ProjectId = p.ProjectId, PlotNumber = p.PlotNumber, Facing = p.Facing, AreaSqFt = p.AreaSqFt, Price = p.Price, PlotStatus = p.Status, Source = "SiteVisit", SourceStatus = v.Status, SelectedAt = v.CreatedAt });
         }
 
         var projectIds = result.Select(r => r.ProjectId).Distinct().ToList();
@@ -301,7 +305,7 @@ public class JaminPlotsController : JaminTenantControllerBase
     private static JaminPlotResponseDto ToDto(JaminPlot p) => new()
     {
         Id = p.Id, CompanyId = p.CompanyId, ProjectId = p.ProjectId, PlotNumber = p.PlotNumber,
-        Dimensions = p.Dimensions, AreaSqFt = p.AreaSqFt, Facing = p.Facing, Status = p.Status,
+        Dimensions = p.Dimensions, AreaSqFt = p.AreaSqFt, AreaSqM = p.AreaSqM, LayoutX = p.LayoutX, LayoutY = p.LayoutY, LayoutW = p.LayoutW, LayoutH = p.LayoutH, Facing = p.Facing, Status = p.Status,
         Price = p.Price, PricePerSqft = p.PricePerSqft, HeldByCustomerId = p.HeldByCustomerId, HeldByCustomerName = p.HeldByCustomerName, HeldByCustomerPhone = p.HeldByCustomerPhone, HeldByLeadId = p.HeldByLeadId, HoldByAgent = p.HoldByAgent,
         HoldExpiresAt = p.HoldExpiresAt, Notes = p.Notes, CreatedAt = p.CreatedAt, UpdatedAt = p.UpdatedAt
     };

@@ -13,7 +13,7 @@ public class JaminSiteVisitService : IJaminSiteVisitService
     private readonly ApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
     private const int JaminTenantId = 2;
-    private static readonly string[] SiteVisitStatuses = { "Requested", "Pending", "Scheduled", "Completed", "Rescheduled", "Cancelled", "No-show" };
+    private static readonly string[] SiteVisitStatuses = { "Requested", "Pending", "Scheduled", "Visited", "Revisit", "Completed", "Rescheduled", "Cancelled", "No-show" };
 
     public JaminSiteVisitService(ApplicationDbContext context, ICurrentUserService currentUser)
     {
@@ -25,7 +25,7 @@ public class JaminSiteVisitService : IJaminSiteVisitService
 
     private IQueryable<SiteVisit> GetScopedSiteVisits()
     {
-        var query = _context.SiteVisits.Where(s => s.TenantId == JaminTenantId);
+        var query = _context.SiteVisits.Include(s => s.VisitPlots).Where(s => s.TenantId == JaminTenantId);
         var role = _currentUser.Role;
         var canViewAll = string.Equals(role, "super_admin", StringComparison.OrdinalIgnoreCase) ||
             string.Equals(role, "company_admin", StringComparison.OrdinalIgnoreCase) ||
@@ -51,6 +51,202 @@ public class JaminSiteVisitService : IJaminSiteVisitService
         await _context.Users.Include(u => u.Role).FirstOrDefaultAsync(
             u => u.Id == agentId && u.CompanyId == JaminTenantId && u.Status != backend.Models.Enums.UserStatus.Disabled
                  && u.Role != null && AssignableRoleCodes.Contains(u.Role.Code), ct);
+
+    private const int MaxPlotsPerVisit = 10;
+
+    private static List<int> NormalizePlotIds(IEnumerable<int>? ids, int? single)
+    {
+        var list = (ids ?? Enumerable.Empty<int>()).ToList();
+        if (list.Count == 0 && single.HasValue) list.Add(single.Value);
+        return list.Where(i => i > 0).Distinct().ToList();
+    }
+
+    private async Task<(string? Error, List<JaminPlot> Plots)> ResolvePlotsAsync(List<int> ids, int? projectId, CancellationToken ct)
+    {
+        if (ids.Count > MaxPlotsPerVisit)
+            return ($"You can pick up to {MaxPlotsPerVisit} plots for one site visit.", new List<JaminPlot>());
+
+        var found = await _context.JaminPlots.Include(p => p.Project)
+            .Where(p => ids.Contains(p.Id) && p.CompanyId == JaminTenantId)
+            .ToListAsync(ct);
+        if (found.Count != ids.Count)
+            return ("Selected plot not found in Jamin inventory.", found);
+
+        var ordered = ids.Select(id => found.First(p => p.Id == id)).ToList(); // keep the order the rep picked them in
+        var expectedProject = projectId ?? ordered[0].ProjectId;
+        if (ordered.Any(p => p.ProjectId != expectedProject))
+            return ("All selected plots must belong to the selected project.", ordered);
+
+        var taken = ordered.FirstOrDefault(p => p.Status is "Registered" or "Sold" or "Booked");
+        if (taken != null)
+            return ($"Plot {taken.PlotNumber} has already been {taken.Status.ToLower()} and is not available for site visits.", ordered);
+
+        return (null, ordered);
+    }
+
+    /// <summary>"Plot #1, Plot #2" — kept within the 100-character column.</summary>
+    private static string JoinPlotNumbers(IEnumerable<JaminPlot> plots)
+    {
+        var joined = string.Join(", ", plots.Select(p => p.PlotNumber));
+        return joined.Length <= 100 ? joined : joined[..99] + "…";
+    }
+
+    private static readonly string[] ClosedVisitStatuses = { "Cancelled", "No-show", "Visited", "Completed" };
+
+    /// <summary>Error code returned (HTTP 409) when the customer already has an open site visit.</summary>
+    public const string DuplicateOpenVisitCode = "duplicate_open_visit";
+
+    private static string PhoneKey(string? phone)
+    {
+        var digits = new string((phone ?? string.Empty).Where(char.IsDigit).ToArray());
+        return digits.Length > 10 ? digits[^10..] : digits;
+    }
+
+    /// <summary>
+    /// The customer's open (not visited / cancelled / no-show) site visit, if any. Matches the same lead, the same customer,
+    /// or the same phone number, so typing the number again as a "new visitor" does not slip past it.
+    /// </summary>
+    private async Task<SiteVisit?> FindOpenVisitForContactAsync(int? leadId, int? customerId, string? phone, CancellationToken ct)
+    {
+        var key = PhoneKey(phone);
+        var open = await _context.SiteVisits.AsNoTracking().Include(s => s.VisitPlots)
+            .Where(s => s.TenantId == JaminTenantId && !ClosedVisitStatuses.Contains(s.Status))
+            .ToListAsync(ct);
+        return open
+            .Where(s => (leadId.HasValue && s.LeadId == leadId) ||
+                        (customerId.HasValue && s.CustomerId == customerId) ||
+                        (key.Length >= 10 && PhoneKey(s.CustomerPhone) == key))
+            .OrderByDescending(s => s.CreatedAt)
+            .FirstOrDefault();
+    }
+
+    /// <summary>Visits still ahead (not closed) that include any of these plots, excluding one visit.</summary>
+    private async Task<List<SiteVisit>> FindOtherActiveVisitsAsync(List<int> plotIds, int? excludeVisitId, CancellationToken ct)
+    {
+        if (plotIds.Count == 0) return new List<SiteVisit>();
+        return await _context.SiteVisits.AsNoTracking()
+            .Include(s => s.VisitPlots)
+            .Where(s => s.TenantId == JaminTenantId
+                        && (!excludeVisitId.HasValue || s.Id != excludeVisitId.Value)
+                        && !ClosedVisitStatuses.Contains(s.Status)
+                        && ((s.PlotId != null && plotIds.Contains(s.PlotId.Value))
+                            || s.VisitPlots.Any(vp => plotIds.Contains(vp.PlotId))))
+            .ToListAsync(ct);
+    }
+
+    private static bool VisitIncludesPlot(SiteVisit v, int plotId) =>
+        v.PlotId == plotId || v.VisitPlots.Any(vp => vp.PlotId == plotId);
+
+    /// <summary>
+    /// Several customers may visit the same plot, but the people involved are told:
+    /// the follow-up agent of every other open visit on the plot, and the agent holding the plot, if any.
+    /// </summary>
+    private async Task NotifyPlotInterestAsync(SiteVisit visit, List<JaminPlot> plots, CancellationToken ct)
+    {
+        if (plots.Count == 0) return;
+        var me = _currentUser.UserId;
+        var who = !string.IsNullOrWhiteSpace(_currentUser.Name) ? _currentUser.Name : "A colleague";
+        var plotIds = plots.Select(p => p.Id).ToList();
+        var notified = new HashSet<(int UserId, string Key)>();
+
+        // 1. Other open visits on the same plot(s): their follow-up agents learn that someone else is going too.
+        var others = await FindOtherActiveVisitsAsync(plotIds, visit.Id > 0 ? visit.Id : null, ct);
+        foreach (var group in others.Where(o => o.AssignedAgentId.HasValue && o.AssignedAgentId != me).GroupBy(o => o.AssignedAgentId!.Value))
+        {
+            foreach (var theirs in group)
+            {
+                var shared = plots.Where(p => VisitIncludesPlot(theirs, p.Id)).Select(p => p.PlotNumber).ToList();
+                if (shared.Count == 0 || !notified.Add((group.Key, $"visit-{theirs.Id}"))) continue;
+                _context.Notifications.Add(new Notification
+                {
+                    CompanyId = JaminTenantId,
+                    UserId = group.Key,
+                    Title = "Another customer is visiting the same plot",
+                    Message = $"{who} scheduled another customer's site visit ({visit.ScheduledAt}) that includes {string.Join(", ", shared)}. " +
+                              $"Your visit for {theirs.CustomerName} on {theirs.ScheduledAt} also includes it.",
+                    Type = "site_visit",
+                    IsRead = false,
+                    LeadId = theirs.LeadId,
+                    CustomerId = theirs.CustomerId,
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+        }
+
+        // 2. The agent holding a plot on hold for a customer.
+        foreach (var plot in plots.Where(p => p.Status == "Hold"))
+        {
+            int? holderId = null;
+            if (plot.HeldByLeadId.HasValue)
+                holderId = await _context.Leads.AsNoTracking()
+                    .Where(l => l.Id == plot.HeldByLeadId.Value && l.CompanyId == JaminTenantId)
+                    .Select(l => l.AssignedAgentId).FirstOrDefaultAsync(ct);
+            if (holderId == null && !string.IsNullOrWhiteSpace(plot.HoldByAgent))
+            {
+                var name = plot.HoldByAgent.Trim().ToLower();
+                holderId = await _context.Users.AsNoTracking()
+                    .Where(u => u.CompanyId == JaminTenantId && u.Name.ToLower() == name)
+                    .Select(u => (int?)u.Id).FirstOrDefaultAsync(ct);
+            }
+            if (!holderId.HasValue || holderId == me || !notified.Add((holderId.Value, $"hold-{plot.Id}"))) continue;
+
+            _context.Notifications.Add(new Notification
+            {
+                CompanyId = JaminTenantId,
+                UserId = holderId.Value,
+                Title = "A plot you are holding was chosen for a site visit",
+                Message = $"{who} chose {plot.PlotNumber}, which you are holding" +
+                          (string.IsNullOrWhiteSpace(plot.HeldByCustomerName) ? "" : $" for {plot.HeldByCustomerName}") +
+                          $", for a site visit on {visit.ScheduledAt}.",
+                Type = "site_visit",
+                IsRead = false,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+    }
+
+    /// <summary>Open visits per plot (for the "already planned" warning). Names of customers are not exposed.</summary>
+    public async Task<ApiResponse<Dictionary<int, List<PlotVisitUsageDto>>>> GetPlotUsageAsync(int? projectId, CancellationToken ct = default)
+    {
+        var query = _context.SiteVisits.AsNoTracking().Include(s => s.VisitPlots)
+            .Where(s => s.TenantId == JaminTenantId && !ClosedVisitStatuses.Contains(s.Status));
+        if (projectId.HasValue) query = query.Where(s => s.ProjectId == projectId.Value);
+
+        var result = new Dictionary<int, List<PlotVisitUsageDto>>();
+        foreach (var v in await query.ToListAsync(ct))
+        {
+            var ids = v.VisitPlots.Select(vp => vp.PlotId).ToHashSet();
+            if (v.PlotId.HasValue) ids.Add(v.PlotId.Value);
+            foreach (var id in ids)
+            {
+                if (!result.TryGetValue(id, out var list)) result[id] = list = new List<PlotVisitUsageDto>();
+                list.Add(new PlotVisitUsageDto { VisitId = v.Id, ScheduledAt = v.ScheduledAt, Status = v.Status, FollowUpAgentName = v.AssignedAgentName });
+            }
+        }
+        return ApiResponse<Dictionary<int, List<PlotVisitUsageDto>>>.SuccessResult(result);
+    }
+
+    /// <summary>Tells the agent who assigned the follow-up what the follow-up agent set (status and remarks).</summary>
+    private void NotifyAssignerOfUpdate(SiteVisit visit)
+    {
+        var assignerId = visit.AssignedById;
+        if (!assignerId.HasValue || assignerId == _currentUser.UserId) return; // they changed it themselves
+
+        var who = !string.IsNullOrWhiteSpace(_currentUser.Name) ? _currentUser.Name : "The follow-up agent";
+        var remarks = string.IsNullOrWhiteSpace(visit.OutcomeNotes) ? "no remarks" : $"remarks: \"{visit.OutcomeNotes}\"";
+        _context.Notifications.Add(new Notification
+        {
+            CompanyId = JaminTenantId,
+            UserId = assignerId.Value,
+            Title = $"Site visit {visit.Status}",
+            Message = $"{who} set the site visit for {visit.CustomerName} ({visit.CustomerPhone}) to {visit.Status} — {remarks}.",
+            Type = "site_visit",
+            IsRead = false,
+            LeadId = visit.LeadId,
+            CustomerId = visit.CustomerId,
+            CreatedAt = DateTime.UtcNow
+        });
+    }
 
     /// <summary>Tells the newly assigned agent who the customer is and who assigned the follow-up.</summary>
     private void NotifyAssignedAgent(SiteVisit visit, User agent)
@@ -177,6 +373,23 @@ public class JaminSiteVisitService : IJaminSiteVisitService
                 && customer.AssignedAgentId != (dto.AssignedAgentId ?? _currentUser.UserId))
                 return ApiResponse<JaminSiteVisitDto>.FailureResult("You can schedule site visits only for customers assigned to you or to the agent you assign it to.");
         }
+        // One open site visit per customer: if they already have one, it is rescheduled/edited, not duplicated.
+        var existingOpen = await FindOpenVisitForContactAsync(dto.LeadId, dto.CustomerId, dto.CustomerPhone, ct);
+        if (existingOpen != null)
+        {
+            var plotText = existingOpen.VisitPlots.Count > 0
+                ? string.Join(", ", existingOpen.VisitPlots.OrderBy(vp => vp.Id).Select(vp => vp.PlotNumber))
+                : existingOpen.PlotNumber;
+            var where = string.IsNullOrWhiteSpace(plotText) ? existingOpen.ProjectName : $"{existingOpen.ProjectName}, {plotText}";
+            var visible = await GetScopedSiteVisits().AnyAsync(s => s.Id == existingOpen.Id, ct);
+            var message = visible
+                ? $"{existingOpen.CustomerName} already has an open site visit ({where}, {existingOpen.ScheduledAt}). Reschedule that visit instead of creating a new one."
+                : $"{existingOpen.CustomerName} already has an open site visit ({where}, {existingOpen.ScheduledAt}) with {(string.IsNullOrWhiteSpace(existingOpen.AssignedAgentName) ? "another agent" : existingOpen.AssignedAgentName)}. Ask them or an admin to reschedule it.";
+            // Only hand back the visit itself when the caller may edit it.
+            var existingDto = visible ? (await MapWithContactsAsync(new List<SiteVisit> { existingOpen }, ct))[0] : null;
+            return ApiResponse<JaminSiteVisitDto>.FailureResult(message, existingDto, new List<string> { DuplicateOpenVisitCode });
+        }
+
         // Follow-up agent: the caller takes it themselves by default, or hands it to another Jamin agent.
         var scheduledAgentId = dto.AssignedAgentId.HasValue && dto.AssignedAgentId.Value > 0 ? dto.AssignedAgentId : _currentUser.UserId;
         User? followUpAgent = null;
@@ -186,52 +399,35 @@ public class JaminSiteVisitService : IJaminSiteVisitService
             if (followUpAgent == null)
                 return ApiResponse<JaminSiteVisitDto>.FailureResult("Selected follow-up agent was not found in Jamin.");
         }
-
         int? resolvedProjectId = dto.ProjectId;
-        int? resolvedPlotId = dto.PlotId;
         string projectName = dto.ProjectName;
-        string? plotNumber = dto.PlotNumber;
 
-        // If PlotId is provided, resolve ProjectId, ProjectName, PlotNumber from the plot
-        if (resolvedPlotId.HasValue)
+        // One or more plots: every plot must exist, be open for visits, and belong to the same project.
+        var requestedPlotIds = NormalizePlotIds(dto.PlotIds, dto.PlotId);
+        var chosenPlots = new List<JaminPlot>();
+        if (requestedPlotIds.Count > 0)
         {
-            var plot = await _context.JaminPlots
-                .Include(p => p.Project)
-                .FirstOrDefaultAsync(p => p.Id == resolvedPlotId && p.CompanyId == JaminTenantId, ct);
-            if (plot != null)
-            {
-                if (resolvedProjectId.HasValue && resolvedProjectId.Value != plot.ProjectId)
-                    return ApiResponse<JaminSiteVisitDto>.FailureResult("Selected plot does not belong to the selected project.");
-
-                if (plot.Status is "Registered" or "Sold" or "Booked")
-                    return ApiResponse<JaminSiteVisitDto>.FailureResult($"Plot {plot.PlotNumber} has already been {plot.Status.ToLower()} and is not available for new site visits.");
-
-                resolvedProjectId ??= plot.ProjectId;
-                projectName = plot.Project?.Name ?? projectName;
-                plotNumber = plot.PlotNumber;
-            }
-            else
-            {
-                return ApiResponse<JaminSiteVisitDto>.FailureResult("Selected plot not found in Jamin inventory.");
-            }
+            var (plotError, plots) = await ResolvePlotsAsync(requestedPlotIds, resolvedProjectId, ct);
+            if (plotError != null) return ApiResponse<JaminSiteVisitDto>.FailureResult(plotError);
+            chosenPlots = plots;
+            resolvedProjectId ??= chosenPlots[0].ProjectId;
+            projectName = chosenPlots[0].Project?.Name ?? projectName;
         }
         // If only ProjectId is provided, resolve ProjectName
         else if (resolvedProjectId.HasValue && string.IsNullOrWhiteSpace(projectName))
         {
             var project = await _context.JaminProjects
                 .FirstOrDefaultAsync(p => p.Id == resolvedProjectId && p.CompanyId == JaminTenantId, ct);
-            if (project != null)
-            {
-                projectName = project.Name;
-            }
-            else
-            {
+            if (project == null)
                 return ApiResponse<JaminSiteVisitDto>.FailureResult("Selected project not found in Jamin.");
-            }
+            projectName = project.Name;
         }
 
         if (resolvedProjectId.HasValue && !await _context.JaminProjects.AnyAsync(p => p.Id == resolvedProjectId.Value && p.CompanyId == JaminTenantId, ct))
             return ApiResponse<JaminSiteVisitDto>.FailureResult("Selected project not found in Jamin.");
+
+        var plotNumber = chosenPlots.Count > 0 ? JoinPlotNumbers(chosenPlots) : dto.PlotNumber;
+
 
         var siteVisit = new SiteVisit
         {
@@ -239,7 +435,8 @@ public class JaminSiteVisitService : IJaminSiteVisitService
             LeadId = dto.LeadId,
             CustomerId = dto.CustomerId,
             ProjectId = resolvedProjectId,
-            PlotId = resolvedPlotId,
+            PlotId = chosenPlots.FirstOrDefault()?.Id,
+            VisitPlots = chosenPlots.Select(p => new SiteVisitPlot { PlotId = p.Id, PlotNumber = p.PlotNumber }).ToList(),
             CustomerName = dto.CustomerName.Trim(),
             CustomerPhone = dto.CustomerPhone.Trim(),
             ContactType = dto.CustomerId.HasValue ? "customer" : dto.LeadId.HasValue ? "lead" : null,
@@ -251,7 +448,7 @@ public class JaminSiteVisitService : IJaminSiteVisitService
             AssignedById = _currentUser.UserId,
             AssignedByName = _currentUser.Name,
             AssignedAt = DateTime.UtcNow,
-            Status = "Scheduled",
+            Status = "Pending",
             VisitorNote = dto.VisitorNote,
             OutcomeNotes = dto.OutcomeNotes,
             CreatedAt = DateTime.UtcNow
@@ -273,6 +470,7 @@ public class JaminSiteVisitService : IJaminSiteVisitService
         }
 
         if (followUpAgent != null) NotifyAssignedAgent(siteVisit, followUpAgent);
+        await NotifyPlotInterestAsync(siteVisit, chosenPlots, ct);
 
         await _context.SaveChangesAsync(ct);
 
@@ -298,8 +496,7 @@ public class JaminSiteVisitService : IJaminSiteVisitService
 
     public async Task<ApiResponse<JaminSiteVisitDto>> ConfirmSiteVisitAsync(int id, CancellationToken ct = default)
     {
-        var visit = await GetScopedSiteVisits().FirstOrDefaultAsync(s => s.Id == id, ct)
-                 ?? await _context.SiteVisits.FirstOrDefaultAsync(s => s.Id == id, ct);
+        var visit = await GetScopedSiteVisits().FirstOrDefaultAsync(s => s.Id == id, ct);
         if (visit == null)
         {
             return ApiResponse<JaminSiteVisitDto>.FailureResult("Site visit not found.");
@@ -330,8 +527,7 @@ public class JaminSiteVisitService : IJaminSiteVisitService
 
     public async Task<ApiResponse<JaminSiteVisitDto>> CompleteSiteVisitAsync(int id, UpdateSiteVisitOutcomeDto dto, CancellationToken ct = default)
     {
-        var visit = await GetScopedSiteVisits().FirstOrDefaultAsync(s => s.Id == id, ct)
-                 ?? await _context.SiteVisits.FirstOrDefaultAsync(s => s.Id == id, ct);
+        var visit = await GetScopedSiteVisits().FirstOrDefaultAsync(s => s.Id == id, ct);
         if (visit == null)
         {
             return ApiResponse<JaminSiteVisitDto>.FailureResult("Site visit not found.");
@@ -374,43 +570,64 @@ public class JaminSiteVisitService : IJaminSiteVisitService
 
     public async Task<ApiResponse<JaminSiteVisitDto>> UpdateSiteVisitAsync(int id, UpdateSiteVisitDto dto, CancellationToken ct = default)
     {
-        var visit = await GetScopedSiteVisits().FirstOrDefaultAsync(s => s.Id == id, ct)
-                 ?? await _context.SiteVisits.FirstOrDefaultAsync(s => s.Id == id, ct);
+        var visit = await GetScopedSiteVisits().FirstOrDefaultAsync(s => s.Id == id, ct);
         if (visit == null)
         {
             return ApiResponse<JaminSiteVisitDto>.FailureResult("Site visit not found.");
         }
 
+        var previousStatus = visit.Status;
+        var previousRemarks = visit.OutcomeNotes;
+
         if (!string.IsNullOrWhiteSpace(dto.Status))
         {
             var requestedStatus = dto.Status.Trim();
-            if (!SiteVisitStatuses.Contains(requestedStatus, StringComparer.OrdinalIgnoreCase))
+            // Store the canonical spelling ("visited" -> "Visited").
+            var canonical = SiteVisitStatuses.FirstOrDefault(s => string.Equals(s, requestedStatus, StringComparison.OrdinalIgnoreCase));
+            if (canonical == null)
             {
                 return ApiResponse<JaminSiteVisitDto>.FailureResult("Invalid site visit status.");
             }
-            visit.Status = requestedStatus;
+            visit.Status = canonical;
         }
 
         if (!string.IsNullOrWhiteSpace(dto.ScheduledAt)) visit.ScheduledAt = dto.ScheduledAt.Trim();
         if (dto.ProjectId.HasValue && !await _context.JaminProjects.AnyAsync(
                 p => p.Id == dto.ProjectId.Value && p.CompanyId == JaminTenantId, ct))
             return ApiResponse<JaminSiteVisitDto>.FailureResult("Selected project was not found in Jamin.");
-        if (dto.PlotId.HasValue)
+        // Plots: PlotIds (or a single PlotId) replaces the set; an empty PlotIds list clears it (General Project Tour).
+        var replacePlots = dto.PlotIds != null || dto.PlotId.HasValue;
+        var addedPlots = new List<JaminPlot>();
+        if (replacePlots)
         {
-            var plot = await _context.JaminPlots.FirstOrDefaultAsync(
-                p => p.Id == dto.PlotId.Value && p.CompanyId == JaminTenantId, ct);
-            if (plot == null || (dto.ProjectId.HasValue && plot.ProjectId != dto.ProjectId.Value))
-                return ApiResponse<JaminSiteVisitDto>.FailureResult("Selected plot does not belong to the selected project.");
+            var wanted = NormalizePlotIds(dto.PlotIds, dto.PlotId);
+            var chosen = new List<JaminPlot>();
+            if (wanted.Count > 0)
+            {
+                var (plotError, plots) = await ResolvePlotsAsync(wanted, dto.ProjectId, ct);
+                if (plotError != null) return ApiResponse<JaminSiteVisitDto>.FailureResult(plotError);
+                chosen = plots;
+                visit.ProjectId = dto.ProjectId ?? chosen[0].ProjectId;
+            }
+            else if (dto.ProjectId.HasValue) visit.ProjectId = dto.ProjectId.Value;
 
-            if (plot.Status is "Registered" or "Sold" or "Booked")
-                return ApiResponse<JaminSiteVisitDto>.FailureResult($"Plot {plot.PlotNumber} has already been {plot.Status.ToLower()} and is not available for site visits.");
+            // Keep rows for plots that stay, drop the rest, add the new ones (avoids a delete + insert of the same key).
+            var keepIds = chosen.Select(p => p.Id).ToHashSet();
+            addedPlots = chosen.Where(p => visit.VisitPlots.All(vp => vp.PlotId != p.Id)).ToList(); // newly chosen only
+            foreach (var stale in visit.VisitPlots.Where(vp => !keepIds.Contains(vp.PlotId)).ToList())
+            {
+                visit.VisitPlots.Remove(stale);
+                _context.SiteVisitPlots.Remove(stale);
+            }
+            foreach (var plot in chosen.Where(p => visit.VisitPlots.All(vp => vp.PlotId != p.Id)))
+                visit.VisitPlots.Add(new SiteVisitPlot { PlotId = plot.Id, PlotNumber = plot.PlotNumber });
 
-            visit.ProjectId = dto.ProjectId ?? plot.ProjectId;
-            visit.PlotId = plot.Id;
+            visit.PlotId = chosen.FirstOrDefault()?.Id;
+            visit.PlotNumber = chosen.Count > 0 ? JoinPlotNumbers(chosen) : null;
         }
         else if (dto.ProjectId.HasValue) visit.ProjectId = dto.ProjectId.Value;
         if (!string.IsNullOrWhiteSpace(dto.ProjectName)) visit.ProjectName = dto.ProjectName.Trim();
-        if (dto.PlotNumber != null) visit.PlotNumber = dto.PlotNumber.Trim();
+        if (!replacePlots && dto.PlotNumber != null) visit.PlotNumber = dto.PlotNumber.Trim();
         User? reassignedTo = null;
         if (dto.AssignedAgentId.HasValue && dto.AssignedAgentId.Value > 0 && dto.AssignedAgentId != visit.AssignedAgentId)
         {
@@ -460,6 +677,17 @@ public class JaminSiteVisitService : IJaminSiteVisitService
         if (dto.OutcomeNotes != null) visit.OutcomeNotes = dto.OutcomeNotes.Trim();
         visit.UpdatedAt = DateTime.UtcNow;
 
+        // Record who set the status / remarks, so the agent who assigned the follow-up can see it.
+        var statusChanged = !string.Equals(previousStatus, visit.Status, StringComparison.Ordinal);
+        var remarksChanged = !string.Equals(previousRemarks ?? string.Empty, visit.OutcomeNotes ?? string.Empty, StringComparison.Ordinal);
+        if (statusChanged || remarksChanged)
+        {
+            visit.StatusUpdatedById = _currentUser.UserId;
+            visit.StatusUpdatedByName = _currentUser.Name;
+            visit.StatusUpdatedAt = DateTime.UtcNow;
+            NotifyAssignerOfUpdate(visit);
+        }
+
         // Automatically update lead status when site visit status changes
         if (!string.IsNullOrWhiteSpace(dto.Status))
         {
@@ -471,13 +699,15 @@ public class JaminSiteVisitService : IJaminSiteVisitService
             if (updateLead != null && updateLead.Status != "Converted" && updateLead.Status != "Booking In Progress")
             {
                 var newStatus = dto.Status.Trim();
-                if (string.Equals(newStatus, "Completed", StringComparison.OrdinalIgnoreCase))
+                if (string.Equals(newStatus, "Completed", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(newStatus, "Visited", StringComparison.OrdinalIgnoreCase))
                 {
                     updateLead.Status = "Site Visit Completed";
                     updateLead.UpdatedAt = DateTime.UtcNow;
                 }
                 else if (string.Equals(newStatus, "Scheduled", StringComparison.OrdinalIgnoreCase) ||
-                         string.Equals(newStatus, "Rescheduled", StringComparison.OrdinalIgnoreCase))
+                         string.Equals(newStatus, "Rescheduled", StringComparison.OrdinalIgnoreCase) ||
+                         string.Equals(newStatus, "Revisit", StringComparison.OrdinalIgnoreCase))
                 {
                     updateLead.Status = "Site Visit Scheduled";
                     updateLead.UpdatedAt = DateTime.UtcNow;
@@ -505,6 +735,7 @@ public class JaminSiteVisitService : IJaminSiteVisitService
 
         // Contact details are filled in above only when the link changed, so notify after they are final.
         if (reassignedTo != null) NotifyAssignedAgent(visit, reassignedTo);
+        if (addedPlots.Count > 0) await NotifyPlotInterestAsync(visit, addedPlots, ct);
 
         await _context.SaveChangesAsync(ct);
         return ApiResponse<JaminSiteVisitDto>.SuccessResult(MapToDto(visit), "Site visit updated successfully.");
@@ -538,10 +769,70 @@ public class JaminSiteVisitService : IJaminSiteVisitService
             return ApiResponse<bool>.FailureResult("Site visit not found.");
         }
 
+        // If this was the lead's only open visit, the lead is no longer "Site Visit Scheduled".
+        if (visit.LeadId.HasValue)
+        {
+            var lead = await _context.Leads.FirstOrDefaultAsync(l => l.Id == visit.LeadId.Value && l.CompanyId == JaminTenantId, ct);
+            var hasOtherOpenVisit = await _context.SiteVisits.AnyAsync(
+                s => s.TenantId == JaminTenantId && s.Id != visit.Id && s.LeadId == visit.LeadId
+                     && !ClosedVisitStatuses.Contains(s.Status), ct);
+            if (lead != null && !hasOtherOpenVisit && lead.Status == "Site Visit Scheduled")
+            {
+                lead.Status = "Contacted";
+                lead.UpdatedAt = DateTime.UtcNow;
+            }
+        }
+
+        // Tell the follow-up agent when somebody else removes their visit.
+        if (visit.AssignedAgentId.HasValue && visit.AssignedAgentId != _currentUser.UserId)
+        {
+            var who = !string.IsNullOrWhiteSpace(_currentUser.Name) ? _currentUser.Name : "A colleague";
+            _context.Notifications.Add(new Notification
+            {
+                CompanyId = JaminTenantId,
+                UserId = visit.AssignedAgentId.Value,
+                Title = "Site visit removed",
+                Message = $"{who} removed the site visit for {visit.CustomerName} ({visit.CustomerPhone}) — {visit.ProjectName}, {visit.ScheduledAt}.",
+                Type = "site_visit",
+                IsRead = false,
+                LeadId = visit.LeadId,
+                CustomerId = visit.CustomerId,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
+        _context.AuditLogs.Add(new AuditLog
+        {
+            CompanyId = JaminTenantId,
+            Timestamp = DateTime.UtcNow,
+            ActorName = !string.IsNullOrWhiteSpace(_currentUser.Name) ? _currentUser.Name : "System",
+            ActorEmail = !string.IsNullOrWhiteSpace(_currentUser.Email) ? _currentUser.Email : string.Empty,
+            Action = "DELETE",
+            EntityType = "SiteVisit",
+            EntityId = visit.Id.ToString(),
+            LeadId = visit.LeadId,
+            CustomerId = visit.CustomerId,
+            Details = $"Removed site visit for {visit.CustomerName} at {visit.ProjectName} ({visit.ScheduledAt}, status {visit.Status})",
+            Module = "SiteVisits",
+            Status = "success"
+        });
+
         _context.SiteVisits.Remove(visit);
         await _context.SaveChangesAsync(ct);
 
-        return ApiResponse<bool>.SuccessResult(true, "Site visit deleted successfully.");
+        return ApiResponse<bool>.SuccessResult(true, "Site visit removed.");
+    }
+
+    /// <summary>All plots on the visit; falls back to the single PlotId for visits saved before multi-plot support.</summary>
+    private static List<JaminSiteVisitPlotDto> PlotsOf(SiteVisit s)
+    {
+        var rows = s.VisitPlots
+            .OrderBy(vp => vp.Id)
+            .Select(vp => new JaminSiteVisitPlotDto { PlotId = vp.PlotId, PlotNumber = vp.PlotNumber })
+            .ToList();
+        if (rows.Count == 0 && s.PlotId.HasValue)
+            rows.Add(new JaminSiteVisitPlotDto { PlotId = s.PlotId.Value, PlotNumber = s.PlotNumber ?? string.Empty });
+        return rows;
     }
 
     private static JaminSiteVisitDto MapToDto(SiteVisit s) => new()
@@ -552,6 +843,7 @@ public class JaminSiteVisitService : IJaminSiteVisitService
         CustomerId = s.CustomerId,
         ProjectId = s.ProjectId,
         PlotId = s.PlotId,
+        Plots = PlotsOf(s),
         CustomerName = s.CustomerName,
         CustomerPhone = s.CustomerPhone,
         ContactType = s.ContactType,
@@ -566,6 +858,9 @@ public class JaminSiteVisitService : IJaminSiteVisitService
         Status = s.Status,
         VisitorNote = s.VisitorNote,
         OutcomeNotes = s.OutcomeNotes,
+        StatusUpdatedById = s.StatusUpdatedById,
+        StatusUpdatedByName = s.StatusUpdatedByName,
+        StatusUpdatedAt = s.StatusUpdatedAt,
         CreatedAt = s.CreatedAt
     };
 }

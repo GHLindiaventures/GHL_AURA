@@ -681,7 +681,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
         if (matchedLead) {
           // Update local state so the UI reacts immediately (lead removed from active list)
           matchedLead.status = 'Interested';
-          matchedLead.notes = `${matchedLead.notes ? matchedLead.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] Interested - Handed over to IRM${notes ? `: ${notes}` : ''}`;
+          matchedLead.notes = `${matchedLead.notes ? matchedLead.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] ${tenant?.slug === 'jamin' ? 'Interested' : 'Interested - Handed over to IRM'}${notes ? `: ${notes}` : ''}`;
           if (!matchedLead.customFields) matchedLead.customFields = {};
           matchedLead.customFields.qualifiedByAgentName = user.name;
           matchedLead.customFields.qualifiedAt = new Date().toISOString();
@@ -708,7 +708,7 @@ export const CallProvider: React.FC<{ children: React.ReactNode }> = ({ children
             await apiSaveFollowup({
               ...existingFollowup,
               status: 'Completed',
-              notes: `${existingFollowup.notes ? existingFollowup.notes + ' | ' : ''}Interested - Handed over to IRM`,
+              notes: `${existingFollowup.notes ? existingFollowup.notes + ' | ' : ''}${tenant?.slug === 'jamin' ? 'Interested' : 'Interested - Handed over to IRM'}`,
             });
           } catch (e) {
             console.warn('[CallContext] Failed to complete follow-up on Interested:', e);

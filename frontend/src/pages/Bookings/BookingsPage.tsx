@@ -268,8 +268,94 @@ export const BookingsPage: React.FC = () => {
     }
   };
 
+  // ── The plot is chosen in Plot Inventory (same as scheduling a site visit) ──
+  const BOOKING_DRAFT_KEY = 'booking_form_draft';
+  const BOOKING_PICK_KEY = 'site_visit_plot_pick';
+  const BOOKING_SELECTION_KEY = 'booking_plot_selection';
+
+  const handlePickPlotFromInventory = () => {
+    if (!selectedProjectId) return;
+    try {
+      sessionStorage.setItem(
+        BOOKING_DRAFT_KEY,
+        JSON.stringify({
+          savedAt: Date.now(),
+          buyerSourceType, selectedProjectId, selectedPlotId, selectedCustomerId, selectedLeadId, customerName, customerPhone,
+          tokenAmountPaid, totalPlotPrice, paymentMode, paymentModeOther, paymentTerms, notes,
+        }),
+      );
+      sessionStorage.setItem(
+        BOOKING_PICK_KEY,
+        JSON.stringify({
+          savedAt: Date.now(),
+          projectId: selectedProjectId,
+          selectedPlotIds: selectedPlotId ? [selectedPlotId] : [],
+          mode: 'booking',
+          phone: customerPhone,
+          buyerCustomerId: selectedCustomerId,
+        }),
+      );
+    } catch {
+      /* storage unavailable: Plot Inventory still opens, the form just starts empty on return */
+    }
+    setIsNewBookingModalOpen(false);
+    window.dispatchEvent(new CustomEvent('nexus_navigate', { detail: 'plots' }));
+  };
+
+  // Coming back from Plot Inventory: restore the form and apply the plot that was picked.
+  const restoredBookingRef = React.useRef(false);
+  useEffect(() => {
+    if (loading || restoredBookingRef.current) return;
+    let raw: string | null = null;
+    try { raw = sessionStorage.getItem(BOOKING_DRAFT_KEY); } catch { /* ignore */ }
+    if (!raw) return;
+    restoredBookingRef.current = true;
+    try {
+      const d = JSON.parse(raw);
+      // A draft left behind (the rep wandered off from Plot Inventory) is dropped after 20 minutes instead of popping up later.
+      if (!d.savedAt || Date.now() - d.savedAt > 20 * 60 * 1000) return;
+      setBuyerSourceType(d.buyerSourceType || 'customer');
+      setSelectedProjectId(d.selectedProjectId || '');
+      setSelectedPlotId(d.selectedPlotId || '');
+      setSelectedCustomerId(d.selectedCustomerId || '');
+      setSelectedLeadId(d.selectedLeadId || '');
+      setCustomerName(d.customerName || '');
+      setCustomerPhone(d.customerPhone || '');
+      setTokenAmountPaid(d.tokenAmountPaid);
+      setTotalPlotPrice(d.totalPlotPrice);
+      setPaymentMode(d.paymentMode || '');
+      setPaymentModeOther(d.paymentModeOther || '');
+      setPaymentTerms(d.paymentTerms || '');
+      setNotes(d.notes || '');
+
+      const sel = sessionStorage.getItem(BOOKING_SELECTION_KEY);
+      if (sel) {
+        const s = JSON.parse(sel);
+        const plotId = Array.isArray(s?.plotIds) && s.plotIds.length > 0 ? String(s.plotIds[0]) : '';
+        if (plotId) {
+          setSelectedProjectId(String(s.projectId || d.selectedProjectId || ''));
+          handlePlotSelect(plotId); // sets the plot, its price, and the buyer if the plot is held for someone
+        }
+      }
+      setIsNewBookingModalOpen(true);
+    } catch {
+      /* corrupt draft: ignore */
+    } finally {
+      try {
+        sessionStorage.removeItem(BOOKING_DRAFT_KEY);
+        sessionStorage.removeItem(BOOKING_PICK_KEY);
+        sessionStorage.removeItem(BOOKING_SELECTION_KEY);
+      } catch { /* ignore */ }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading]);
+
   const handleCreateBooking = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedPlotId) {
+      alert('Please choose the plot to book from Plot Inventory.');
+      return;
+    }
     if (!customerName || !customerPhone) {
       alert('Buyer Name and Phone are required.');
       return;
@@ -618,30 +704,6 @@ export const BookingsPage: React.FC = () => {
     if (val >= 100000) return `₹${(val / 100000).toFixed(2)} L`;
     return `₹${val.toLocaleString('en-IN')}`;
   };
-
-  const filteredPlotsForProject = useMemo(() => {
-    if (!selectedProjectId) return [];
-    const buyerCustId = selectedCustomerId ? String(selectedCustomerId) : '';
-
-    return plots.filter(p => {
-      if (String(p.projectId) !== String(selectedProjectId)) return false;
-      // Do not expose already-booked, registered, or sold plots
-      if (p.status === 'Registered' || p.status === 'Sold' || p.status === 'Booked') return false;
-
-      // Available plots are open for booking
-      if (p.status === 'Available') return true;
-
-      // Plots on Hold: only selectable if held by this customer (primary key) or before buyer is selected
-      if (p.status === 'Hold') {
-        const heldCustId = p.heldByCustomerId ? String(p.heldByCustomerId) : '';
-        if (buyerCustId && heldCustId && buyerCustId === heldCustId) return true;
-        if (!buyerCustId && !heldCustId) return true;
-        return false;
-      }
-
-      return false;
-    });
-  }, [selectedProjectId, plots, selectedCustomerId]);
 
   const filteredBookings = useMemo(() => {
     return bookings.filter(b => {
@@ -1554,21 +1616,47 @@ export const BookingsPage: React.FC = () => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Plot Number *</label>
-              <select
-                className="form-select"
-                required
-                value={selectedPlotId}
-                onChange={e => handlePlotSelect(e.target.value)}
-                disabled={!selectedProjectId}
-              >
-                <option value="">{selectedProjectId ? '-- Select Available/Held Plot --' : '-- First Select Project --'}</option>
-                {filteredPlotsForProject.map(p => (
-                  <option key={p.id} value={String(p.id)}>
-                    {p.plotNumber} - {p.areaSqFt || p.sizeSqft} sq.ft ({p.status}) - ₹{(p.price / 100000).toFixed(2)}L
-                  </option>
-                ))}
-              </select>
+              <label className="form-label">Plot *</label>
+              {(() => {
+                const chosen = selectedPlotId ? plots.find((p: any) => String(p.id) === String(selectedPlotId)) : null;
+                return chosen ? (
+                  <div
+                    style={{
+                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                      padding: '8px 12px', border: '1px solid var(--border-base, #e2e8f0)', borderRadius: 8,
+                    }}
+                  >
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 700, fontSize: 13.5 }}>
+                        {chosen.plotNumber} <StatusChip status={chosen.status} size="sm" />
+                      </div>
+                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                        {[chosen.facing && `${chosen.facing} facing`, (chosen.areaSqFt || chosen.sizeSqft) && `${chosen.areaSqFt || chosen.sizeSqft} sq ft`,
+                          chosen.price ? `₹${Number(chosen.price).toLocaleString('en-IN')}` : null].filter(Boolean).join(' · ')}
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                      <button type="button" className="btn btn-secondary btn-sm" onClick={handlePickPlotFromInventory}>Change</button>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setSelectedPlotId(''); setTotalPlotPrice(undefined); }}>Clear</button>
+                    </div>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    className="btn btn-secondary"
+                    style={{ width: '100%', justifyContent: 'center' }}
+                    onClick={handlePickPlotFromInventory}
+                    disabled={!selectedProjectId}
+                  >
+                    Choose plot from Plot Inventory →
+                  </button>
+                );
+              })()}
+              <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
+                {selectedProjectId
+                  ? 'Opens Plot Inventory so you can filter by facing, size and price and pick the plot to book.'
+                  : 'Select a project first.'}
+              </p>
             </div>
           </div>
 

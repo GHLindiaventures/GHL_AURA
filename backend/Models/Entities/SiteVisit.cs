@@ -21,6 +21,9 @@ public class SiteVisit
     public int? PlotId { get; set; }
     public JaminPlot? Plot { get; set; }
 
+    /// <summary>Every plot on this visit (one or more). <see cref="PlotId"/> is the first of them.</summary>
+    public ICollection<SiteVisitPlot> VisitPlots { get; set; } = new List<SiteVisitPlot>();
+
     public string CustomerName { get; set; } = string.Empty;
     public string CustomerPhone { get; set; } = string.Empty;
     public string? ContactType { get; set; }
@@ -40,6 +43,11 @@ public class SiteVisit
     public string Status { get; set; } = "Pending";
     public string? VisitorNote { get; set; }
     public string? OutcomeNotes { get; set; }
+
+    /// <summary>Who last changed the status / remarks (shown to the agent who assigned the follow-up).</summary>
+    public int? StatusUpdatedById { get; set; }
+    public string? StatusUpdatedByName { get; set; }
+    public DateTime? StatusUpdatedAt { get; set; }
 
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }

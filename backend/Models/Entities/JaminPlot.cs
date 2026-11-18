@@ -23,6 +23,16 @@ public class JaminPlot
     /// <summary>Area in square feet.</summary>
     public int AreaSqFt { get; set; } = 1200;
 
+    /// <summary>Area in square metres as printed on the approved area statement (null when not known).</summary>
+    public double? AreaSqM { get; set; }
+
+    // Position on the project layout image, as a fraction of the image size (0..1). Null when the plot is not marked.
+    public double? LayoutX { get; set; }
+    public double? LayoutY { get; set; }
+    /// <summary>Width and height of the plot cell on the layout image (fractions), when its outline is known.</summary>
+    public double? LayoutW { get; set; }
+    public double? LayoutH { get; set; }
+
     /// <summary>Facing direction, e.g. "East", "North-East".</summary>
     public string Facing { get; set; } = "East";
 

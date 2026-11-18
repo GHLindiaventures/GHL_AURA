@@ -42,6 +42,7 @@ public class ApplicationDbContext : DbContext
     // ── Jamin Bazaar specific tables ─────────────────────────────────────────
     /// <summary>Site visit requests and confirmations across properties.</summary>
     public DbSet<SiteVisit> SiteVisits => Set<SiteVisit>();
+    public DbSet<SiteVisitPlot> SiteVisitPlots => Set<SiteVisitPlot>();
 
     /// <summary>Jamin land development projects (e.g. Jamin Garden — Shastri Nagar).</summary>
     public DbSet<JaminProject> JaminProjects => Set<JaminProject>();

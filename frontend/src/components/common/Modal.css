@@ -59,6 +59,7 @@
   display: flex;
   align-items: center;
   justify-content: flex-end;
+  flex-wrap: wrap; /* many buttons wrap instead of overflowing off the left edge */
   gap: 12px;
 }
 

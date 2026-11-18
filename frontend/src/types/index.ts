@@ -460,6 +460,8 @@ export interface SiteVisit {
   developmentName?: string;
   plotId?: string;
   plotNumber?: string;
+  /** Every plot on the visit (a customer can see several); plotId/plotNumber describe the first. */
+  plots?: Array<{ plotId: string; plotNumber: string }>;
   scheduledAt?: string;
   scheduledDate?: string;
   scheduledTimeSlot?: string;
@@ -469,6 +471,10 @@ export interface SiteVisit {
   assignedById?: string;
   assignedByName?: string;
   customerEmail?: string;
+  /** Who last set the status / remarks (shown to the agent who assigned the follow-up). */
+  statusUpdatedById?: string;
+  statusUpdatedByName?: string;
+  statusUpdatedAt?: string;
   status: 'Requested' | 'Pending' | 'Scheduled' | 'Confirmed' | 'Completed' | 'Rescheduled' | 'Cancelled' | 'No-show' | string;
   outcomeNotes?: string;
   visitorNote?: string;
@@ -598,7 +604,7 @@ export interface AuditLog {
 
 export interface NotificationItem {
   id: string;
-  type: 'lead' | 'call' | 'followup' | 'visit' | 'booking' | 'system' | 'alert' | 'broadcast';
+  type: 'lead' | 'call' | 'followup' | 'site_visit' | 'visit' | 'booking' | 'system' | 'alert' | 'broadcast';
   title: string;
   message: string;
   timestamp: string;

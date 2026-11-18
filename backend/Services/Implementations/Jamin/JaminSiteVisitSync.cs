@@ -71,9 +71,9 @@ public static class JaminSiteVisitSync
             AssignedById = lead.AssignedById ?? lead.AssignedAgentId,
             AssignedByName = lead.AssignedById is null || lead.AssignedById == lead.AssignedAgentId ? lead.AssignedAgentName : null,
             AssignedAt = lead.AssignedAt ?? DateTime.UtcNow,
-            Status = "Scheduled",
+            Status = "Pending",
             VisitorNote = string.IsNullOrWhiteSpace(lead.AnythingWeShouldKnow) ? null : lead.AnythingWeShouldKnow,
-            OutcomeNotes = "Synced from Leads: lead marked Site Visit Scheduled.",
+            OutcomeNotes = null,
             CreatedAt = DateTime.UtcNow
         };
     }

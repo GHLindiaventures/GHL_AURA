@@ -188,6 +188,7 @@ public class JaminProjectService : IJaminProjectService
         if (dto.BookedPlots.HasValue) project.BookedPlots = dto.BookedPlots.Value;
         if (dto.PriceRange != null) project.PriceRange = dto.PriceRange.Trim();
         if (dto.ImageUrl != null) project.ImageUrl = dto.ImageUrl;
+        if (dto.MapQuery != null) project.MapQuery = string.IsNullOrWhiteSpace(dto.MapQuery) ? null : dto.MapQuery.Trim();
 
         project.UpdatedAt = DateTime.UtcNow;
         await _context.SaveChangesAsync(ct);
@@ -252,6 +253,8 @@ public class JaminProjectService : IJaminProjectService
             TotalBookings = bookingCount,
             PriceRange = p.PriceRange,
             ImageUrl = p.ImageUrl,
+            LayoutImageUrl = p.LayoutImageUrl,
+            MapQuery = p.MapQuery,
             CreatedAt = p.CreatedAt,
             UpdatedAt = p.UpdatedAt
         };

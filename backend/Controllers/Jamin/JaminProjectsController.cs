@@ -73,6 +73,7 @@ public class JaminProjectsController : JaminTenantControllerBase
         if (dto.Description != null) project.Description = dto.Description.Trim();
         if (dto.PriceRange != null) project.PriceRange = dto.PriceRange.Trim();
         if (dto.ImageUrl != null) project.ImageUrl = dto.ImageUrl.Trim();
+        if (dto.MapQuery != null) project.MapQuery = string.IsNullOrWhiteSpace(dto.MapQuery) ? null : dto.MapQuery.Trim();
         if (dto.TotalPlots.HasValue)
         {
             var currentPlots = await _db.JaminPlots
@@ -228,14 +229,14 @@ public class JaminProjectsController : JaminTenantControllerBase
             Id = p.Id, CompanyId = p.CompanyId, Name = p.Name, Location = p.Location,
             Status = p.Status, Description = p.Description, TotalPlots = p.TotalPlots,
             AvailablePlots = p.AvailablePlots, BookedPlots = p.BookedPlots,
-            PriceRange = p.PriceRange, ImageUrl = p.ImageUrl, CreatedAt = p.CreatedAt, UpdatedAt = p.UpdatedAt
+            PriceRange = p.PriceRange, ImageUrl = p.ImageUrl, LayoutImageUrl = p.LayoutImageUrl, MapQuery = p.MapQuery, CreatedAt = p.CreatedAt, UpdatedAt = p.UpdatedAt
         });
 
     private static JaminProjectResponseDto ToDto(JaminProject p) => new()
     {
         Id = p.Id, CompanyId = p.CompanyId, Name = p.Name, Location = p.Location, Status = p.Status,
         Description = p.Description, TotalPlots = p.TotalPlots, AvailablePlots = p.AvailablePlots,
-        BookedPlots = p.BookedPlots, PriceRange = p.PriceRange, ImageUrl = p.ImageUrl, CreatedAt = p.CreatedAt,
+        BookedPlots = p.BookedPlots, PriceRange = p.PriceRange, ImageUrl = p.ImageUrl, LayoutImageUrl = p.LayoutImageUrl, MapQuery = p.MapQuery, CreatedAt = p.CreatedAt,
         UpdatedAt = p.UpdatedAt
     };
 }

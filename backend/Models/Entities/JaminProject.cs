@@ -33,6 +33,15 @@ public class JaminProject
     /// <summary>Optional image/brochure URL.</summary>
     public string? ImageUrl { get; set; }
 
+    /// <summary>Approved layout drawing (static image) shown by "View on Layout"; null until one is loaded.</summary>
+    public string? LayoutImageUrl { get; set; }
+
+    /// <summary>What to search on the map: a place name ("Varapatty, Sulur, Coimbatore") or exact coordinates ("11.0123, 77.1234").</summary>
+    public string? MapQuery { get; set; }
+
+    /// <summary>Version of the layout data last applied by the startup sync, so manual edits are not overwritten on every restart.</summary>
+    public string? LayoutVersion { get; set; }
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
 

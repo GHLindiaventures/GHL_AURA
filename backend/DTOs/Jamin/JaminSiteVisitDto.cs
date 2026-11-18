@@ -8,6 +8,8 @@ public class JaminSiteVisitDto
     public int? CustomerId { get; set; }
     public int? ProjectId { get; set; }
     public int? PlotId { get; set; }
+    /// <summary>Every plot on the visit. <see cref="PlotId"/> is the first one.</summary>
+    public List<JaminSiteVisitPlotDto> Plots { get; set; } = new();
     public string CustomerName { get; set; } = string.Empty;
     public string CustomerPhone { get; set; } = string.Empty;
     public string? ContactType { get; set; }
@@ -24,6 +26,9 @@ public class JaminSiteVisitDto
     public string Status { get; set; } = "Requested"; // Requested | Pending | Scheduled | Completed | Rescheduled | Cancelled | No-show
     public string? VisitorNote { get; set; }
     public string? OutcomeNotes { get; set; }
+    public int? StatusUpdatedById { get; set; }
+    public string? StatusUpdatedByName { get; set; }
+    public DateTime? StatusUpdatedAt { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
@@ -33,6 +38,8 @@ public class ScheduleSiteVisitRequestDto
     public int? CustomerId { get; set; }
     public int? ProjectId { get; set; }
     public int? PlotId { get; set; }
+    /// <summary>One or more plots the customer will see; takes precedence over <see cref="PlotId"/>.</summary>
+    public List<int>? PlotIds { get; set; }
     public string CustomerName { get; set; } = string.Empty;
     public string CustomerPhone { get; set; } = string.Empty;
     public string? ContactType { get; set; } = "lead";
@@ -58,6 +65,8 @@ public class UpdateSiteVisitDto
     public string? ContactType { get; set; }
     public int? ProjectId { get; set; }
     public int? PlotId { get; set; }
+    /// <summary>Replaces the plots on the visit when provided.</summary>
+    public List<int>? PlotIds { get; set; }
     public string? ProjectName { get; set; }
     public string? PlotNumber { get; set; }
     public string? ScheduledAt { get; set; }
@@ -68,3 +77,18 @@ public class UpdateSiteVisitDto
     public string? OutcomeNotes { get; set; }
 }
 
+
+public class JaminSiteVisitPlotDto
+{
+    public int PlotId { get; set; }
+    public string PlotNumber { get; set; } = string.Empty;
+}
+
+/// <summary>An open site visit that includes a plot — enough to warn "already planned", without customer details.</summary>
+public class PlotVisitUsageDto
+{
+    public int VisitId { get; set; }
+    public string ScheduledAt { get; set; } = string.Empty;
+    public string Status { get; set; } = string.Empty;
+    public string? FollowUpAgentName { get; set; }
+}

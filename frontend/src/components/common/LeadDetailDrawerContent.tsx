@@ -66,7 +66,8 @@ export const LeadDetailDrawerContent: React.FC<LeadDetailDrawerContentProps> = (
   calls,
   lead,
 }) => {
-  const { user } = useAuth();
+  const { user, tenant } = useAuth();
+  const isJamin = tenant?.slug === 'jamin';
   const isSalesExecutive = user?.role?.code === 'sales_executive';
 
   const [expandedTranscripts, setExpandedTranscripts] = useState<Record<string, boolean>>({});
@@ -142,9 +143,10 @@ export const LeadDetailDrawerContent: React.FC<LeadDetailDrawerContentProps> = (
     (c.notes || '').includes('Connected to IRM') ||
     (c.agentId || '').toString().toLowerCase().includes('irm');
 
-  const agentCalls = selectedCalls.filter(c => !isIrmCall(c));
-  const irmCalls = selectedCalls.filter(c => isIrmCall(c));
-  const tabCalls = callTab === 'agent' ? agentCalls : irmCalls;
+  // Jamin has no IRM team: every call is an agent call and there is no IRM tab.
+  const agentCalls = isJamin ? selectedCalls : selectedCalls.filter(c => !isIrmCall(c));
+  const irmCalls = isJamin ? [] : selectedCalls.filter(c => isIrmCall(c));
+  const tabCalls = callTab === 'agent' || isJamin ? agentCalls : irmCalls;
 
   // ── Active follow-up count ───────────────────────────────────────────────────
   const followups = storageService.getFollowups(tenantId) || [];
@@ -531,6 +533,7 @@ export const LeadDetailDrawerContent: React.FC<LeadDetailDrawerContentProps> = (
           <Phone size={16} color="var(--primary-600)" /> Call Recordings
         </h4>
 
+        {!isJamin && (
         <div style={{ display: 'flex', gap: 8, marginBottom: 12 }}>
           <button
             type="button"
@@ -547,6 +550,7 @@ export const LeadDetailDrawerContent: React.FC<LeadDetailDrawerContentProps> = (
             Connect via IRM ({irmCalls.length})
           </button>
         </div>
+        )}
 
         {tabCalls.length === 0 ? (
           <div style={{ padding: '16px', backgroundColor: 'var(--bg-surface-hover)', borderRadius: 8, color: 'var(--text-muted)', fontSize: 13, textAlign: 'center' }}>

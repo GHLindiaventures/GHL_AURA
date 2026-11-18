@@ -773,7 +773,8 @@ export const InCallBar: React.FC = () => {
               <ExternalLink size={13} /> Meet
             </button>
 
-            {/* Connect IRM / Connect Agent */}
+            {/* Connect IRM / Connect Agent (Jamin has no IRM team) */}
+            {tenant?.slug !== 'jamin' && (
             <button
               ref={irmButtonRef}
               className="btn btn-sm incall-btn-action incall-btn-irm"
@@ -787,6 +788,7 @@ export const InCallBar: React.FC = () => {
             >
               <Users size={13} /> {isIrm ? 'Connect Agent' : 'Connect IRM'}
             </button>
+            )}
 
             {irmMenuOpen && irmButtonRect && ReactDOM.createPortal(
               <div

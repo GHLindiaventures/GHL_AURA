@@ -541,19 +541,6 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate }) => {
                   </span>
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <button
-                      className="btn btn-secondary btn-sm"
-                      onClick={() => {
-                        setBlueprintZoom(1);
-                        setBlueprintRotation(0);
-                        setIsBlueprintFullScreen(false);
-                        setViewingBlueprintProject(proj);
-                      }}
-                      style={{ display: 'inline-flex', alignItems: 'center', gap: '5px', fontSize: '0.82rem', background: '#ecfdf5', color: '#047857', border: '1px solid #a7f3d0', fontWeight: 600 }}
-                      title="View Master Layout Blueprint"
-                    >
-                      <MapLayoutIcon size={14} /> Master Layout
-                    </button>
-                    <button
                       className="btn btn-primary btn-sm"
                       onClick={() => onNavigate('plots')}
                       style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}

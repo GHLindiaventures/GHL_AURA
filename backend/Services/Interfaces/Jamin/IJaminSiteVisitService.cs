@@ -13,5 +13,6 @@ public interface IJaminSiteVisitService
     Task<ApiResponse<List<JaminSiteVisitDto>>> GetLeadSiteVisitsAsync(int leadId, CancellationToken ct = default);
     Task<ApiResponse<List<JaminSiteVisitDto>>> GetCustomerSiteVisitsAsync(int customerId, CancellationToken ct = default);
     Task<ApiResponse<bool>> DeleteSiteVisitAsync(int id, CancellationToken ct = default);
+    Task<ApiResponse<Dictionary<int, List<PlotVisitUsageDto>>>> GetPlotUsageAsync(int? projectId, CancellationToken ct = default);
 }
 

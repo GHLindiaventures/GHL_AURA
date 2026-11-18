@@ -10,6 +10,11 @@ public class JaminPlotResponseDto
     public string PlotNumber { get; set; } = string.Empty;
     public string Dimensions { get; set; } = "30 x 40";
     public int AreaSqFt { get; set; }
+    public double? AreaSqM { get; set; }
+    public double? LayoutX { get; set; }
+    public double? LayoutY { get; set; }
+    public double? LayoutW { get; set; }
+    public double? LayoutH { get; set; }
     public string Facing { get; set; } = "East";
     public string Status { get; set; } = "Available";
     public decimal Price { get; set; }
@@ -75,6 +80,11 @@ public class LeadPlotSelectionDto
     public string PlotNumber { get; set; } = string.Empty;
     public string Facing { get; set; } = string.Empty;
     public int AreaSqFt { get; set; }
+    public double? AreaSqM { get; set; }
+    public double? LayoutX { get; set; }
+    public double? LayoutY { get; set; }
+    public double? LayoutW { get; set; }
+    public double? LayoutH { get; set; }
     public decimal Price { get; set; }
     public string PlotStatus { get; set; } = string.Empty;
 

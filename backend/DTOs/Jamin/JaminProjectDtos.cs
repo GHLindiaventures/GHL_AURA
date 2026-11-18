@@ -19,6 +19,8 @@ public class JaminProjectResponseDto
     public int TotalBookings { get; set; }
     public string PriceRange { get; set; } = string.Empty;
     public string? ImageUrl { get; set; }
+    public string? LayoutImageUrl { get; set; }
+    public string? MapQuery { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
 }
@@ -47,4 +49,5 @@ public class UpdateJaminProjectDto
     public int? BookedPlots { get; set; }
     public string? PriceRange { get; set; }
     public string? ImageUrl { get; set; }
+    public string? MapQuery { get; set; }
 }

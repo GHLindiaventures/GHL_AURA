@@ -1,13 +1,16 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Grid, RefreshCw, Plus, Map, Maximize2, Minimize2, ZoomIn, ZoomOut, RotateCcw, RotateCw, X, Image as ImageIcon, Compass, Layers, ShieldCheck, Edit3, Trash2 } from 'lucide-react';
+import { Grid, RefreshCw, Plus, Map, Maximize2, Minimize2, ZoomIn, ZoomOut, RotateCcw, RotateCw, X, Image as ImageIcon, Compass, Layers, ShieldCheck, Edit3, Trash2, MapPin } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { StatusChip } from '../../components/common/StatusChip';
 import { Modal } from '../../components/common/Modal';
 import { BlueprintViewerModal } from '../../components/common/BlueprintViewerModal';
+import { PlotLayoutViewer, type LayoutPlot } from '../../components/common/PlotLayoutViewer';
+import { ProjectMapModal } from '../../components/common/ProjectMapModal';
 import { comparePlotNumbers } from '../../utils/plotUtils';
 import { jaminApiService } from '../../services/jaminApiService';
 import { getCustomers, getLeads } from '../../services/ghlApiService';
 import { storageService } from '../../services/storageService';
+import { toast } from '../../context/ToastContext';
 import './PlotsPage.css';
 
 
@@ -108,6 +111,127 @@ export const PlotsPage: React.FC = () => {
   const [isDeletePlotModalOpen, setIsDeletePlotModalOpen] = useState(false);
   const [submittingDelete, setSubmittingDelete] = useState(false);
 
+  // Pick mode: another page (Site Visits, Bookings) sent the rep here to choose plot(s).
+  //  - visit:   several Available plots (a customer can see more than one)
+  //  - booking: exactly one plot that can be booked (Available, or held for this buyer)
+  const readPickState = (): {
+    projectId: string; plotIds: string[]; mode: 'visit' | 'booking' | 'followup'; phone: string; buyerCustomerId: string;
+    contact?: { name: string; phone: string; leadId?: string; customerId?: string };
+  } | null => {
+    try {
+      const raw = sessionStorage.getItem('site_visit_plot_pick');
+      if (!raw) return null;
+      const parsed = JSON.parse(raw);
+      return {
+        projectId: String(parsed?.projectId ?? ''),
+        plotIds: Array.isArray(parsed?.selectedPlotIds) ? parsed.selectedPlotIds.map((id: unknown) => String(id)) : [],
+        mode: parsed?.mode === 'booking' ? 'booking' : parsed?.mode === 'followup' ? 'followup' : 'visit',
+        phone: String(parsed?.phone ?? ''),
+        buyerCustomerId: String(parsed?.buyerCustomerId ?? ''),
+        contact: parsed?.contact && typeof parsed.contact === 'object' ? parsed.contact : undefined,
+      };
+    } catch {
+      return null;
+    }
+  };
+  const [pickState] = useState(() => readPickState());
+  const [pickProjectId, setPickProjectId] = useState<string | null>(() => pickState?.projectId || null);
+  const [pickedIds, setPickedIds] = useState<string[]>(() => pickState?.plotIds ?? []);
+  const pickMode = pickProjectId !== null;
+  const pickPurpose: 'visit' | 'booking' | 'followup' = pickState?.mode ?? 'visit';
+  const bookingLikePick = pickPurpose !== 'visit';
+
+  // Leaving Plot Inventory by any other route (sidebar, back) must not leave it stuck in pick mode next time.
+  useEffect(() => () => {
+    try { sessionStorage.removeItem('site_visit_plot_pick'); } catch { /* ignore */ }
+  }, []);
+
+  const phoneKeyOf = (p?: string) => (p || '').replace(/\D/g, '').slice(-10);
+  /** Can this plot be picked? Visits: Available. Bookings: Available, or held for this buyer. */
+  const isPickable = (plot: any): boolean => {
+    if (plot.status === 'Available') return true;
+    if (!bookingLikePick || plot.status !== 'Hold') return false;
+    const heldPhone = phoneKeyOf(plot.heldByCustomerPhone);
+    return (!!heldPhone && heldPhone === phoneKeyOf(pickState?.phone))
+      || (!!plot.heldByCustomerId && String(plot.heldByCustomerId) === pickState?.buyerCustomerId);
+  };
+
+  const leavePicking = () => {
+    try { sessionStorage.removeItem('site_visit_plot_pick'); } catch { /* ignore */ }
+    setPickProjectId(null);
+    window.dispatchEvent(new CustomEvent('nexus_navigate', { detail: pickPurpose === 'booking' ? 'bookings' : pickPurpose === 'followup' ? 'followups' : 'site-visits' }));
+  };
+
+  // Booking queue: several plots chosen for one customer are booked one after another.
+  type BookingContactInfo = { name: string; phone: string; leadId?: string; customerId?: string };
+  const [bookingQueue, setBookingQueue] = useState<{ ids: string[]; contact: BookingContactInfo } | null>(null);
+  const bookingQueueRef = React.useRef(bookingQueue);
+  bookingQueueRef.current = bookingQueue;
+
+  /** Done: hand the picked plot(s) back to the page that sent the rep here. */
+  const confirmPicked = () => {
+    if (pickPurpose === 'followup') {
+      // Stay here: book the picked plots for the follow-up customer, one at a time.
+      try { sessionStorage.removeItem('site_visit_plot_pick'); } catch { /* ignore */ }
+      const contact = pickState?.contact || { name: '', phone: pickState?.phone || '' };
+      setPickProjectId(null);
+      const ids = pickedIds;
+      setPickedIds([]);
+      if (ids.length === 0) return;
+      const [first, ...rest] = ids;
+      setBookingQueue(rest.length > 0 ? { ids: rest, contact } : null);
+      const plot = plots.find(p => String(p.id) === first);
+      if (plot) void openBookingForContact(plot, contact);
+      return;
+    }
+    try {
+      sessionStorage.setItem(
+        pickPurpose === 'booking' ? 'booking_plot_selection' : 'site_visit_plot_selection',
+        JSON.stringify({ projectId: pickProjectId, plotIds: pickedIds }),
+      );
+    } catch { /* ignore */ }
+    leavePicking();
+  };
+
+  const handlePickPlot = (plot: any) => {
+    if (!isPickable(plot)) {
+      toast.error(bookingLikePick
+        ? `${plot.plotNumber} is ${plot.status} and cannot be booked for this buyer.`
+        : `${plot.plotNumber} is ${plot.status}. Pick Available plots for the site visit.`);
+      return;
+    }
+    if (pickProjectId && String(plot.projectId) !== String(pickProjectId)) {
+      toast.error(`This plot belongs to a different project than the ${pickPurpose === 'booking' ? 'booking' : 'site visit'}.`);
+      return;
+    }
+    const id = String(plot.id);
+    if (pickPurpose === 'followup') { togglePicked(id); return; }
+    if (pickPurpose === 'booking') {
+      // One plot per booking: picking another replaces it, picking the same one clears it.
+      setPickedIds(prev => (prev.includes(id) ? [] : [id]));
+      return;
+    }
+    // Several customers may visit the same plot, but adding one that is already planned needs a confirmation.
+    if (!pickedIds.includes(id) && (plotUsage[id]?.length ?? 0) > 0) {
+      setConfirmPlot(plot);
+      return;
+    }
+    togglePicked(id);
+  };
+
+  const togglePicked = (id: string) =>
+    setPickedIds(prev => (prev.includes(id) ? prev.filter(p => p !== id) : prev.length >= 10 ? (toast.error('You can pick up to 10 plots.'), prev) : [...prev, id]));
+
+  // Open visits per plot, to warn when a plot is already planned for another customer.
+  const [plotUsage, setPlotUsage] = useState<Record<string, Array<{ visitId: number; scheduledAt: string; status: string; followUpAgentName?: string }>>>({});
+  const [confirmPlot, setConfirmPlot] = useState<any | null>(null);
+  useEffect(() => {
+    if (!pickProjectId || pickPurpose !== "visit") return; // "already planned for another visit" only matters when picking for a visit
+    let cancelled = false;
+    jaminApiService.getPlotUsage(pickProjectId).then(u => { if (!cancelled) setPlotUsage(u); });
+    return () => { cancelled = true; };
+  }, [pickProjectId]);
+
   const loadData = async (projId?: string) => {
     setLoading(true);
     try {
@@ -128,7 +252,9 @@ export const PlotsPage: React.FC = () => {
   };
 
   useEffect(() => {
-    loadData();
+    // In pick mode, open straight on the project the visit is being scheduled for.
+    if (pickProjectId) setSelectedProject(pickProjectId);
+    loadData(pickProjectId || undefined);
     loadHoldEntities();
   }, []);
 
@@ -245,11 +371,16 @@ export const PlotsPage: React.FC = () => {
   };
 
   const currentProjectObj = projects.find(p => String(p.id) === String(currentProjectId)) || projects[0];
-  const hasMasterLayout = Boolean(currentProjectObj?.imageUrl && currentProjectObj.imageUrl.trim() !== '');
+  // The approved layout drawing (set by the layout sync) wins over the marketing image.
+  const projectLayoutUrl: string = (currentProjectObj?.layoutImageUrl || '').trim();
+  const hasMasterLayout = Boolean(projectLayoutUrl || (currentProjectObj?.imageUrl && currentProjectObj.imageUrl.trim() !== ''));
+  const [layoutPlot, setLayoutPlot] = useState<LayoutPlot | null>(null);
+  const [mapPlotLabel, setMapPlotLabel] = useState<string | null>(null); // plot being looked at (null = map closed)
+  const [isMapOpen, setIsMapOpen] = useState(false);
 
   const getProjectMasterLayout = () => {
     if (hasMasterLayout) {
-      return currentProjectObj!.imageUrl;
+      return projectLayoutUrl || currentProjectObj!.imageUrl;
     }
     return '';
   };
@@ -438,6 +569,80 @@ export const PlotsPage: React.FC = () => {
     }
   };
 
+  /** Open the booking form for a plot with the customer already filled in. */
+  const openBookingForContact = async (plot: any, sel: BookingContactInfo) => {
+    setSelectedProject(String(plot.projectId));
+    await handleOpenBooking(plot);
+    if (sel.leadId) {
+      setBookingSourceType('lead');
+      setSelectedBookingLeadId(String(sel.leadId));
+      setSelectedBookingCustomerId('');
+    } else if (sel.customerId) {
+      setBookingSourceType('customer');
+      setSelectedBookingCustomerId(String(sel.customerId));
+      setSelectedBookingLeadId('');
+    } else {
+      setBookingSourceType('custom');
+    }
+    setBookingCustomerName(sel.name || '');
+    setBookingCustomerPhone(sel.phone || '');
+  };
+
+  /** After a booking is saved, open the form for the next plot waiting in the queue. */
+  const openNextQueuedBooking = async (justBooked: string, freshPlots: any[]) => {
+    const q = bookingQueueRef.current;
+    if (!q) return;
+    const remaining = [...q.ids];
+    while (remaining.length > 0) {
+      const nextId = remaining.shift() as string;
+      const nextPlot = freshPlots.find(p => String(p.id) === nextId);
+      if (!nextPlot) continue;
+      if (nextPlot.status !== 'Available' && nextPlot.status !== 'Hold') {
+        toast.error(`${nextPlot.plotNumber} is no longer available, skipped.`);
+        continue;
+      }
+      setBookingQueue(remaining.length > 0 ? { ...q, ids: remaining } : null);
+      toast.success(`Booked ${justBooked}. Next: ${nextPlot.plotNumber}`);
+      await openBookingForContact(nextPlot, q.contact);
+      return;
+    }
+    setBookingQueue(null);
+  };
+
+  // Booking started from a follow-up: open the booking form for that plot with the customer already filled in.
+  const bookingPrefillHandled = React.useRef(false);
+  useEffect(() => {
+    if (loading || bookingPrefillHandled.current || plots.length === 0) return;
+    let raw: string | null = null;
+    try { raw = sessionStorage.getItem('booking_prefill'); } catch { /* ignore */ }
+    if (!raw) return;
+    bookingPrefillHandled.current = true;
+    try { sessionStorage.removeItem('booking_prefill'); } catch { /* ignore */ }
+
+    let sel: { plotId?: string; leadId?: string; customerId?: string; name?: string; phone?: string };
+    try { sel = JSON.parse(raw); } catch { return; }
+    const rawIds = Array.isArray((sel as any).plotIds) && (sel as any).plotIds.length > 0 ? (sel as any).plotIds : [sel.plotId];
+    const ids: string[] = rawIds.map((x: unknown) => String(x));
+    const plot = plots.find(p => String(p.id) === ids[0]);
+    if (!plot) {
+      toast.error('That plot could not be found in Plot Inventory.');
+      return;
+    }
+    const contact = { name: sel.name || '', phone: sel.phone || '', leadId: sel.leadId, customerId: sel.customerId };
+    setBookingQueue(ids.length > 1 ? { ids: ids.slice(1), contact } : null);
+    void openBookingForContact(plot, contact);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [loading, plots]);
+
+  const cancelBookingModal = () => {
+    setIsBookingModalOpen(false);
+    const q = bookingQueueRef.current;
+    if (q) {
+      toast.error(`Skipped the remaining ${q.ids.length} selected plot${q.ids.length === 1 ? '' : 's'}.`);
+      setBookingQueue(null);
+    }
+  };
+
   const handleConfirmBooking = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     if (!selectedPlot) return;
@@ -472,7 +677,12 @@ export const PlotsPage: React.FC = () => {
       if (result.success) {
         setIsBookingModalOpen(false);
         setSelectedPlot(null);
+        const fresh = await jaminApiService.getPlots(selectedProject || undefined).catch(() => plots);
         await loadData(selectedProject);
+        if ((bookingQueueRef.current?.ids.length ?? 0) > 0) {
+          await openNextQueuedBooking(selectedPlot.plotNumber, fresh as any[]);
+          return;
+        }
         alert(`✓ Plot ${selectedPlot.plotNumber} successfully reserved! The token payment of ₹${(bookingTokenAmount || 0).toLocaleString('en-IN')} is awaiting finance verification. The prospect will be officially confirmed in Customer 360 once the payment is verified.`);
       } else {
         alert(result.message || 'Failed to confirm booking. The plot may already be held or booked by another transaction.');
@@ -599,6 +809,52 @@ export const PlotsPage: React.FC = () => {
 
   return (
     <div className="plots-page-container">
+      {pickMode && (
+        <div
+          role="status"
+          style={{
+            display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap',
+            padding: '12px 16px', marginBottom: 16, borderRadius: 10,
+            background: 'rgba(16, 185, 129, 0.12)', border: '1px solid rgba(16, 185, 129, 0.4)', color: '#047857',
+          }}
+        >
+          <span>
+            {pickPurpose === 'followup' ? (
+              <>
+                <strong>Select the plots to book{pickState?.contact?.name ? ` for ${pickState.contact.name}` : ''}.</strong> Use the filters, then tick every plot they want. You will confirm each booking next.{' '}
+                <strong>{pickedIds.length} selected</strong>
+              </>
+            ) : pickPurpose === 'booking' ? (
+              <>
+                <strong>Select the plot to book.</strong> Use the filters, then click the plot. Only plots that can be booked for this buyer can be chosen.{' '}
+                <strong>{pickedIds.length > 0 ? `${projectPlots.find(p => String(p.id) === pickedIds[0])?.plotNumber ?? 'Plot'} selected` : 'No plot selected'}</strong>
+              </>
+            ) : (
+              <>
+                <strong>Select plots for the site visit.</strong> Use the filters, then click every Available plot the customer should see.{' '}
+                <strong>{pickedIds.length} selected</strong>
+              </>
+            )}
+          </span>
+          <span style={{ display: 'inline-flex', gap: 8 }}>
+            <button type="button" className="btn btn-secondary btn-sm" onClick={leavePicking}>
+              Cancel
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary btn-sm"
+              onClick={confirmPicked}
+              disabled={bookingLikePick && pickedIds.length === 0}
+            >
+              {pickPurpose === 'followup'
+                ? `Book ${pickedIds.length} plot${pickedIds.length === 1 ? '' : 's'}`
+                : pickPurpose === 'booking'
+                ? 'Done — use this plot'
+                : pickedIds.length > 0 ? `Done — add ${pickedIds.length} plot${pickedIds.length === 1 ? '' : 's'}` : 'Done — no specific plot'}
+            </button>
+          </span>
+        </div>
+      )}
       {/* Header */}
       <div className="page-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
         <div>
@@ -612,6 +868,14 @@ export const PlotsPage: React.FC = () => {
 
         {/* Project Selector, Refresh, Add Plot */}
         <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          <button
+            className="btn btn-secondary btn-sm"
+            onClick={() => { setMapPlotLabel(null); setIsMapOpen(true); }}
+            title="Show where this project is on the map"
+            style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
+          >
+            <MapPin size={14} /> View on Map
+          </button>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <label htmlFor="plots-project-selector" style={{ fontSize: 13, fontWeight: 600 }}>Project:</label>
             <select
@@ -871,9 +1135,36 @@ export const PlotsPage: React.FC = () => {
               <div
                 key={plot.id}
                 className={`card card-hover plot-item-card ${statusClass}`}
-                onClick={() => setSelectedPlot(plot)}
-                style={{ position: 'relative' }}
+                onClick={() => (pickMode ? handlePickPlot(plot) : setSelectedPlot(plot))}
+                style={{
+                  position: 'relative',
+                  ...(pickMode && !isPickable(plot) ? { opacity: 0.55, cursor: 'not-allowed' } : {}),
+                  ...(pickMode && pickedIds.includes(String(plot.id)) ? { outline: '2px solid #10b981', outlineOffset: -2 } : {}),
+                }}
+                title={pickMode ? (isPickable(plot) ? (pickedIds.includes(String(plot.id)) ? 'Selected — click to remove' : bookingLikePick ? 'Click to select this plot for the booking' : 'Click to select this plot for the site visit') : `Not available (${plot.status})`) : undefined}
+                aria-pressed={pickMode ? pickedIds.includes(String(plot.id)) : undefined}
               >
+                {pickMode && pickedIds.includes(String(plot.id)) && (
+                  <span
+                    aria-hidden
+                    style={{
+                      position: 'absolute', top: 8, right: 8, zIndex: 1, background: '#10b981', color: '#fff',
+                      borderRadius: 999, width: 20, height: 20, display: 'inline-flex', alignItems: 'center', justifyContent: 'center', fontSize: 12, fontWeight: 700,
+                    }}
+                  >
+                    ✓
+                  </span>
+                )}
+                {pickMode && isPickable(plot) && (
+                  <button
+                    type="button"
+                    className={pickedIds.includes(String(plot.id)) ? 'btn btn-primary btn-sm' : 'btn btn-secondary btn-sm'}
+                    style={{ width: '100%', justifyContent: 'center', marginBottom: 8 }}
+                    onClick={e => { e.stopPropagation(); handlePickPlot(plot); }}
+                  >
+                    {pickedIds.includes(String(plot.id)) ? '✓ Selected' : bookingLikePick ? 'Select for booking' : 'Select for visit'}
+                  </button>
+                )}
                 <div className="plot-card-header">
                   <span className="plot-number-title">
                     {plot.plotNumber}
@@ -904,6 +1195,17 @@ export const PlotsPage: React.FC = () => {
                     </span>
                   )}
                 </div>
+
+                {pickMode && (plotUsage[String(plot.id)]?.length ?? 0) > 0 && (
+                  <div
+                    style={{
+                      marginTop: 6, fontSize: 11.5, fontWeight: 600, color: '#b45309',
+                      background: 'rgba(245, 158, 11, 0.14)', borderRadius: 6, padding: '3px 8px', display: 'inline-block',
+                    }}
+                  >
+                    Planned for {plotUsage[String(plot.id)].length} other visit{plotUsage[String(plot.id)].length === 1 ? '' : 's'}
+                  </div>
+                )}
 
                 {isHold && (
                   <div className="plot-hold-badge">
@@ -946,14 +1248,78 @@ export const PlotsPage: React.FC = () => {
         </div>
       )}
 
+      {/* Pick mode: this plot is already planned for another customer's visit */}
+      <Modal
+        isOpen={!!confirmPlot}
+        onClose={() => setConfirmPlot(null)}
+        title="This plot is already planned for a visit"
+        subtitle={confirmPlot ? `${confirmPlot.plotNumber} · ${currentProjectObj?.name || 'Project'}` : undefined}
+        footer={
+          <>
+            <button className="btn btn-secondary" onClick={() => setConfirmPlot(null)}>Don't add</button>
+            <button
+              className="btn btn-primary"
+              onClick={() => {
+                if (confirmPlot) togglePicked(String(confirmPlot.id));
+                setConfirmPlot(null);
+              }}
+            >
+              Add anyway
+            </button>
+          </>
+        }
+      >
+        {confirmPlot && (
+          <div>
+            <p style={{ marginTop: 0 }}>
+              {confirmPlot.plotNumber} is already part of {plotUsage[String(confirmPlot.id)]?.length ?? 0} other open site visit
+              {(plotUsage[String(confirmPlot.id)]?.length ?? 0) === 1 ? '' : 's'}:
+            </p>
+            <ul style={{ paddingLeft: 18, margin: '0 0 12px' }}>
+              {(plotUsage[String(confirmPlot.id)] ?? []).map(u => (
+                <li key={u.visitId}>
+                  {u.scheduledAt || 'Date to be confirmed'} · {u.status}
+                  {u.followUpAgentName ? ` · follow-up: ${u.followUpAgentName}` : ''}
+                </li>
+              ))}
+            </ul>
+            <p style={{ marginBottom: 0 }}>
+              More than one customer can visit the same plot. Adding it will notify the agents of those visits.
+            </p>
+          </div>
+        )}
+      </Modal>
+
       {/* Plot Detail Modal */}
       <Modal
         isOpen={!!selectedPlot && !isHoldModalOpen && !isBookingModalOpen && !isEditPlotModalOpen && !isDeletePlotModalOpen}
         onClose={() => setSelectedPlot(null)}
         title={`${selectedPlot?.plotNumber} Specifications`}
+        maxWidth={760}
         subtitle={`${currentProjectObj?.name || 'Project Layout'}`}
         footer={
           <>
+            {selectedPlot && (
+              <button
+                className="btn btn-secondary"
+                onClick={() => projectLayoutUrl && setLayoutPlot(selectedPlot)}
+                disabled={!projectLayoutUrl}
+                title={projectLayoutUrl ? 'Show this plot on the approved layout' : 'No layout drawing has been loaded for this project yet'}
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <Map size={14} /> View on Layout
+              </button>
+            )}
+            {selectedPlot && (
+              <button
+                className="btn btn-secondary"
+                onClick={() => { setMapPlotLabel(selectedPlot.plotNumber); setIsMapOpen(true); }}
+                title="Show where this project is on the map"
+                style={{ display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <MapPin size={14} /> View on Map
+              </button>
+            )}
             {selectedPlot?.status === 'Available' && (
               <>
                 <button
@@ -1236,12 +1602,12 @@ export const PlotsPage: React.FC = () => {
       {/* Confirm Booking Modal */}
       <Modal
         isOpen={isBookingModalOpen && !!selectedPlot}
-        onClose={() => setIsBookingModalOpen(false)}
+        onClose={cancelBookingModal}
         title={`Confirm Booking — ${selectedPlot?.plotNumber}`}
         subtitle={`Confirm plot sale & register customer into CRM for ${currentProjectObj?.name || 'Project'}`}
         footer={
           <>
-            <button className="btn btn-secondary" onClick={() => setIsBookingModalOpen(false)}>
+            <button className="btn btn-secondary" onClick={cancelBookingModal}>
               Cancel
             </button>
             <button
@@ -1701,6 +2067,34 @@ export const PlotsPage: React.FC = () => {
           </div>
         </form>
       </Modal>
+
+      {/* Where the project is on the map */}
+      <ProjectMapModal
+        isOpen={isMapOpen}
+        onClose={() => setIsMapOpen(false)}
+        projectName={currentProjectObj?.name}
+        location={currentProjectObj?.location}
+        mapQuery={currentProjectObj?.mapQuery}
+        plotNumber={mapPlotLabel ?? undefined}
+        canEdit={canManagePlots}
+        onSaveQuery={async (query) => {
+          if (!currentProjectObj) return false;
+          const result = await jaminApiService.updateProject(currentProjectObj.id, { mapQuery: query });
+          if (result.success) {
+            setProjects(prev => prev.map(p => String(p.id) === String(currentProjectObj.id) ? { ...p, mapQuery: query || null } : p));
+          }
+          return result.success;
+        }}
+      />
+
+      {/* View a single plot on the approved layout drawing */}
+      <PlotLayoutViewer
+        isOpen={!!layoutPlot}
+        onClose={() => setLayoutPlot(null)}
+        imageUrl={projectLayoutUrl}
+        projectName={currentProjectObj?.name}
+        plot={layoutPlot}
+      />
 
       {/* Master Layout Blueprint Modal */}
       <BlueprintViewerModal

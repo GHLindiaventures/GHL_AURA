@@ -95,6 +95,8 @@ export interface ScheduleSiteVisitPayload {
   customerId?: string | number;
   projectId?: string | number;
   plotId?: string | number;
+  /** One or more plots the customer will see; takes precedence over plotId. */
+  plotIds?: Array<string | number>;
   customerName: string;
   customerPhone: string;
   contactType?: 'lead' | 'customer' | string;
@@ -378,12 +380,16 @@ export const jaminApiService = {
           plotId: sv.plotId ? String(sv.plotId) : undefined,
           projectName: sv.projectName,
           plotNumber: sv.plotNumber || 'Layout Tour',
+          plots: Array.isArray(sv.plots) ? sv.plots.map((p: any) => ({ plotId: String(p.plotId), plotNumber: p.plotNumber || '' })) : [],
           scheduledAt: sv.scheduledAt,
           assignedAgentId: sv.assignedAgentId ? String(sv.assignedAgentId) : '',
           assignedAgentName: sv.assignedAgentName || 'Agent',
           assignedById: sv.assignedById ? String(sv.assignedById) : undefined,
           assignedByName: sv.assignedByName || undefined,
           customerEmail: sv.customerEmail || undefined,
+          statusUpdatedById: sv.statusUpdatedById ? String(sv.statusUpdatedById) : undefined,
+          statusUpdatedByName: sv.statusUpdatedByName || undefined,
+          statusUpdatedAt: sv.statusUpdatedAt || undefined,
           status: sv.status,
           contactType: sv.contactType || 'lead',
           visitorNote: sv.visitorNote,
@@ -405,6 +411,7 @@ export const jaminApiService = {
         contactType: payload.contactType || (payload.customerId ? 'customer' : 'lead'),
         projectId: payload.projectId ? Number(payload.projectId) : undefined,
         plotId: payload.plotId ? Number(payload.plotId) : undefined,
+        plotIds: payload.plotIds?.length ? payload.plotIds.map(Number) : undefined,
         customerName: payload.customerName,
         customerPhone: payload.customerPhone,
         projectName: payload.projectName,
@@ -427,12 +434,16 @@ export const jaminApiService = {
           plotId: sv.plotId ? String(sv.plotId) : undefined,
           projectName: sv.projectName,
           plotNumber: sv.plotNumber || '',
+          plots: Array.isArray(sv.plots) ? sv.plots.map((p: any) => ({ plotId: String(p.plotId), plotNumber: p.plotNumber || '' })) : [],
           scheduledAt: sv.scheduledAt,
           assignedAgentId: sv.assignedAgentId ? String(sv.assignedAgentId) : '',
           assignedAgentName: sv.assignedAgentName || 'Agent',
           assignedById: sv.assignedById ? String(sv.assignedById) : undefined,
           assignedByName: sv.assignedByName || undefined,
           customerEmail: sv.customerEmail || undefined,
+          statusUpdatedById: sv.statusUpdatedById ? String(sv.statusUpdatedById) : undefined,
+          statusUpdatedByName: sv.statusUpdatedByName || undefined,
+          statusUpdatedAt: sv.statusUpdatedAt || undefined,
           status: sv.status,
           contactType: sv.contactType || 'lead',
           visitorNote: sv.visitorNote,
@@ -477,6 +488,30 @@ export const jaminApiService = {
       console.error(`Failed to update site visit #${id}`, err);
       return false;
     }
+  },
+
+  /** Like updateSiteVisit, but returns the server's message so the UI can say why a change was refused. */
+  async updateSiteVisitDetailed(id: string | number, data: any): Promise<{ success: boolean; message?: string }> {
+    try {
+      const cleanId = String(id).replace(/\D/g, '') || String(id);
+      const res = await apiClient.put<any>(`/jamin/site-visits/${cleanId}`, data);
+      return { success: Boolean(res && res.success), message: res?.message };
+    } catch (err) {
+      console.error(`Failed to update site visit #${id}`, err);
+      return { success: false, message: err instanceof Error ? err.message : undefined };
+    }
+  },
+
+  /** Open site visits per plot (id -> visits), used to warn that a plot is already planned for someone else. */
+  async getPlotUsage(projectId?: string | number): Promise<Record<string, Array<{ visitId: number; scheduledAt: string; status: string; followUpAgentName?: string }>>> {
+    try {
+      const qs = projectId ? `?projectId=${encodeURIComponent(String(projectId))}` : '';
+      const res = await apiClient.get<any>(`/jamin/site-visits/plot-usage${qs}`);
+      if (res && res.success && res.data && typeof res.data === 'object') return res.data;
+    } catch (err) {
+      console.error('Failed to load plot usage', err);
+    }
+    return {};
   },
 
   async cancelSiteVisit(id: string | number, reason?: string): Promise<boolean> {
@@ -685,6 +720,7 @@ export const jaminApiService = {
     bookedPlots: number;
     priceRange: string;
     imageUrl: string;
+    mapQuery: string;
   }>): Promise<{ success: boolean; message?: string }> {
     try {
       const res = await apiClient.put<any>(`/jamin/projects/${id}`, project);
@@ -935,6 +971,18 @@ export const jaminApiService = {
     } catch (err) {
       console.error(`Failed to delete site visit #${id}`, err);
       return false;
+    }
+  },
+
+  /** Remove a site visit; returns the server's message so the UI can say why it was refused. */
+  async removeSiteVisit(id: number | string): Promise<{ success: boolean; message?: string }> {
+    try {
+      const cleanId = String(id).replace(/\D/g, '') || String(id);
+      const res = await apiClient.delete<any>(`/jamin/site-visits/${cleanId}`);
+      return { success: Boolean(res && res.success), message: res?.message };
+    } catch (err) {
+      console.error(`Failed to remove site visit #${id}`, err);
+      return { success: false, message: err instanceof Error ? err.message : undefined };
     }
   },
 

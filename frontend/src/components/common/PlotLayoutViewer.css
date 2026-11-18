@@ -1,0 +1,142 @@
+.plv-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(2, 6, 23, 0.72);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+}
+
+.plv-panel {
+  width: min(1400px, 100%);
+  height: min(900px, 100%);
+  background: var(--bg-surface, #ffffff);
+  color: var(--text-primary, #0f172a);
+  border-radius: 12px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  box-shadow: 0 24px 60px rgba(0, 0, 0, 0.4);
+}
+
+.plv-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--border-base, #e2e8f0);
+  flex-wrap: wrap;
+}
+
+.plv-title { min-width: 0; font-size: 16px; }
+.plv-sub { margin-top: 2px; font-size: 12.5px; color: var(--text-secondary, #64748b); }
+
+.plv-actions { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+
+.plv-btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-base, #e2e8f0);
+  background: var(--bg-surface, #ffffff);
+  color: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+}
+.plv-btn:hover { border-color: #94a3b8; }
+.plv-btn-primary { background: #dc2626; border-color: #dc2626; color: #fff; }
+.plv-btn-primary:hover { background: #b91c1c; border-color: #b91c1c; }
+
+.plv-note {
+  padding: 8px 16px;
+  font-size: 12.5px;
+  background: rgba(245, 158, 11, 0.14);
+  color: #b45309;
+  border-bottom: 1px solid rgba(245, 158, 11, 0.35);
+}
+
+.plv-stage {
+  position: relative;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  background: #f8fafc;
+  cursor: grab;
+  touch-action: none;
+}
+.plv-stage:active { cursor: grabbing; }
+
+.plv-canvas {
+  position: absolute;
+  left: 0;
+  top: 0;
+  transform-origin: 0 0;
+  will-change: transform;
+}
+
+.plv-loading, .plv-error {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #64748b;
+  font-size: 14px;
+}
+
+/* The plot cell outline (when its outline is known) */
+.plv-cell {
+  position: absolute;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: #dc2626;
+  background: rgba(220, 38, 38, 0.22);
+  box-shadow: 0 0 0 4px rgba(220, 38, 38, 0.18);
+  pointer-events: none;
+}
+
+/* A ring that stays the same size on screen whatever the zoom */
+.plv-pin {
+  position: absolute;
+  box-sizing: border-box;
+  border-style: solid;
+  border-color: #dc2626;
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background: rgba(220, 38, 38, 0.12);
+  pointer-events: none;
+  animation: plv-pulse 1.6s ease-out infinite;
+}
+
+.plv-tag {
+  position: absolute;
+  background: #dc2626;
+  color: #fff;
+  font-weight: 700;
+  border-radius: 6px;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.35);
+}
+
+@keyframes plv-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.55); }
+  70% { box-shadow: 0 0 0 18px rgba(220, 38, 38, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(220, 38, 38, 0); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .plv-pin { animation: none; }
+}
+
+@media (max-width: 640px) {
+  .plv-overlay { padding: 0; }
+  .plv-panel { height: 100%; border-radius: 0; }
+}

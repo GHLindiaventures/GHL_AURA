@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { Calendar, Plus, CheckCircle2, Phone, RefreshCw, User, Building2, Lock, Edit } from 'lucide-react';
+import { Calendar, Plus, CheckCircle2, Phone, RefreshCw, Lock, Edit, Trash2 } from 'lucide-react';
 import { SiteVisit, Lead, Customer } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useCall } from '../../context/CallContext';
@@ -7,6 +7,7 @@ import { DataTable, Column, RowAction } from '../../components/common/DataTable'
 import { FilterBar } from '../../components/common/FilterBar';
 import { StatusChip } from '../../components/common/StatusChip';
 import { Modal } from '../../components/common/Modal';
+import { Drawer } from '../../components/common/Drawer';
 import { canPlaceCalls } from '../../utils/agentRoleUtils';
 import { jaminApiService } from '../../services/jaminApiService';
 import { storageService } from '../../services/storageService';
@@ -17,6 +18,18 @@ import { SITE_VISIT_TIME_SLOTS, formatSiteVisitSchedule } from '../../constants/
 import './SiteVisitsPage.css';
 
 const TIME_SLOTS = SITE_VISIT_TIME_SLOTS;
+
+/** Plot numbers on a visit (a customer can see several); empty for a General Project Tour. */
+const visitPlotNumbers = (sv: SiteVisit): string[] => {
+  const fromList = (sv.plots || []).map(p => p.plotNumber).filter(Boolean);
+  if (fromList.length > 0) return fromList;
+  return sv.plotNumber && sv.plotNumber !== 'Layout Tour' ? [sv.plotNumber] : [];
+};
+const visitPlotLabel = (sv: SiteVisit): string => {
+  const nums = visitPlotNumbers(sv);
+  if (nums.length === 0) return 'General Project Tour';
+  return nums.length === 1 ? nums[0] : `${nums.length} plots: ${nums.join(', ')}`;
+};
 
 export const SiteVisitsPage: React.FC = () => {
   const { tenant, user } = useAuth();
@@ -49,8 +62,7 @@ export const SiteVisitsPage: React.FC = () => {
   const [manageVisitDate, setManageVisitDate] = useState('');
   const [manageVisitTimeSlot, setManageVisitTimeSlot] = useState<string>(TIME_SLOTS[0]);
   const [manageProjectId, setManageProjectId] = useState<string>('');
-  const [managePlotId, setManagePlotId] = useState<string>('');
-  const [manageFilteredPlots, setManageFilteredPlots] = useState<any[]>([]);
+  const [managePlotIds, setManagePlotIds] = useState<string[]>([]);
   const [manageHostAgentId, setManageHostAgentId] = useState<number>(0);
   const [manageHostAgentName, setManageHostAgentName] = useState('');
   const [manageNote, setManageNote] = useState('');
@@ -65,7 +77,7 @@ export const SiteVisitsPage: React.FC = () => {
   const [hostAgentId, setHostAgentId] = useState<number>(0);
   const [hostAgentName, setHostAgentName] = useState('');
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
-  const [selectedPlotId, setSelectedPlotId] = useState<string>('');
+  const [selectedPlotIds, setSelectedPlotIds] = useState<string[]>([]);
 
   const getTomorrowDate = () => {
     const d = new Date();
@@ -170,10 +182,132 @@ export const SiteVisitsPage: React.FC = () => {
     } else {
       setFilteredPlots([]);
     }
-    setSelectedPlotId('');
+    // Keep the chosen plot only while it still belongs to the selected project.
+    setSelectedPlotIds(prev => {
+      const next = prev.filter(id => plots.some(p => String(p.id) === id && String(p.projectId) === selectedProjectId));
+      return next.length === prev.length ? prev : next;
+    });
   }, [selectedProjectId, plots]);
 
+  // ── Plot picking happens in Plot Inventory ─────────────────────────────────
+  // The form is saved, the rep picks a plot on the Plot Inventory page, and comes back to a restored form.
+  const DRAFT_KEY = 'site_visit_draft';
+  const PICK_KEY = 'site_visit_plot_pick';
+  const SELECTION_KEY = 'site_visit_plot_selection';
+
+  const handlePickPlotFromInventory = () => {
+    if (!selectedProjectId) return;
+    try {
+      sessionStorage.setItem(
+        DRAFT_KEY,
+        JSON.stringify({
+          savedAt: Date.now(),
+          visitorType, selectedLeadId, selectedCustomerId, customerName, customerPhone,
+          hostAgentId, hostAgentName, selectedProjectId, selectedPlotIds, visitDate, visitTimeSlot, notes,
+        }),
+      );
+      sessionStorage.setItem(PICK_KEY, JSON.stringify({ projectId: selectedProjectId, selectedPlotIds }));
+    } catch {
+      /* storage unavailable: the plot page still opens, the form just starts empty on return */
+    }
+    setIsScheduleModalOpen(false);
+    window.dispatchEvent(new CustomEvent('nexus_navigate', { detail: 'plots' }));
+  };
+
+  const restoredDraftRef = React.useRef(false);
+  useEffect(() => {
+    if (isLoading || restoredDraftRef.current) return;
+    let raw: string | null = null;
+    try { raw = sessionStorage.getItem(DRAFT_KEY); } catch { /* ignore */ }
+    if (!raw) return;
+    restoredDraftRef.current = true;
+    try {
+      const d = JSON.parse(raw);
+      // A draft left behind (the rep wandered off from Plot Inventory) is dropped after 20 minutes instead of popping up later.
+      if (!d.savedAt || Date.now() - d.savedAt > 20 * 60 * 1000) return;
+      setVisitorType(d.visitorType || 'lead');
+      setSelectedLeadId(d.selectedLeadId || '');
+      setSelectedCustomerId(d.selectedCustomerId || '');
+      setCustomerName(d.customerName || '');
+      setCustomerPhone(d.customerPhone || '');
+      setHostAgentId(Number(d.hostAgentId) || 0);
+      setHostAgentName(d.hostAgentName || '');
+      setSelectedProjectId(d.selectedProjectId || '');
+      setVisitDate(d.visitDate || getTomorrowDate());
+      setVisitTimeSlot(d.visitTimeSlot || TIME_SLOTS[0]);
+      setNotes(d.notes || '');
+
+      const sel = sessionStorage.getItem(SELECTION_KEY);
+      if (sel) {
+        const s = JSON.parse(sel);
+        // Coming back from Plot Inventory: the picked plots replace whatever was chosen before.
+        if (Array.isArray(s?.plotIds)) {
+          setSelectedProjectId(String(s.projectId || d.selectedProjectId || ''));
+          setSelectedPlotIds(s.plotIds.map((id: unknown) => String(id)));
+        }
+      } else if (Array.isArray(d.selectedPlotIds)) {
+        setSelectedPlotIds(d.selectedPlotIds.map((id: unknown) => String(id)));
+      }
+      setIsScheduleModalOpen(true);
+    } catch {
+      /* corrupt draft: ignore */
+    } finally {
+      try {
+        sessionStorage.removeItem(DRAFT_KEY);
+        sessionStorage.removeItem(PICK_KEY);
+        sessionStorage.removeItem(SELECTION_KEY);
+      } catch { /* ignore */ }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading]);
+
   // ── Visitor Type & Record Selection ────────────────────────────────────────
+  // A customer can have only one open visit: spot it as soon as they are picked, and offer to reschedule it instead.
+  const CLOSED_VISIT_STATUSES = ['Cancelled', 'No-show', 'Visited', 'Completed'];
+  const phoneKeyOf = (p?: string) => (p || '').replace(/\D/g, '').slice(-10);
+  const existingOpenVisit = useMemo(() => {
+    if (!isScheduleModalOpen) return null;
+    const key = phoneKeyOf(customerPhone);
+    return siteVisits.find(sv => {
+      if (CLOSED_VISIT_STATUSES.includes(sv.status)) return false;
+      if (visitorType === 'lead' && selectedLeadId && String(sv.leadId) === String(selectedLeadId)) return true;
+      if (visitorType === 'customer' && selectedCustomerId && String(sv.customerId) === String(selectedCustomerId)) return true;
+      return key.length >= 10 && phoneKeyOf(sv.customerPhone) === key;
+    }) ?? null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isScheduleModalOpen, siteVisits, visitorType, selectedLeadId, selectedCustomerId, customerPhone]);
+
+  // One combined picker: the value encodes the kind and id ("lead:12", "customer:5", "new").
+  const visitorSelectValue =
+    visitorType === 'new'
+      ? 'new'
+      : selectedLeadId
+        ? `lead:${selectedLeadId}`
+        : selectedCustomerId
+          ? `customer:${selectedCustomerId}`
+          : '';
+
+  const handleVisitorSelect = (value: string) => {
+    if (value === 'new') {
+      handleVisitorTypeChange('new');
+      return;
+    }
+    const sep = value.indexOf(':');
+    const kind = sep > 0 ? value.slice(0, sep) : '';
+    const id = sep > 0 ? value.slice(sep + 1) : '';
+    if (kind === 'lead') {
+      setVisitorType('lead');
+      setSelectedCustomerId('');
+      handleLeadSelect(id);
+    } else if (kind === 'customer') {
+      setVisitorType('customer');
+      setSelectedLeadId('');
+      handleCustomerSelect(id);
+    } else {
+      handleVisitorTypeChange('lead'); // nothing chosen: clear everything
+    }
+  };
+
   const handleVisitorTypeChange = (type: 'lead' | 'customer' | 'new') => {
     setVisitorType(type);
     setSelectedLeadId('');
@@ -220,7 +354,7 @@ export const SiteVisitsPage: React.FC = () => {
     setHostAgentId(defaultAgent ? defaultAgent.id : Number(user?.id) || 0);
     setHostAgentName(defaultAgent ? defaultAgent.name : (user?.name || 'Agent'));
     setSelectedProjectId(projects.length > 0 ? String(projects[0].id) : '');
-    setSelectedPlotId('');
+    setSelectedPlotIds([]);
     setVisitDate(getTomorrowDate());
     setVisitTimeSlot(TIME_SLOTS[0]);
     setNotes('');
@@ -230,7 +364,7 @@ export const SiteVisitsPage: React.FC = () => {
   // ── Schedule submit ────────────────────────────────────────────────────────
   const handleScheduleVisit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!customerName.trim() || !customerPhone.trim()) return;
+    if (!customerName.trim() || !customerPhone.trim() || existingOpenVisit) return;
 
     if (visitorType === 'lead' && !selectedLeadId) {
       alert('Please select a lead from the dropdown.');
@@ -244,7 +378,7 @@ export const SiteVisitsPage: React.FC = () => {
     const dateFormatted = formatSiteVisitSchedule(visitDate, visitTimeSlot);
 
     const project = projects.find((p: any) => String(p.id) === selectedProjectId);
-    const plot = filteredPlots.find((p: any) => String(p.id) === selectedPlotId);
+
 
     const contactType = visitorType === 'customer' ? 'customer' : 'lead';
     const cleanLeadId = visitorType === 'lead' && selectedLeadId ? selectedLeadId : undefined;
@@ -260,9 +394,8 @@ export const SiteVisitsPage: React.FC = () => {
         customerName: customerName.trim(),
         customerPhone: customerPhone.trim(),
         projectId: selectedProjectId ? Number(selectedProjectId) : undefined,
-        plotId: selectedPlotId ? Number(selectedPlotId) : undefined,
+        plotIds: selectedPlotIds.map(Number).filter(n => Number.isInteger(n) && n > 0),
         projectName: project?.name ?? '',
-        plotNumber: plot?.plotNumber ?? '',
         scheduledAt: dateFormatted,
         visitorNote: notes.trim() || undefined,
         assignedAgentId: hostAgentId,
@@ -279,13 +412,16 @@ export const SiteVisitsPage: React.FC = () => {
       window.dispatchEvent(new Event('nexus_storage_updated'));
       setIsScheduleModalOpen(false);
       await loadAll();
+    } catch (err) {
+      // e.g. the customer already has an open visit (the server says which): show its message.
+      toast.error(err instanceof Error && err.message ? err.message : "The site visit could not be saved. Please try again.");
     } finally {
       setIsSubmitting(false);
     }
   };
 
   // ── Unified Manage Site Visit Handlers ─────────────────────────────────────
-  const handleOpenManageModal = (sv: SiteVisit) => {
+  const handleOpenManageModal = (sv: SiteVisit, presetStatus?: string) => {
     setManagingVisit(sv);
 
     let parsedDate = '';
@@ -321,22 +457,17 @@ export const SiteVisitsPage: React.FC = () => {
     const projId = sv.projectId ? String(sv.projectId) : '';
     setManageProjectId(projId);
 
-    if (projId) {
-      const matchedPlots = plots.filter(p => String(p.projectId) === String(projId));
-      setManageFilteredPlots(matchedPlots);
-      const plt = matchedPlots.find(p => String(p.id) === String(sv.plotId));
-      setManagePlotId(plt ? String(plt.id) : '');
-    } else {
-      setManageFilteredPlots([]);
-      setManagePlotId('');
-    }
-
+    // Every plot on the visit (older visits only carry the single plotId).
+    const currentPlotIds = (sv.plots && sv.plots.length > 0)
+      ? sv.plots.map(p => String(p.plotId))
+      : (sv.plotId ? [String(sv.plotId)] : []);
+    setManagePlotIds(currentPlotIds);
     const agId = Number(sv.assignedAgentId) || 0;
     setManageHostAgentId(agId);
     setManageHostAgentName(sv.assignedAgentName || '');
 
-    // Default status: nothing selected initially, forcing user to choose
-    setManageStatus('');
+    // Opened from "Edit / reschedule" the status starts on Rescheduled; otherwise the rep chooses one.
+    setManageStatus(presetStatus ?? "");
 
     setManageNote(sv.outcomeNotes || sv.visitorNote || '');
     setIsManageModalOpen(true);
@@ -357,14 +488,74 @@ export const SiteVisitsPage: React.FC = () => {
 
   const handleManageProjectChange = (projId: string) => {
     setManageProjectId(projId);
-    setManagePlotId('');
-    if (!projId) {
-      setManageFilteredPlots([]);
-      return;
-    }
-    const matching = plots.filter(p => String(p.projectId) === String(projId));
-    setManageFilteredPlots(matching);
+    // Plots belong to a project: keep only the ones that are in the newly chosen project.
+    setManagePlotIds(prev => prev.filter(id => plots.some(p => String(p.id) === id && String(p.projectId) === String(projId))));
   };
+
+  // ── Editing the plots of an existing visit also goes through Plot Inventory ──
+  const MANAGE_DRAFT_KEY = 'site_visit_manage_draft';
+
+  const handlePickPlotsForManage = () => {
+    const projectId = manageProjectId || (managingVisit?.projectId ? String(managingVisit.projectId) : '');
+    if (!managingVisit || !projectId) return;
+    try {
+      sessionStorage.setItem(
+        MANAGE_DRAFT_KEY,
+        JSON.stringify({
+          savedAt: Date.now(),
+          visitId: managingVisit.id, manageStatus, manageVisitDate, manageVisitTimeSlot,
+          manageProjectId: projectId, managePlotIds, manageHostAgentId, manageHostAgentName, manageNote,
+        }),
+      );
+      sessionStorage.setItem(PICK_KEY, JSON.stringify({ projectId, selectedPlotIds: managePlotIds }));
+    } catch {
+      /* storage unavailable: Plot Inventory still opens, the dialog just reopens without the edits */
+    }
+    setIsManageModalOpen(false);
+    window.dispatchEvent(new CustomEvent('nexus_navigate', { detail: 'plots' }));
+  };
+
+  const restoredManageRef = React.useRef(false);
+  useEffect(() => {
+    if (isLoading || restoredManageRef.current) return;
+    let raw: string | null = null;
+    try { raw = sessionStorage.getItem(MANAGE_DRAFT_KEY); } catch { /* ignore */ }
+    if (!raw) return;
+    restoredManageRef.current = true;
+    try {
+      const d = JSON.parse(raw);
+      // A draft left behind (the rep wandered off from Plot Inventory) is dropped after 20 minutes instead of popping up later.
+      if (!d.savedAt || Date.now() - d.savedAt > 20 * 60 * 1000) return;
+      const visit = siteVisits.find(v => String(v.id) === String(d.visitId));
+      if (visit) {
+        handleOpenManageModal(visit, d.manageStatus || 'Rescheduled');
+        setManageVisitDate(d.manageVisitDate || manageVisitDate);
+        setManageVisitTimeSlot(d.manageVisitTimeSlot || TIME_SLOTS[0]);
+        setManageProjectId(String(d.manageProjectId || ''));
+        setManageHostAgentId(Number(d.manageHostAgentId) || 0);
+        setManageHostAgentName(d.manageHostAgentName || '');
+        setManageNote(d.manageNote || '');
+        setManagePlotIds(Array.isArray(d.managePlotIds) ? d.managePlotIds.map((id: unknown) => String(id)) : []);
+        const sel = sessionStorage.getItem(SELECTION_KEY);
+        if (sel) {
+          const s = JSON.parse(sel);
+          if (Array.isArray(s?.plotIds)) {
+            setManageProjectId(String(s.projectId || d.manageProjectId || ''));
+            setManagePlotIds(s.plotIds.map((id: unknown) => String(id)));
+          }
+        }
+      }
+    } catch {
+      /* corrupt draft: ignore */
+    } finally {
+      try {
+        sessionStorage.removeItem(MANAGE_DRAFT_KEY);
+        sessionStorage.removeItem(PICK_KEY);
+        sessionStorage.removeItem(SELECTION_KEY);
+      } catch { /* ignore */ }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isLoading]);
 
   const handleSaveManageVisit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -380,7 +571,14 @@ export const SiteVisitsPage: React.FC = () => {
     }
 
     const project = projects.find(p => String(p.id) === String(manageProjectId));
-    const plot = manageFilteredPlots.find(p => String(p.id) === String(managePlotId));
+    const originalPlotIds = (oldVisit.plots && oldVisit.plots.length > 0)
+      ? oldVisit.plots.map(p => String(p.plotId))
+      : (oldVisit.plotId ? [String(oldVisit.plotId)] : []);
+    const plotsChanged = isRescheduled &&
+      [...managePlotIds].sort().join(',') !== [...originalPlotIds].sort().join(',');
+    const chosenPlots = managePlotIds
+      .map(id => plots.find((p: any) => String(p.id) === id))
+      .filter(Boolean) as any[];
 
     const updatedVisit: SiteVisit = {
       ...managingVisit,
@@ -388,8 +586,9 @@ export const SiteVisitsPage: React.FC = () => {
       scheduledAt: formattedSlot,
       projectId: isRescheduled ? (manageProjectId || managingVisit.projectId) : managingVisit.projectId,
       projectName: isRescheduled ? (project?.name || managingVisit.projectName) : managingVisit.projectName,
-      plotId: isRescheduled ? (managePlotId || managingVisit.plotId) : managingVisit.plotId,
-      plotNumber: isRescheduled ? (plot?.plotNumber || (managePlotId ? '' : managingVisit.plotNumber)) : managingVisit.plotNumber,
+      plotId: plotsChanged ? (chosenPlots[0] ? String(chosenPlots[0].id) : undefined) : managingVisit.plotId,
+      plotNumber: plotsChanged ? chosenPlots.map(p => p.plotNumber).join(', ') : managingVisit.plotNumber,
+      plots: plotsChanged ? chosenPlots.map(p => ({ plotId: String(p.id), plotNumber: p.plotNumber })) : managingVisit.plots,
       assignedAgentId: isRescheduled ? String(manageHostAgentId || managingVisit.assignedAgentId) : managingVisit.assignedAgentId,
       assignedAgentName: isRescheduled ? (manageHostAgentName || managingVisit.assignedAgentName) : managingVisit.assignedAgentName,
       visitorNote: trimmedNote,
@@ -414,8 +613,8 @@ export const SiteVisitsPage: React.FC = () => {
         payload.scheduledAt = formattedSlot;
         if (manageProjectId) payload.projectId = Number(manageProjectId);
         if (project?.name) payload.projectName = project.name;
-        if (managePlotId) payload.plotId = Number(managePlotId);
-        if (plot?.plotNumber) payload.plotNumber = plot.plotNumber;
+        // The plots are replaced only when the rep changed them, so an untouched visit keeps exactly the plots it has.
+        if (plotsChanged) payload.plotIds = managePlotIds.map(Number).filter(n => Number.isInteger(n) && n > 0);
         if (manageHostAgentId) payload.assignedAgentId = manageHostAgentId;
         if (manageHostAgentName) payload.assignedAgentName = manageHostAgentName;
       }
@@ -455,6 +654,100 @@ export const SiteVisitsPage: React.FC = () => {
   const handleConfirmVisit = async (sv: SiteVisit) => {
     await jaminApiService.confirmSiteVisit(sv.id);
     await loadAll();
+  };
+
+  // ── Visit detail card: set the status and remarks ──────────────────────────
+  const VISIT_STATUS_CHOICES = ['Pending', 'Visited', 'Revisit'];
+  const [detailVisit, setDetailVisit] = useState<SiteVisit | null>(null);
+  const [detailStatus, setDetailStatus] = useState<string>('Pending');
+  const [detailRemarks, setDetailRemarks] = useState('');
+  const [isSavingDetail, setIsSavingDetail] = useState(false);
+  // ── Remove a site visit (asks first) ──────────────────────────────────────
+  const [visitToRemove, setVisitToRemove] = useState<SiteVisit | null>(null);
+  const [isRemoving, setIsRemoving] = useState(false);
+
+  const handleConfirmRemove = async () => {
+    if (!visitToRemove) return;
+    setIsRemoving(true);
+    try {
+      const result = await jaminApiService.removeSiteVisit(visitToRemove.id);
+      if (!result.success) throw new Error(result.message || 'remove failed');
+      toast.success(`Site visit for ${visitToRemove.customerName} removed.`);
+      setSiteVisits(prev => prev.filter(v => String(v.id) !== String(visitToRemove.id)));
+      if (detailVisit && String(detailVisit.id) === String(visitToRemove.id)) setDetailVisit(null);
+      setVisitToRemove(null);
+      void loadAll(); // the lead's status may have changed too
+    } catch (err) {
+      toast.error(err instanceof Error && err.message ? `Could not remove: ${err.message}` : 'Could not remove the site visit. Please try again.');
+    } finally {
+      setIsRemoving(false);
+    }
+  };
+
+
+  // The follow-up agent, the agent who assigned it, and admins can update it; everyone else only sees it.
+  const canUpdateVisit = (sv: SiteVisit) =>
+    canAssignSiteVisits ||
+    (!!user?.id && (String(sv.assignedAgentId) === String(user.id) || String(sv.assignedById) === String(user.id)));
+
+  const openVisitDetail = (sv: SiteVisit) => {
+    setDetailVisit(sv);
+    setDetailStatus(sv.status || 'Pending');
+    setDetailRemarks(sv.outcomeNotes || '');
+  };
+
+  const [isReassigning, setIsReassigning] = useState(false);
+
+  /** Hand the follow-up to another agent. The server saves it and notifies them (customer details + who assigned it). */
+  const handleReassign = async (newAgentId: string) => {
+    if (!detailVisit || !newAgentId || newAgentId === String(detailVisit.assignedAgentId)) return;
+    const agent = agents.find(a => String(a.id) === newAgentId);
+    if (!agent) return;
+
+    setIsReassigning(true);
+    try {
+      const result = await jaminApiService.updateSiteVisitDetailed(detailVisit.id, {
+        assignedAgentId: agent.id,
+        assignedAgentName: agent.name,
+      });
+      if (!result.success) throw new Error(result.message || 'reassign failed');
+
+      const mine = String(agent.id) === String(user?.id);
+      setDetailVisit(prev => prev ? {
+        ...prev,
+        assignedAgentId: String(agent.id),
+        assignedAgentName: agent.name,
+        assignedById: user?.id ? String(user.id) : prev.assignedById,
+        assignedByName: user?.name || prev.assignedByName,
+      } : prev);
+      toast.success(mine ? 'Assigned to you.' : `Assigned to ${agent.name}. They have been notified.`);
+      void loadAll();
+    } catch (err) {
+      toast.error(err instanceof Error && err.message ? `Could not assign: ${err.message}` : 'Could not assign the follow-up agent. Please try again.');
+    } finally {
+      setIsReassigning(false);
+    }
+  };
+
+  const handleSaveDetail = async () => {
+    if (!detailVisit) return;
+    const remarks = detailRemarks.trim();
+    if (detailStatus !== 'Pending' && VISIT_STATUS_CHOICES.includes(detailStatus) && !remarks) {
+      toast.error('Enter remarks before saving a Visited or Revisit status.');
+      return;
+    }
+    setIsSavingDetail(true);
+    try {
+      const result = await jaminApiService.updateSiteVisitDetailed(detailVisit.id, { status: detailStatus, outcomeNotes: remarks });
+      if (!result.success) throw new Error(result.message || 'save failed');
+      toast.success(`Site visit saved as ${detailStatus}.`);
+      setDetailVisit(null);
+      await loadAll();
+    } catch (err) {
+      toast.error(err instanceof Error && err.message ? `Could not save: ${err.message}` : 'Could not save the status and remarks. Please try again.');
+    } finally {
+      setIsSavingDetail(false);
+    }
   };
 
   // ── Table columns ──────────────────────────────────────────────────────────
@@ -507,9 +800,27 @@ export const SiteVisitsPage: React.FC = () => {
       render: sv => (
         <div>
           <div className="sitevisit-project-name">{sv.projectName}</div>
-          <div className="sitevisit-plot-target">
-            {sv.plotNumber && sv.plotNumber !== 'Layout Tour' ? sv.plotNumber : 'General Project Tour'}
-          </div>
+          {visitPlotNumbers(sv).length > 1 ? (
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, marginTop: 4 }} title={visitPlotLabel(sv)}>
+              {visitPlotNumbers(sv).slice(0, 3).map(n => (
+                <span
+                  key={n}
+                  style={{ fontSize: 11, fontWeight: 600, padding: '1px 8px', borderRadius: 999, background: 'rgba(16, 185, 129, 0.12)', color: '#047857' }}
+                >
+                  {n}
+                </span>
+              ))}
+              {visitPlotNumbers(sv).length > 3 ? (
+                <span style={{ fontSize: 11, fontWeight: 600, padding: '1px 8px', borderRadius: 999, background: 'rgba(148, 163, 184, 0.18)', color: '#475569' }}>
+                  +{visitPlotNumbers(sv).length - 3} more
+                </span>
+              ) : null}
+            </div>
+          ) : (
+            <div className="sitevisit-plot-target">
+              {visitPlotLabel(sv)}
+            </div>
+          )}
         </div>
       ),
     },
@@ -543,19 +854,27 @@ export const SiteVisitsPage: React.FC = () => {
     },
     {
       key: 'status',
-      header: 'Visit Status & Notes',
+      header: 'Status & Remarks',
       sortable: true,
       render: sv => {
-        const note = sv.outcomeNotes || sv.visitorNote || '';
+        const remarks = sv.outcomeNotes || '';
+        const setByOther = !!sv.statusUpdatedByName && String(sv.statusUpdatedById) !== String(user?.id);
         return (
           <div className="sitevisit-status-cell">
             <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
               <StatusChip status={sv.status} size="sm" />
             </div>
 
-            {note ? (
-              <div className="sitevisit-note-text" title={note}>
-                "{note}"
+            {remarks ? (
+              <div className="sitevisit-note-text" title={remarks}>
+                "{remarks}"
+              </div>
+            ) : (
+              <div style={{ fontSize: 11.5, color: 'var(--text-secondary, #64748b)', marginTop: 2 }}>No remarks yet</div>
+            )}
+            {setByOther ? (
+              <div style={{ fontSize: 11, color: 'var(--text-secondary, #64748b)', marginTop: 2 }}>
+                Updated by {sv.statusUpdatedByName}
               </div>
             ) : null}
           </div>
@@ -583,13 +902,26 @@ export const SiteVisitsPage: React.FC = () => {
     {
       label: 'Confirm Visit',
       icon: <CheckCircle2 size={14} color="#059669" style={{ marginRight: 6 }} />,
-      hidden: sv => sv.status !== 'Pending' && sv.status !== 'Requested',
+      hidden: sv => sv.status !== 'Requested',
       onClick: sv => handleConfirmVisit(sv),
+    },
+    {
+      label: 'Reschedule / Edit Plots',
+      icon: <Calendar size={14} color="#4f46e5" style={{ marginRight: 6 }} />,
+      hidden: sv => CLOSED_VISIT_STATUSES.includes(sv.status),
+      onClick: sv => handleOpenManageModal(sv, 'Rescheduled'),
     },
     {
       label: 'Update Status / Reschedule',
       icon: <Edit size={14} color="#4f46e5" style={{ marginRight: 6 }} />,
       onClick: sv => handleOpenManageModal(sv),
+    },
+    {
+      label: 'Remove',
+      icon: <Trash2 size={14} color="#dc2626" style={{ marginRight: 6 }} />,
+      danger: true,
+      hidden: sv => !canUpdateVisit(sv),
+      onClick: sv => setVisitToRemove(sv),
     },
   ];
 
@@ -663,6 +995,7 @@ export const SiteVisitsPage: React.FC = () => {
         loading={isLoading}
         keyExtractor={sv => sv.id}
         rowActions={rowActions}
+        onRowClick={openVisitDetail}
         searchPlaceholder="Search visits by customer, project, or plot..."
         filtersNode={
           <FilterBar
@@ -679,6 +1012,8 @@ export const SiteVisitsPage: React.FC = () => {
                   { value: 'Rescheduled', label: 'Rescheduled' },
                   { value: 'Cancelled', label: 'Cancelled' },
                   { value: 'Pending', label: 'Pending' },
+                  { value: 'Visited', label: 'Visited' },
+                  { value: 'Revisit', label: 'Revisit' },
                   { value: 'No-show', label: 'No-show' },
                 ],
               },
@@ -702,6 +1037,238 @@ export const SiteVisitsPage: React.FC = () => {
         }
       />
 
+      {/* ── Visit detail card (customer, follow-up agent, status & remarks) ─── */}
+      <Drawer
+        isOpen={!!detailVisit}
+        onClose={() => setDetailVisit(null)}
+        title={detailVisit?.customerName || 'Site visit'}
+        subtitle="Site visit details"
+        size="md"
+        footer={
+          detailVisit && canUpdateVisit(detailVisit) ? (
+            <>
+              <button type="button" className="btn btn-secondary" onClick={() => setDetailVisit(null)} disabled={isSavingDetail}>
+                Close
+              </button>
+              <button
+                type="button"
+                className="btn btn-secondary"
+                disabled={isSavingDetail}
+                onClick={() => setVisitToRemove(detailVisit)}
+                style={{ color: '#b91c1c', display: 'inline-flex', alignItems: 'center', gap: 6 }}
+              >
+                <Trash2 size={14} /> Remove
+              </button>
+              {!CLOSED_VISIT_STATUSES.includes(detailVisit.status) && (
+                <button
+                  type="button"
+                  className="btn btn-secondary"
+                  disabled={isSavingDetail}
+                  onClick={() => {
+                    const sv = detailVisit;
+                    setDetailVisit(null);
+                    handleOpenManageModal(sv, 'Rescheduled');
+                  }}
+                >
+                  Reschedule / edit plots
+                </button>
+              )}
+              <button type="button" className="btn btn-primary" onClick={handleSaveDetail} disabled={isSavingDetail}>
+                {isSavingDetail ? 'Saving…' : 'Save status & remarks'}
+              </button>
+            </>
+          ) : (
+            <button type="button" className="btn btn-secondary" onClick={() => setDetailVisit(null)}>Close</button>
+          )
+        }
+      >
+        {detailVisit && (() => {
+          const sv = detailVisit;
+          const selfTaken = !!sv.assignedById && sv.assignedById === sv.assignedAgentId;
+          const label: React.CSSProperties = { fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-secondary, #64748b)', marginBottom: 2 };
+          const card: React.CSSProperties = { border: '1px solid var(--border-base, #e2e8f0)', borderRadius: 10, padding: 14, marginBottom: 14 };
+          const statusOptions = VISIT_STATUS_CHOICES.includes(sv.status) ? VISIT_STATUS_CHOICES : [sv.status, ...VISIT_STATUS_CHOICES];
+          return (
+            <div>
+              {/* Customer card */}
+              <div style={card}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
+                  <strong style={{ fontSize: 16 }}>{sv.customerName}</strong>
+                  {sv.contactType ? (
+                    <span style={{ fontSize: 10, fontWeight: 700, padding: '2px 7px', borderRadius: 10, textTransform: 'uppercase', background: sv.contactType === 'lead' ? '#eff6ff' : '#ecfdf5', color: sv.contactType === 'lead' ? '#2563eb' : '#059669' }}>
+                      {sv.contactType}
+                    </span>
+                  ) : null}
+                </div>
+                <div style={{ fontSize: 14 }}>{sv.customerPhone || '—'}</div>
+                {sv.customerEmail ? <div style={{ fontSize: 13, color: 'var(--text-secondary, #64748b)' }}>{sv.customerEmail}</div> : null}
+                {canPlaceCalls(user) && sv.customerPhone ? (
+                  <button
+                    type="button"
+                    className="btn btn-secondary btn-sm"
+                    style={{ marginTop: 10, display: 'inline-flex', alignItems: 'center', gap: 6 }}
+                    onClick={() =>
+                      initiateCall(
+                        sv.customerName || 'Client',
+                        sv.customerPhone || '',
+                        sv.contactType === 'customer' || sv.customerId ? 'customer' : 'lead',
+                        sv.customerId ? String(sv.customerId) : sv.leadId ? String(sv.leadId) : undefined,
+                      )
+                    }
+                  >
+                    <Phone size={14} /> Call
+                  </button>
+                ) : null}
+              </div>
+
+              {/* Visit: project, every plot with its details, slot */}
+              <div style={card}>
+                <div style={label}>Project</div>
+                <div style={{ fontWeight: 600, marginBottom: 12 }}>{sv.projectName || '—'}</div>
+
+                {(() => {
+                  // Prefer the visit's own plot list; older visits only carry the single plotId / plotNumber.
+                  const source = (sv.plots && sv.plots.length > 0)
+                    ? sv.plots.map(p => ({ id: p.plotId, number: p.plotNumber }))
+                    : visitPlotNumbers(sv).map(number => ({ id: sv.plotId, number }));
+                  const visitPlots = source.map(({ id, number }) => ({
+                    number,
+                    inventory: id !== undefined ? plots.find((p: any) => String(p.id) === String(id)) : undefined,
+                  }));
+                  return (
+                    <>
+                      <div style={label}>{visitPlots.length > 1 ? `Plots (${visitPlots.length})` : 'Plot'}</div>
+                      {visitPlots.length === 0 ? (
+                        <div style={{ marginBottom: 12 }}>General Project Tour — no specific plot</div>
+                      ) : (
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 12 }}>
+                          {visitPlots.map(({ number, inventory }) => {
+                            const details = inventory
+                              ? [
+                                  inventory.facing ? `${inventory.facing} facing` : null,
+                                  inventory.areaSqFt ? `${Number(inventory.areaSqFt).toLocaleString('en-IN')} sq ft` : null,
+                                  inventory.dimensions ? `${inventory.dimensions} ft` : null,
+                                  inventory.price ? `₹${Number(inventory.price).toLocaleString('en-IN')}` : null,
+                                ].filter(Boolean).join(' · ')
+                              : '';
+                            return (
+                              <div
+                                key={number}
+                                style={{
+                                  display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10,
+                                  padding: '8px 12px', borderRadius: 8, background: 'var(--bg-subtle, rgba(148,163,184,0.10))',
+                                }}
+                              >
+                                <div style={{ minWidth: 0 }}>
+                                  <div style={{ fontWeight: 700, fontSize: 13.5 }}>{number}</div>
+                                  {details ? <div style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)', marginTop: 2 }}>{details}</div> : null}
+                                </div>
+                                {inventory?.status ? <StatusChip status={inventory.status} size="sm" /> : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </>
+                  );
+                })()}
+
+                <div style={label}>Scheduled slot</div>
+                <div style={{ marginBottom: sv.visitorNote ? 12 : 0 }}>{sv.scheduledAt || '—'}</div>
+                {sv.visitorNote ? (
+                  <>
+                    <div style={label}>Visit notes</div>
+                    <div>{sv.visitorNote}</div>
+                  </>
+                ) : null}
+              </div>
+
+              {/* Follow-up agent: pick a colleague to hand it to; they are notified straight away */}
+              <div style={card}>
+                <label htmlFor="sitevisit-detail-agent" style={{ ...label, display: 'block' }}>Follow-up agent</label>
+                {canUpdateVisit(sv) ? (
+                  <>
+                    <select
+                      id="sitevisit-detail-agent"
+                      className="form-select"
+                      value={sv.assignedAgentId ? String(sv.assignedAgentId) : ''}
+                      disabled={isReassigning}
+                      onChange={e => handleReassign(e.target.value)}
+                    >
+                      {!sv.assignedAgentId || !agents.some(a => String(a.id) === String(sv.assignedAgentId)) ? (
+                        <option value={sv.assignedAgentId ? String(sv.assignedAgentId) : ''}>
+                          {sv.assignedAgentName || 'Unassigned'}
+                        </option>
+                      ) : null}
+                      {agents.map(ag => (
+                        <option key={ag.id} value={String(ag.id)}>
+                          {String(ag.id) === String(user?.id) ? `${ag.name} (me)` : `${ag.name} (${ag.email})`}
+                        </option>
+                      ))}
+                    </select>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)', marginTop: 6 }}>
+                      {isReassigning ? 'Assigning…' : 'Choosing another agent assigns it to them and notifies them with the customer details.'}
+                    </div>
+                  </>
+                ) : (
+                  <div>{sv.assignedAgentName || 'Unassigned'}</div>
+                )}
+                <div style={{ fontSize: 12.5, color: 'var(--text-secondary, #64748b)', marginTop: 4 }}>
+                  {selfTaken ? 'Self-assigned' : sv.assignedByName ? `Assigned by ${sv.assignedByName}` : ''}
+                </div>
+              </div>
+
+              {/* Status & remarks */}
+              <div style={card}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+                  <div style={label}>Status &amp; remarks</div>
+                  <StatusChip status={sv.status} size="sm" />
+                </div>
+                {sv.statusUpdatedByName ? (
+                  <div style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)', marginBottom: 10 }}>
+                    Last updated by {sv.statusUpdatedByName}
+                    {sv.statusUpdatedAt ? ` · ${new Date(sv.statusUpdatedAt).toLocaleString()}` : ''}
+                  </div>
+                ) : null}
+
+                {canUpdateVisit(sv) ? (
+                  <>
+                    <div className="form-group">
+                      <label htmlFor="sitevisit-detail-status" className="form-label">Status</label>
+                      <select
+                        id="sitevisit-detail-status"
+                        className="form-select"
+                        value={detailStatus}
+                        onChange={e => setDetailStatus(e.target.value)}
+                      >
+                        {statusOptions.map(s => (
+                          <option key={s} value={s}>{VISIT_STATUS_CHOICES.includes(s) ? s : `${s} (current)`}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div className="form-group">
+                      <label htmlFor="sitevisit-detail-remarks" className="form-label">
+                        Remarks{detailStatus !== 'Pending' ? ' *' : ''}
+                      </label>
+                      <textarea
+                        id="sitevisit-detail-remarks"
+                        className="form-input"
+                        rows={4}
+                        value={detailRemarks}
+                        onChange={e => setDetailRemarks(e.target.value)}
+                        placeholder="e.g. Liked the corner plot, will come back with family on Sunday"
+                      />
+                    </div>
+                  </>
+                ) : (
+                  <div>{sv.outcomeNotes ? `"${sv.outcomeNotes}"` : 'No remarks yet'}</div>
+                )}
+              </div>
+            </div>
+          );
+        })()}
+      </Drawer>
+
       {/* ── Schedule Visit Modal ──────────────────────────────────────────── */}
       <Modal
         isOpen={isScheduleModalOpen}
@@ -711,79 +1278,70 @@ export const SiteVisitsPage: React.FC = () => {
       >
         <form onSubmit={handleScheduleVisit} className="sitevisit-form">
 
-          {/* Visitor Source Selection */}
+          {/* Visitor: one picker for leads, customers, or a new visitor */}
           <div className="form-group">
-            <label className="form-label" style={{ fontWeight: 600, marginBottom: 8, display: 'block' }}>
-              Visitor Source *
+            <label htmlFor="sitevisit-visitor-select" className="form-label">
+              Visitor *{' '}
+              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                ({leads.length} leads · {customers.length} customers)
+              </span>
             </label>
-            <div className="visitor-source-toggle">
-              <button
-                type="button"
-                className={`visitor-source-btn ${visitorType === 'lead' ? 'active' : ''}`}
-                onClick={() => handleVisitorTypeChange('lead')}
-              >
-                <User size={14} /> Existing Lead
-              </button>
-              <button
-                type="button"
-                className={`visitor-source-btn ${visitorType === 'customer' ? 'active' : ''}`}
-                onClick={() => handleVisitorTypeChange('customer')}
-              >
-                <Building2 size={14} /> Customer
-              </button>
-              <button
-                type="button"
-                className={`visitor-source-btn ${visitorType === 'new' ? 'active' : ''}`}
-                onClick={() => handleVisitorTypeChange('new')}
-              >
-                <Plus size={14} /> New Visitor
-              </button>
-            </div>
-          </div>
-
-          {/* If Lead: Display Leads Dropdown */}
-          {visitorType === 'lead' && (
-            <div className="form-group">
-              <label htmlFor="sitevisit-lead-select" className="form-label">
-                Select Lead * <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>({leads.length} available)</span>
-              </label>
-              <select
-                id="sitevisit-lead-select"
-                name="leadId"
-                className="form-select"
-                required
-                value={selectedLeadId}
-                onChange={e => handleLeadSelect(e.target.value)}
-              >
-                <option value="">-- Choose a Lead --</option>
+            <select
+              id="sitevisit-visitor-select"
+              name="visitor"
+              className="form-select"
+              required
+              value={visitorSelectValue}
+              onChange={e => handleVisitorSelect(e.target.value)}
+            >
+              <option value="">-- Choose a lead, customer or new visitor --</option>
+              <optgroup label={`Leads (${leads.length})`}>
                 {leads.map(l => (
-                  <option key={l.id} value={l.id}>
+                  <option key={`lead-${l.id}`} value={`lead:${l.id}`}>
                     {l.name} — {l.phone}
                   </option>
                 ))}
-              </select>
-            </div>
-          )}
-
-          {/* If Customer: Display Customers Dropdown */}
-          {visitorType === 'customer' && (
-            <div className="form-group">
-              <label className="form-label">
-                Select Customer * <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>({customers.length} available)</span>
-              </label>
-              <select
-                className="form-select"
-                required
-                value={selectedCustomerId}
-                onChange={e => handleCustomerSelect(e.target.value)}
-              >
-                <option value="">-- Choose a Customer --</option>
+              </optgroup>
+              <optgroup label={`Customers (${customers.length})`}>
                 {customers.map(c => (
-                  <option key={c.id} value={c.id}>
-                    {c.name} — {c.phone}
+                  <option key={`customer-${c.id}`} value={`customer:${c.id}`}>
+                    {c.name} — {c.phone || 'no phone'}
                   </option>
                 ))}
-              </select>
+              </optgroup>
+              <optgroup label="Not in the CRM">
+                <option value="new">+ New visitor (enter name and phone)</option>
+              </optgroup>
+            </select>
+          </div>
+
+          {existingOpenVisit && (
+            <div
+              role="alert"
+              style={{
+                margin: '4px 0 12px', padding: '12px 14px', borderRadius: 10,
+                background: 'rgba(245, 158, 11, 0.12)', border: '1px solid rgba(245, 158, 11, 0.45)', color: '#92400e',
+              }}
+            >
+              <strong>{existingOpenVisit.customerName} already has an open site visit.</strong>
+              <div style={{ fontSize: 13, marginTop: 4 }}>
+                {existingOpenVisit.projectName || 'Project'} · {visitPlotLabel(existingOpenVisit)} · {existingOpenVisit.scheduledAt}
+                {existingOpenVisit.assignedAgentName ? ` · follow-up: ${existingOpenVisit.assignedAgentName}` : ''}
+              </div>
+              <div style={{ fontSize: 12.5, marginTop: 4 }}>
+                A customer can have only one open visit. Reschedule it (change the time or the plots) instead of adding another.
+              </div>
+              <button
+                type="button"
+                className="btn btn-primary btn-sm"
+                style={{ marginTop: 8 }}
+                onClick={() => {
+                  setIsScheduleModalOpen(false);
+                  handleOpenManageModal(existingOpenVisit, 'Rescheduled');
+                }}
+              >
+                Reschedule that visit
+              </button>
             </div>
           )}
 
@@ -851,33 +1409,64 @@ export const SiteVisitsPage: React.FC = () => {
               </select>
             </div>
             <div className="form-group">
-              <label htmlFor="sitevisit-plot-number" className="form-label">
-                Plot{' '}
+              <label className="form-label">
+                Plots{' '}
                 <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                  (optional)
+                  (optional — pick as many as fit the customer's requirement)
                 </span>
               </label>
-              <select
-                id="sitevisit-plot-number"
-                name="plotNumber"
-                className="form-select"
-                value={selectedPlotId}
-                onChange={e => setSelectedPlotId(e.target.value)}
-                disabled={!selectedProjectId || filteredPlots.length === 0}
-              >
-                <option value="">-- General Project Tour (No Specific Plot) --</option>
-                {filteredPlots.map((pl: any) => (
-                  <option key={pl.id} value={String(pl.id)}>
-                    {pl.plotNumber} · {pl.dimensions} · Available
-                    {pl.price ? ` · ₹${Number(pl.price).toLocaleString('en-IN')}` : ''}
-                  </option>
-                ))}
-              </select>
-              {selectedProjectId && filteredPlots.length === 0 && (
-                <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
-                  No available plots in this project right now. You can still schedule a General Project Tour.
-                </p>
-              )}
+              {(() => {
+                const chosen = selectedPlotIds
+                  .map(id => plots.find((p: any) => String(p.id) === id))
+                  .filter(Boolean) as any[];
+                return (
+                  <>
+                    {chosen.length > 0 && (
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: 6, marginBottom: 8 }}>
+                        {chosen.map(pl => (
+                          <div
+                            key={pl.id}
+                            style={{
+                              display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
+                              padding: '8px 12px', border: '1px solid var(--border-base, #e2e8f0)', borderRadius: 8,
+                            }}
+                          >
+                            <div style={{ minWidth: 0 }}>
+                              <div style={{ fontWeight: 700, fontSize: 13.5 }}>{pl.plotNumber}</div>
+                              <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
+                                {[pl.facing && `${pl.facing} facing`, pl.areaSqFt && `${pl.areaSqFt} sq ft`,
+                                  pl.price ? `₹${Number(pl.price).toLocaleString('en-IN')}` : null].filter(Boolean).join(' · ')}
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              className="btn btn-ghost btn-sm"
+                              aria-label={`Remove ${pl.plotNumber}`}
+                              onClick={() => setSelectedPlotIds(prev => prev.filter(id => id !== String(pl.id)))}
+                            >
+                              Remove
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                    <button
+                      type="button"
+                      className="btn btn-secondary"
+                      style={{ width: '100%', justifyContent: 'center' }}
+                      onClick={handlePickPlotFromInventory}
+                      disabled={!selectedProjectId}
+                    >
+                      {chosen.length > 0 ? `Add or change plots (${chosen.length} selected) →` : 'Choose plots from Plot Inventory →'}
+                    </button>
+                  </>
+                );
+              })()}
+              <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
+                {selectedProjectId
+                  ? 'Opens Plot Inventory so you can filter by facing, size and price and tick the plots to show. Leave empty for a General Project Tour.'
+                  : 'Select a project first.'}
+              </p>
             </div>
           </div>
 
@@ -957,11 +1546,52 @@ export const SiteVisitsPage: React.FC = () => {
             >
               Cancel
             </button>
-            <button type="submit" className="btn btn-primary" disabled={isSubmitting}>
+            <button type="submit" className="btn btn-primary" disabled={isSubmitting || !!existingOpenVisit}>
               {isSubmitting ? 'Scheduling...' : 'Confirm Schedule'}
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* ── Confirm removing a site visit ───────────────────────────────── */}
+      <Modal
+        isOpen={!!visitToRemove}
+        onClose={() => !isRemoving && setVisitToRemove(null)}
+        title="Remove this site visit?"
+        subtitle={visitToRemove ? `${visitToRemove.customerName} · ${visitToRemove.projectName || 'Project'}` : undefined}
+        maxWidth={520}
+        footer={
+          <>
+            <button type="button" className="btn btn-secondary" onClick={() => setVisitToRemove(null)} disabled={isRemoving}>
+              Keep it
+            </button>
+            <button
+              type="button"
+              className="btn btn-primary"
+              onClick={handleConfirmRemove}
+              disabled={isRemoving}
+              style={{ backgroundColor: '#dc2626', borderColor: '#dc2626' }}
+            >
+              {isRemoving ? 'Removing…' : 'Remove visit'}
+            </button>
+          </>
+        }
+      >
+        {visitToRemove && (
+          <div>
+            <p style={{ marginTop: 0 }}>
+              {visitToRemove.scheduledAt} · {visitPlotLabel(visitToRemove)}
+              {visitToRemove.assignedAgentName ? ` · follow-up: ${visitToRemove.assignedAgentName}` : ''}
+            </p>
+            <p>
+              This permanently deletes the visit with its plots, status and remarks. The follow-up agent is told it was removed, and the lead
+              goes back to "Contacted" if this was their only open visit.
+            </p>
+            <p style={{ marginBottom: 0, color: 'var(--text-secondary, #64748b)', fontSize: 13 }}>
+              To keep a record instead, close it with Update Status / Reschedule → Cancelled.
+            </p>
+          </div>
+        )}
       </Modal>
 
       {/* ── Unified Manage Site Visit Modal ──────────────────────────────── */}
@@ -1101,20 +1731,53 @@ export const SiteVisitsPage: React.FC = () => {
                   </select>
                 </div>
                 <div className="form-group">
-                  <label className="form-label">Target Plot (Optional)</label>
-                  <select
-                    className="form-select"
-                    value={managePlotId}
-                    onChange={e => setManagePlotId(e.target.value)}
-                    disabled={!manageProjectId || manageFilteredPlots.length === 0}
-                  >
-                    <option value="">-- General Project Tour --</option>
-                    {manageFilteredPlots.map(pl => (
-                      <option key={pl.id} value={String(pl.id)}>
-                        {pl.plotNumber} {pl.status ? `(${pl.status})` : ''}
-                      </option>
-                    ))}
-                  </select>
+                  <label className="form-label">Plots (Optional)</label>
+                  {(() => {
+                    const chosen = managePlotIds
+                      .map(id => plots.find((p: any) => String(p.id) === id))
+                      .filter(Boolean) as any[];
+                    const hasProject = !!(manageProjectId || managingVisit?.projectId);
+                    return (
+                      <>
+                        {chosen.length > 0 ? (
+                          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 8 }}>
+                            {chosen.map(pl => (
+                              <span
+                                key={pl.id}
+                                style={{
+                                  display: 'inline-flex', alignItems: 'center', gap: 6, padding: '3px 6px 3px 10px', borderRadius: 999,
+                                  background: 'rgba(16, 185, 129, 0.12)', color: '#047857', fontSize: 12.5, fontWeight: 600,
+                                }}
+                              >
+                                {pl.plotNumber}
+                                <button
+                                  type="button"
+                                  aria-label={`Remove ${pl.plotNumber}`}
+                                  onClick={() => setManagePlotIds(prev => prev.filter(id => id !== String(pl.id)))}
+                                  style={{ border: 0, background: 'transparent', color: 'inherit', cursor: 'pointer', fontSize: 15, lineHeight: 1, padding: '0 2px' }}
+                                >
+                                  ×
+                                </button>
+                              </span>
+                            ))}
+                          </div>
+                        ) : (
+                          <div style={{ fontSize: 12.5, color: 'var(--text-secondary, #64748b)', marginBottom: 8 }}>
+                            General Project Tour (no specific plot)
+                          </div>
+                        )}
+                        <button
+                          type="button"
+                          className="btn btn-secondary btn-sm"
+                          onClick={handlePickPlotsForManage}
+                          disabled={!hasProject}
+                          style={{ width: '100%', justifyContent: 'center' }}
+                        >
+                          {chosen.length > 0 ? 'Add or change plots in Plot Inventory →' : 'Choose plots from Plot Inventory →'}
+                        </button>
+                      </>
+                    );
+                  })()}
                 </div>
               </div>
 

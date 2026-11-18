@@ -33,6 +33,14 @@ public class JaminSiteVisitsController : JaminTenantControllerBase
     }
 
     /// <summary>
+    /// Open visits per plot, so Plot Inventory can warn that a plot is already planned for another customer.
+    /// </summary>
+    [HttpGet("plot-usage")]
+    [Authorize]
+    public async Task<IActionResult> GetPlotUsage([FromQuery] int? projectId, CancellationToken ct)
+        => Ok(await _siteVisitService.GetPlotUsageAsync(projectId, ct));
+
+    /// <summary>
     /// Schedules a new site visit directly from the CRM.
     /// </summary>
     [HttpPost]
@@ -47,6 +55,9 @@ public class JaminSiteVisitsController : JaminTenantControllerBase
         var result = await _siteVisitService.ScheduleSiteVisitAsync(dto, ct);
         if (!result.Success)
         {
+            // The customer already has an open visit: 409, carrying that visit when the caller may edit it.
+            if (result.Errors?.Contains(backend.Services.Implementations.Jamin.JaminSiteVisitService.DuplicateOpenVisitCode) == true)
+                return Conflict(result);
             return BadRequest(result);
         }
 

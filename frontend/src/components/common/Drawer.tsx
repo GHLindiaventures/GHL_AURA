@@ -118,7 +118,10 @@ export const Drawer: React.FC<DrawerProps> = ({
               display: 'flex',
               alignItems: 'center',
               justifyContent: 'flex-end',
-              gap: 12,
+              flexWrap: 'wrap',
+              gap: 8,
+              flexShrink: 0,
+              minWidth: 0,
             }}
           >
             {footer}
