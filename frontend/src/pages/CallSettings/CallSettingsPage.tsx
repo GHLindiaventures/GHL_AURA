@@ -15,6 +15,7 @@ import {
 import { useCall } from '../../context/CallContext';
 import { useAuth } from '../../context/AuthContext';
 import { canPlaceCalls } from '../../utils/agentRoleUtils';
+import { isJaminAdminUser } from '../../utils/tenantRoles';
 import './CallSettingsPage.css';
 import { storageService } from '../../services/storageService';
 
@@ -140,6 +141,9 @@ export const CallSettingsPage: React.FC = () => {
 
   const isGhlAdmin = (tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01') &&
     ((user?.role?.code as string) === 'company_admin' || (user?.role?.code as string) === 'admin' || user?.role?.code === 'super_admin');
+  // Jamin Bazaar admin gets the same organization call controls (Sales Executives only — no IRM in Jamin).
+  const isJaminAdmin = !isGhlAdmin && isJaminAdminUser(tenant, user);
+  const showOrgCallControls = isGhlAdmin || isJaminAdmin;
 
   // ── Call preferences state ────────────────────────────────────────────────
   const [prefs, setPrefs] = useState(() => storageService.getCallPreferences());
@@ -665,11 +669,11 @@ export const CallSettingsPage: React.FC = () => {
 
       </div>
 
-      {isGhlAdmin && (
+      {showOrgCallControls && (
         <div style={{ marginTop: 24, paddingTop: 24, borderTop: '1px solid var(--border-base)', maxWidth: 760 }}>
           <h2 style={{ fontSize: 16, fontWeight: 700, marginBottom: 16, color: 'var(--text-primary)' }}>Organization Call Controls (Admin)</h2>
 
-          <div className="card" style={{ padding: 24, marginBottom: 20 }}>
+          <div className="card" style={{ padding: 24, marginBottom: isJaminAdmin ? 0 : 20 }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flex: 1 }}>
                 <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-md)', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -694,7 +698,7 @@ export const CallSettingsPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="card" style={{ padding: 24 }}>
+          {!isJaminAdmin && <div className="card" style={{ padding: 24 }}>
             <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 16 }}>
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, flex: 1 }}>
                 <div style={{ width: 36, height: 36, borderRadius: 'var(--radius-md)', backgroundColor: 'rgba(239, 68, 68, 0.1)', color: '#ef4444', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0 }}>
@@ -717,7 +721,7 @@ export const CallSettingsPage: React.FC = () => {
                 />
               </div>
             </div>
-          </div>
+          </div>}
         </div>
       )}
 

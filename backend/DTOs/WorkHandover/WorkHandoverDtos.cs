@@ -26,7 +26,9 @@ public class WorkHandoverCountsDto
     public int OpportunitiesCount { get; set; }
     public int ConsultationsCount { get; set; }
     public int PipelineCardsCount { get; set; }
-    public int TotalCount => LeadsCount + CustomersCount + FollowupsCount + DealsCount + InvestorsCount + KycsCount + OpportunitiesCount + ConsultationsCount + PipelineCardsCount;
+    /// <summary>Open Jamin Bazaar site visits (Sales Executive role). Always 0 for GHL.</summary>
+    public int SiteVisitsCount { get; set; }
+    public int TotalCount => LeadsCount + CustomersCount + FollowupsCount + DealsCount + InvestorsCount + KycsCount + OpportunitiesCount + ConsultationsCount + PipelineCardsCount + SiteVisitsCount;
 }
 
 public class WorkHandoverPreviewDto : WorkHandoverCountsDto

@@ -16,10 +16,12 @@ public class IrmPipelineController : ControllerBase
 {
     private readonly IIrmPipelineService _pipelineService;
     private readonly IIrmPipelineRepository _pipelineRepo;
+    private readonly backend.Data.ApplicationDbContext _db;
 
-    public IrmPipelineController(IIrmPipelineService pipelineService, IIrmPipelineRepository? pipelineRepo = null)
+    public IrmPipelineController(IIrmPipelineService pipelineService, backend.Data.ApplicationDbContext db, IIrmPipelineRepository? pipelineRepo = null)
     {
         _pipelineService = pipelineService;
+        _db = db;
         _pipelineRepo = pipelineRepo!;
     }
 
@@ -60,6 +62,24 @@ public class IrmPipelineController : ControllerBase
         var result = await _pipelineService.MoveStageAsync(cardId, companyId, irmId, dto, ct);
         if (!result.Success)
             return BadRequest(result);
+
+        var actorName = User.FindFirst(ClaimTypes.Name)?.Value ?? User.FindFirst("name")?.Value ?? (irmId > 0 ? $"IRM #{irmId}" : "IRM");
+        var actorEmail = User.FindFirst(ClaimTypes.Email)?.Value ?? User.FindFirst("email")?.Value ?? "irm@ghl.com";
+        _db.AuditLogs.Add(new backend.Models.Entities.AuditLog
+        {
+            CompanyId = companyId,
+            Timestamp = DateTime.UtcNow,
+            ActorName = actorName,
+            ActorEmail = actorEmail,
+            Action = "STAGE_CHANGE",
+            EntityType = "Deal",
+            EntityId = cardId.ToString(),
+            CustomerId = result.Data?.InvestorId,
+            Module = "Opportunities",
+            Details = $"IRM {actorName} moved investor '{result.Data?.InvestorName}' to stage '{dto.TargetStageId}' in Pipeline.",
+            Status = "success"
+        });
+        await _db.SaveChangesAsync(ct);
 
         return Ok(result);
     }

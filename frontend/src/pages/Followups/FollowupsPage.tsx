@@ -39,6 +39,7 @@ import { SlotConflictModal } from '../../components/common/SlotConflictModal';
 import { ErrorAlertBanner } from '../../components/common/ErrorAlertBanner';
 import { Drawer } from '../../components/common/Drawer';
 import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawerContent';
+import { markRouteSeen, markSeenIds } from '../../components/layout/Sidebar';
 type FollowupRoleFilter = 'all' | 'sales_executive' | 'irm';
 import { DateRangePreset } from '../../types/kanban';
 import { adminUserService } from '../../services/adminUserService';
@@ -47,6 +48,7 @@ import { User as UserModel } from '../../types';
 import { getAgentRoleInfo, getAssigningSalesAgentInfo } from '../../utils/agentRoleUtils';
 import { formatSmartScheduleDate, isDateToday, isDateOverdue } from '../../utils/dateUtils';
 import { FollowupBookingDialog, type BookingSelection } from '../../components/common/FollowupBookingDialog';
+import { isJaminAdminUser } from '../../utils/tenantRoles';
 import './FollowupsPage.css';
 import '../Leads/LeadsPage.css';
 
@@ -354,6 +356,8 @@ export const FollowupsPage: React.FC = () => {
     (tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01' || tenant?.id === '1' || tenant?.slug === '1' || tenant?.name?.toLowerCase().includes('ghl') || user?.companySlug === 'ghl') &&
     isExec;
   const isIrm = roleCode === 'irm';
+  // Jamin Bazaar admin: only Sales Executives exist (no IRM) — no role filter, no IRM labels.
+  const isJaminAdmin = !isGhlAdmin && isJaminAdminUser(tenant, user);
   const canOpenDrawer = isGhlSalesExec || isExec || isAdmin || isIrm;
 
   // ── Admin Filter States ──────────────────────────────────────────────────
@@ -494,6 +498,10 @@ export const FollowupsPage: React.FC = () => {
       });
 
       setFollowups(followupsList);
+      const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+      const tenantId = tenant?.id || tenant?.slug || 'ghl';
+      const getFuKey = (f: any) => String(f.id || f.followupId || `${f.contactName || f.contactPhone}_${f.scheduledAt || f.date || ''}`);
+      markRouteSeen(tenantId, uid, 'followups', followupsList, getFuKey);
       setCallsList(calls || []);
       setIrmSummaryData(irmSummary);
 
@@ -1690,8 +1698,8 @@ export const FollowupsPage: React.FC = () => {
       {isAdmin && (
         <div className="admin-followup-filterbar">
           <div className="admin-followup-filter-group">
-            {/* 1. Role Filter */}
-            <div className="followup-filter-item">
+            {/* 1. Role Filter (GHL only — Jamin has Sales Executives only) */}
+            {!isJaminAdmin && <div className="followup-filter-item">
               <label htmlFor="admin-followup-role" className="followup-filter-label">
                 <Briefcase size={14} color="var(--primary-600)" />
                 Role:
@@ -1707,7 +1715,7 @@ export const FollowupsPage: React.FC = () => {
                 <option value="sales_executive">Sales Executive</option>
                 {tenant?.slug !== 'jamin' && <option value="irm">IRM (Investor Relations)</option>}
               </select>
-            </div>
+            </div>}
 
             {/* 2. Person Filter (Dynamic based on Role) */}
             <div className="followup-filter-item">
@@ -1723,7 +1731,7 @@ export const FollowupsPage: React.FC = () => {
                 onChange={e => setSelectedPerson(e.target.value)}
               >
                 <option value="All">
-                  {selectedRole === 'sales_executive'
+                  {isJaminAdmin || selectedRole === 'sales_executive'
                     ? 'All Sales Executives'
                     : selectedRole === 'irm'
                       ? 'All IRMs'
@@ -1789,14 +1797,20 @@ export const FollowupsPage: React.FC = () => {
           {/* Right Section: Role Mode Tag & Total Count */}
           <div className="admin-followup-meta-group">
             <span
-              className={`followup-role-tag ${selectedRole === 'all'
+              className={`followup-role-tag ${isJaminAdmin
+                  ? 'tag-sales-exec'
+                  : selectedRole === 'all'
                   ? 'tag-all'
                   : selectedRole === 'sales_executive'
                     ? 'tag-sales-exec'
                     : 'tag-irm'
                 }`}
             >
-              {selectedRole === 'all' ? (
+              {isJaminAdmin ? (
+                <>
+                  <Briefcase size={13} /> Sales Executive Follow-ups
+                </>
+              ) : selectedRole === 'all' ? (
                 <>
                   <CalendarCheck size={13} /> All Follow-ups (Sales & IRM)
                 </>

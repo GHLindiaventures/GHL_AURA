@@ -27,6 +27,7 @@ import {
 import { DocumentItem } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { apiClient } from '../../services/apiClient';
+import { markRouteSeen, markSeenIds } from '../../components/layout/Sidebar';
 import { isMockMode } from '../../config/environment';
 import { Modal } from '../../components/common/Modal';
 import { superAdminService } from '../../services/superAdminService';
@@ -115,11 +116,20 @@ export const CompanyDocumentsPage: React.FC = () => {
         platformDocs.forEach(d => map.set(d.id, d));
         filteredCompanyDocs.forEach(d => map.set(d.id, d));
 
-        setDocuments(Array.from(map.values()));
+        const docList = Array.from(map.values());
+        setDocuments(docList);
+        const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+        const tenantId = tenant?.id || tenant?.slug || 'ghl';
+        const getDocKey = (d: any) => String(d.id || d.url || d.title || d.name);
+        markRouteSeen(tenantId, uid, 'company-documents', docList, getDocKey);
       } else {
         const res = await apiClient.get<any>(`/documents?entityType=company&entityId=${companyId}`);
         if (res.success && Array.isArray(res.data)) {
           setDocuments(res.data);
+          const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+          const tenantId = tenant?.id || tenant?.slug || 'ghl';
+          const getDocKey = (d: any) => String(d.id || d.url || d.title || d.name);
+          markRouteSeen(tenantId, uid, 'company-documents', res.data, getDocKey);
         } else {
           setDocuments([]);
         }

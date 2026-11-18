@@ -28,6 +28,8 @@ import { Modal } from '../../components/common/Modal';
 import { getAuthHeaders } from '../../utils/authHeaders';
 import { canPlaceCalls } from '../../utils/agentRoleUtils';
 import { formatDateYMD, getPresetDates } from '../../utils/dateUtils';
+import { markRouteSeen, markSeenIds } from '../../components/layout/Sidebar';
+import { isJaminAdminUser } from '../../utils/tenantRoles';
 import './AssignedLeadsPage.css';
 
 interface AssignedLeadsPageProps {
@@ -69,6 +71,8 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
   const isGhlAdmin =
     (tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01') &&
     (roleCode === 'company_admin' || (roleCode as string) === 'admin' || roleCode === 'super_admin');
+  // Jamin Bazaar admin: same page, Sales Executives only (Jamin has no IRM role).
+  const isJaminAdmin = !isGhlAdmin && isJaminAdminUser(tenant, user);
 
   const isAdmin =
     isGhlAdmin ||
@@ -329,6 +333,9 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
       setLoadError(null);
       const allLeads = storageService.getLeads(tenant?.id);
       setLeads(allLeads);
+      const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+      const tenantId = tenant?.id || tenant?.slug || 'ghl';
+      markRouteSeen(tenantId, uid, 'assigned-leads', allLeads, (l: any) => String(l.id || l.phone || l.name));
       setSelectedLead(prev => {
         if (!prev) return null;
         return allLeads.find(l => l.id === prev.id) || null;
@@ -361,6 +368,9 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
           customFields: item.customFields || {}
         }));
         setLeads(apiLeads);
+        const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+        const tenantId = tenant?.id || tenant?.slug || 'ghl';
+        markRouteSeen(tenantId, uid, 'assigned-leads', apiLeads, (l: any) => String(l.id || l.phone || l.name));
         setSelectedLead(prev => {
           if (!prev) return null;
           return apiLeads.find((l: any) => l.id === prev.id) || null;
@@ -375,11 +385,12 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
   };
 
   useEffect(() => {
+    if (isJaminAdmin) return; // No IRMs / IRM coverage in Jamin
     loadActiveCoverages();
     getCompanyIrms(tenant?.id).then(list => setCompanyIrms(list || [])).catch(err => {
       console.warn('[AssignedLeadsPage] Failed to load company IRMs:', err);
     });
-  }, [tenant?.id]);
+  }, [tenant?.id, isJaminAdmin]);
 
   useEffect(() => {
     let cancelled = false;
@@ -636,12 +647,13 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
     },
     {
       key: 'investmentAmount',
-      header: 'Investment Amount Range',
+      header: isJaminAdmin ? 'Amount Range' : 'Investment Amount Range',
       sortable: true,
       render: l => {
         const amount =
           l.customFields?.investmentCapacity ||
           l.customFields?.budgetRange ||
+          (l as any).budgetRange ||
           (l as any).investmentAmount ||
           '—';
         return <span className="lead-investment-val">{amount}</span>;
@@ -667,7 +679,7 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
         );
       },
     },
-    {
+    ...(isJaminAdmin ? [] : [{
       key: 'assignedIrm',
       header: 'Assigned IRM',
       sortable: true,
@@ -697,7 +709,7 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
           </div>
         );
       },
-    },
+    } as Column<Lead>]),
     {
       key: 'source',
       header: 'Source',
@@ -753,11 +765,11 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
         setIsDetailDrawerOpen(true);
       },
     },
-    {
+    ...(isJaminAdmin ? [] : [{
       label: 'Assign / Change IRM',
       icon: <UserCheck size={14} className="leads-action-icon" />,
-      onClick: l => handleOpenAssignIrm(l),
-    },
+      onClick: (l: Lead) => handleOpenAssignIrm(l),
+    }]),
     {
       label: 'Edit Lead',
       icon: <Edit size={14} className="leads-action-icon" />,
@@ -797,7 +809,8 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
       const info = resolveLeadOwnership(l);
 
       // Only show leads that are actively assigned to either a Sales Executive or an IRM
-      const isAssigned = Boolean(info.salesExecutiveName || info.irmName);
+      // (Jamin: Sales Executive only)
+      const isAssigned = isJaminAdmin ? Boolean(info.salesExecutiveName) : Boolean(info.salesExecutiveName || info.irmName);
       if (!isAssigned) {
         return false;
       }
@@ -815,7 +828,7 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
       }
 
       // 2. IRM filter
-      if (irmFilter && irmFilter !== 'All') {
+      if (!isJaminAdmin && irmFilter && irmFilter !== 'All') {
         if (irmFilter === 'Unassigned') {
           if (info.irmName) return false;
         } else if (
@@ -845,13 +858,13 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
 
       return true;
     });
-  }, [leads, agentFilter, irmFilter, datePreset, dateFrom, dateTo, activeCoverages, adminIds]);
+  }, [leads, agentFilter, irmFilter, datePreset, dateFrom, dateTo, activeCoverages, adminIds, isJaminAdmin]);
 
-  if (!isGhlAdmin) {
+  if (!isGhlAdmin && !isJaminAdmin) {
     return (
       <div className="assigned-leads-unauthorized">
         <h3>Access Restricted</h3>
-        <p>This module is only accessible to GHL India Ventures Company Admin.</p>
+        <p>This module is only accessible to the Company Admin.</p>
       </div>
     );
   }
@@ -923,10 +936,13 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
         keyExtractor={l => l.id}
         rowActions={rowActions}
         onRowClick={l => {
+          const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+          const tenantId = tenant?.id || tenant?.slug || 'ghl';
+          markSeenIds(tenantId, uid, 'assigned-leads', [String(l.id || l.phone || l.name)]);
           setSelectedLead(l);
           setIsDetailDrawerOpen(true);
         }}
-        searchPlaceholder="Search assigned leads by name, phone, or agent..."
+        searchPlaceholder={isJaminAdmin ? 'Search assigned leads by name, phone, or sales executive...' : 'Search assigned leads by name, phone, or agent...'}
         searchFilter={(lead, query) => {
           const info = resolveLeadOwnership(lead);
           const q = query.toLowerCase();
@@ -954,7 +970,7 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
                 placeholder: 'Select a sales executive',
                 options: uniqueAgents.map(name => ({ value: name, label: name })),
               },
-              {
+              ...(isJaminAdmin ? [] : [{
                 key: 'assignedIrm',
                 label: 'Assigned IRM',
                 value: irmFilter,
@@ -964,7 +980,7 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
                   ...uniqueIrms.map(name => ({ value: name, label: name })),
                   { value: 'Unassigned', label: 'Unassigned' },
                 ],
-              },
+              }]),
             ]}
             dateRange={{
               preset: datePreset,
@@ -1035,7 +1051,7 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
                       </span>
                     )}
                   </div>
-                  <div className="lead-assigned-note" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+                  {!isJaminAdmin && <div className="lead-assigned-note" style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                     <div>
                       Assigned IRM: <strong>{info.irmName || 'Not Assigned'}</strong>
                       {info.irmDate && (
@@ -1062,7 +1078,7 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
                     >
                       <UserCheck size={12} /> {info.irmName ? 'Change IRM' : 'Assign IRM'}
                     </button>
-                  </div>
+                  </div>}
                 </div>
               );
             })()}
@@ -1265,7 +1281,7 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
                 ))}
               </select>
             </div>
-            <div className="form-group">
+            {!isJaminAdmin && <div className="form-group">
               <label htmlFor="assigned-lead-irm" className="form-label">Assigned IRM</label>
               <select
                 id="assigned-lead-irm"
@@ -1298,7 +1314,7 @@ export const AssignedLeadsPage: React.FC<AssignedLeadsPageProps> = ({ onNavigate
                   </option>
                 ))}
               </select>
-            </div>
+            </div>}
           </div>
 
           <div className="form-group">

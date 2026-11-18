@@ -28,13 +28,72 @@
   margin-top: 4px;
 }
 
+.company-audit-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.company-audit-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+  font-weight: 600;
+  border-radius: 8px;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.1));
+  background: var(--bg-surface-elevated, #161b26);
+  color: var(--text-primary, #ffffff);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.company-audit-btn:hover {
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.08));
+  border-color: var(--primary-500, #3b82f6);
+}
+
+.company-audit-filter-pills {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding-bottom: 4px;
+}
+
+.audit-filter-pill {
+  padding: 6px 14px;
+  font-size: 12px;
+  font-weight: 600;
+  border-radius: 20px;
+  border: 1px solid var(--border-color, rgba(255, 255, 255, 0.08));
+  background: transparent;
+  color: var(--text-secondary, #94a3b8);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.audit-filter-pill:hover {
+  color: var(--text-primary, #ffffff);
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.audit-filter-pill.active {
+  background: rgba(59, 130, 246, 0.15);
+  border-color: #3b82f6;
+  color: #60a5fa;
+}
+
 .company-audit-cell-timestamp {
   font-size: 12px;
   font-weight: 500;
+  white-space: nowrap;
 }
 
 .company-audit-actor-name {
   font-weight: 700;
+  font-size: 13px;
 }
 
 .company-audit-actor-email {
@@ -46,16 +105,117 @@
   font-family: monospace;
   font-size: 11px;
   font-weight: 700;
-  padding: 2px 6px;
-  background-color: var(--bg-surface-hover);
-  border-radius: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  display: inline-block;
+  white-space: nowrap;
+}
+
+.company-audit-action-tag.action-tag-default {
+  background-color: var(--bg-surface-hover, rgba(255, 255, 255, 0.08));
+  color: var(--text-primary, #ffffff);
+}
+
+.company-audit-action-tag.action-tag-success {
+  background-color: rgba(16, 185, 129, 0.18);
+  color: #34d399;
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.company-audit-action-tag.action-tag-purple {
+  background-color: rgba(139, 92, 246, 0.18);
+  color: #c084fc;
+  border: 1px solid rgba(139, 92, 246, 0.3);
+}
+
+.company-audit-action-tag.action-tag-blue {
+  background-color: rgba(59, 130, 246, 0.18);
+  color: #60a5fa;
+  border: 1px solid rgba(59, 130, 246, 0.3);
+}
+
+.company-audit-action-tag.action-tag-warning {
+  background-color: rgba(245, 158, 11, 0.18);
+  color: #fbbf24;
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+.company-audit-action-tag.action-tag-emerald {
+  background-color: rgba(5, 150, 105, 0.18);
+  color: #10b981;
+  border: 1px solid rgba(5, 150, 105, 0.3);
+}
+
+.company-audit-action-tag.action-tag-indigo {
+  background-color: rgba(99, 102, 241, 0.18);
+  color: #818cf8;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
+.company-audit-action-tag.action-tag-teal {
+  background-color: rgba(20, 184, 166, 0.18);
+  color: #2dd4bf;
+  border: 1px solid rgba(20, 184, 166, 0.3);
+}
+
+.company-audit-action-tag.action-tag-danger {
+  background-color: rgba(239, 68, 68, 0.18);
+  color: #f87171;
+  border: 1px solid rgba(239, 68, 68, 0.3);
 }
 
 .company-audit-entity-text {
   font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.company-audit-target-entity-cell {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.company-audit-target-person-name {
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--text-primary, #ffffff);
+  white-space: nowrap;
+  max-width: 240px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.company-audit-person-fallback {
+  color: var(--text-secondary, #94a3b8);
+  font-weight: 500;
+}
+
+.company-audit-entity-subtext {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.company-audit-entity-type-badge {
+  color: var(--text-muted, #94a3b8);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.company-audit-entity-id-tag {
+  font-family: monospace;
+  font-size: 10px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--bg-surface-hover, rgba(255, 255, 255, 0.08));
+  color: var(--text-secondary, #94a3b8);
 }
 
 .company-audit-details-text {
   font-size: 12px;
   color: var(--text-secondary);
+  line-height: 1.4;
 }
+

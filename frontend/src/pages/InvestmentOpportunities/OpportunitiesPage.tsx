@@ -47,6 +47,7 @@ import { ErrorAlertBanner } from '../../components/common/ErrorAlertBanner';
 import { apiUrl } from '../../utils/apiUrl';
 import { getAuthHeaders } from '../../utils/authHeaders';
 import { canPlaceCalls } from '../../utils/agentRoleUtils';
+import { markRouteSeen, markSeenIds } from '../../components/layout/Sidebar';
 import './OpportunitiesPage.css';
 
 // ─── Stage enum (full ordered list) ─────────────────────────────────────────
@@ -176,6 +177,9 @@ export const OpportunitiesPage: React.FC = () => {
       setOpps(oppsData || []);
       setInvestors(investorsData || []);
       setDeals(dealsData || []);
+      const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+      const tenantId = tenant?.id || tenant?.slug || 'ghl';
+      markRouteSeen(tenantId, uid, 'opportunities', oppsData || [], (o: any) => String(o.id));
       setAllCalls(callsData || []);
       setAllConsultations(consultationsData || []);
       setAllFollowups(followupsData || []);

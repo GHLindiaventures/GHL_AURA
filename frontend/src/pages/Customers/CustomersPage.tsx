@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Customer, CallRecord, Followup, Deal, Lead, IrmProfile, CustomFieldDefinition } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import { isJaminTenant } from '../../utils/tenantRoles';
 import { storageService } from '../../services/storageService';
 import { adminUserService } from '../../services/adminUserService';
 import { isMockMode } from '../../config/environment';
@@ -43,6 +44,7 @@ import { Modal } from '../../components/common/Modal';
 import { Timeline, TimelineEvent } from '../../components/common/Timeline';
 import { ErrorAlertBanner } from '../../components/common/ErrorAlertBanner';
 import { formatSmartScheduleDate } from '../../utils/dateUtils';
+import { markRouteSeen, markSeenIds } from '../../components/layout/Sidebar';
 
 import './CustomersPage.css';
 
@@ -145,8 +147,11 @@ export const CustomersPage: React.FC = () => {
   // Leads marked "Interested" are shown in Customer 360 even before they are formally converted.
   // They are virtual entries (id = `lead-<leadId>`) built from the Leads table, de-duplicated against
   // real customers by phone / email. IRM users already see these in "My Leads", so they are skipped.
+  // Jamin Bazaar: an 'Interested' lead is still a LEAD (no IRM hand-off exists), so it must NOT appear
+  // in Customer 360 — only real customers (converted / booked) are listed there.
+  const isJaminCompany = !isGhlTenant && isJaminTenant(tenant, user);
   const interestedLeadCustomers = useMemo<Customer[]>(() => {
-    if (roleCode === 'irm') return [];
+    if (roleCode === 'irm' || isJaminCompany) return [];
     const customerPhones = new Set(customers.map(c => lastTenDigits(c.phone)).filter(Boolean));
     const customerEmails = new Set(
       customers.map(c => (c.email || '').trim().toLowerCase()).filter(Boolean)
@@ -161,7 +166,7 @@ export const CustomersPage: React.FC = () => {
         return true;
       })
       .map(leadToCustomer);
-  }, [leads, customers, roleCode]);
+  }, [leads, customers, roleCode, isJaminCompany]);
 
   const allCustomers = useMemo<Customer[]>(
     () => [...interestedLeadCustomers, ...customers],
@@ -245,15 +250,20 @@ export const CustomersPage: React.FC = () => {
   const loadData = async () => {
     try {
       setLoadError(null);
-      const [custs, cCalls, cFollowups, cDeals, cLeads, cIrms] = await Promise.all([
+      const [custs, cCalls, cFollowups, cDeals, cLeads, cIrms, fetchedUsers] = await Promise.all([
         getCustomers(tenant?.id),
         getCalls(tenant?.id),
         getFollowups(tenant?.id),
         getDeals(tenant?.id),
         getLeads(tenant?.id),
         getCompanyIrms(tenant?.id).catch(() => storageService.getIrms(tenant?.id)),
+        adminUserService.getUsers(tenant?.id || tenant?.slug || '1').catch(() => null),
       ]);
       setCustomers(custs);
+      const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+      const tenantId = tenant?.id || tenant?.slug || 'ghl';
+      const getCustKey = (c: any) => String(c.id || c.customerId || c.phone || c.email || c.name);
+      markRouteSeen(tenantId, uid, 'customers', custs, getCustKey);
       setCalls(cCalls);
       setFollowups(cFollowups);
       setDeals(cDeals);
@@ -265,34 +275,35 @@ export const CustomersPage: React.FC = () => {
 
       // Load real IRM users and Sales Executives from database / adminUserService
       try {
-        const fetchedUsers = await adminUserService.getUsers(tenant?.id || tenant?.slug || '1');
-        const apiIrms: IrmProfile[] = (fetchedUsers || [])
-          .filter(u => !u.isCovered && (u.role?.code === 'irm' || u.role?.name?.toLowerCase().includes('irm') || u.role?.name?.toLowerCase().includes('investor')))
-          .map(u => ({
-            id: String(u.id),
-            name: u.name,
-            email: u.email,
-            phone: u.phone,
-            experience: '5 Years',
-            experienceYears: 5,
-            experienceLevel: 'Experienced' as const,
-            performance: 95,
-            status: 'Available' as const,
-          }));
-        if (apiIrms.length > 0) {
-          setDbIrms(apiIrms);
-        }
+        if (fetchedUsers) {
+          const apiIrms: IrmProfile[] = (fetchedUsers || [])
+            .filter(u => !u.isCovered && (u.role?.code === 'irm' || u.role?.name?.toLowerCase().includes('irm') || u.role?.name?.toLowerCase().includes('investor')))
+            .map(u => ({
+              id: String(u.id),
+              name: u.name,
+              email: u.email,
+              phone: u.phone,
+              experience: '5 Years',
+              experienceYears: 5,
+              experienceLevel: 'Experienced' as const,
+              performance: 95,
+              status: 'Available' as const,
+            }));
+          if (apiIrms.length > 0) {
+            setDbIrms(apiIrms);
+          }
 
-        const salesExecs = (fetchedUsers || [])
-          .filter(u => {
-            const code = (u.role?.code || '').toLowerCase();
-            const roleId = String(u.role?.id || '');
-            const roleName = (u.role?.name || '').toLowerCase();
-            return code === 'sales_executive' || roleId === '3' || roleName.includes('sales');
-          })
-          .map(u => ({ id: String(u.id), name: u.name }));
-        if (salesExecs.length > 0) {
-          setSalesExecutives(salesExecs);
+          const salesExecs = (fetchedUsers || [])
+            .filter(u => {
+              const code = (u.role?.code || '').toLowerCase();
+              const roleId = String(u.role?.id || '');
+              const roleName = (u.role?.name || '').toLowerCase();
+              return code === 'sales_executive' || roleId === '3' || roleName.includes('sales');
+            })
+            .map(u => ({ id: String(u.id), name: u.name }));
+          if (salesExecs.length > 0) {
+            setSalesExecutives(salesExecs);
+          }
         }
       } catch (userErr) {
         console.warn('Could not load users via adminUserService, using storage IRMs/Agents', userErr);

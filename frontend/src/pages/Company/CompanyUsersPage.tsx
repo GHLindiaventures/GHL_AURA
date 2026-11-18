@@ -23,6 +23,7 @@ import { StatusChip } from '../../components/common/StatusChip';
 import { Modal } from '../../components/common/Modal';
 import { User, RoleCode } from '../../types';
 import './CompanyUsersPage.css';
+import { isJaminAdminUser } from '../../utils/tenantRoles';
 import { adminUserService } from '../../services/adminUserService';
 import { storageService } from '../../services/storageService';
 import { getSecureRandomInt } from '../../utils/crypto';
@@ -74,11 +75,14 @@ export const CompanyUsersPage: React.FC = () => {
     setTimeout(() => setToast(null), 3500);
   };
 
-  // ── Assignable Company Roles (Strictly Sales Executive & IRM) ──────────────
-  const assignableRoles = [
-    SYSTEM_ROLES.sales_executive,
-    SYSTEM_ROLES.irm,
-  ].filter(Boolean);
+  // Jamin Bazaar has only ONE operational role: Sales Executive (no IRM).
+  const isJaminAdmin = isJaminAdminUser(tenant, user) && !(tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01');
+
+  // ── Assignable Company Roles (GHL: Sales Executive & IRM, Jamin: Sales Executive only) ──
+  const assignableRoles = (isJaminAdmin
+    ? [SYSTEM_ROLES.sales_executive]
+    : [SYSTEM_ROLES.sales_executive, SYSTEM_ROLES.irm]
+  ).filter(Boolean);
 
   // ── Add / Invite User Modal State ─────────────────────────────────────────
   const [isInviteModalOpen, setIsInviteModalOpen] = useState(false);
@@ -175,7 +179,9 @@ export const CompanyUsersPage: React.FC = () => {
       return;
     }
 
-    const assignedRole = SYSTEM_ROLES[inviteRole] || SYSTEM_ROLES.sales_executive;
+    const assignedRole = isJaminAdmin
+      ? SYSTEM_ROLES.sales_executive
+      : (SYSTEM_ROLES[inviteRole] || SYSTEM_ROLES.sales_executive);
     const isInstant = creationMode === 'instant_password';
     const tempPass = isInstant
       ? `Nexus#${getSecureRandomInt(1000, 9999)}`
@@ -250,7 +256,9 @@ export const CompanyUsersPage: React.FC = () => {
   const handleSaveEditUser = async () => {
     if (!editingUser) return;
 
-    const updatedRole = SYSTEM_ROLES[editRoleCode] || editingUser.role;
+    const updatedRole = isJaminAdmin
+      ? editingUser.role
+      : (SYSTEM_ROLES[editRoleCode] || editingUser.role);
     const oldRole = editingUser.role;
 
     // Mandate transfer if role changes from Sales Exec to IRM or vice versa
@@ -725,7 +733,9 @@ export const CompanyUsersPage: React.FC = () => {
             <Users size={24} color="var(--primary-600)" /> Organization Users & Agents
           </h1>
           <p className="page-subtitle">
-            Manage operational team accounts, roles (Sales Executives & IRMs), and security credentials for {tenant?.name}.
+            {isJaminAdmin
+              ? `Manage Sales Executive accounts and security credentials for ${tenant?.name}.`
+              : `Manage operational team accounts, roles (Sales Executives & IRMs), and security credentials for ${tenant?.name}.`}
           </p>
         </div>
 
@@ -793,7 +803,7 @@ export const CompanyUsersPage: React.FC = () => {
           >
             <option value="all">All Roles</option>
             <option value="sales_executive">Sales Executive</option>
-            <option value="irm">Institutional Relationship Manager (IRM)</option>
+            {!isJaminAdmin && <option value="irm">Institutional Relationship Manager (IRM)</option>}
             <option value="company_admin">Company Admin</option>
           </select>
         </div>
@@ -946,7 +956,18 @@ export const CompanyUsersPage: React.FC = () => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Assign Operational Role *</label>
+              <label className="form-label">{isJaminAdmin ? 'Role' : 'Assign Operational Role *'}</label>
+              {isJaminAdmin ? (
+                <input
+                  id="invite-role"
+                  type="text"
+                  className="form-input"
+                  value="Sales Executive (Field Rep / Telecaller)"
+                  readOnly
+                  disabled
+                  style={{ opacity: 0.85, cursor: 'not-allowed' }}
+                />
+              ) : (
               <select
                 id="invite-role"
                 className="form-select"
@@ -959,6 +980,7 @@ export const CompanyUsersPage: React.FC = () => {
                   </option>
                 ))}
               </select>
+              )}
             </div>
 
             <div className="form-group">
@@ -1059,6 +1081,17 @@ export const CompanyUsersPage: React.FC = () => {
 
             <div className="form-group">
               <label className="form-label">Assigned Role</label>
+              {isJaminAdmin ? (
+                <input
+                  id="edit-user-role-select"
+                  type="text"
+                  className="form-input"
+                  value={editingUser.role.code === 'sales_executive' ? 'Sales Executive (Field Rep / Telecaller)' : (editingUser.role.name || 'Sales Executive')}
+                  readOnly
+                  disabled
+                  style={{ opacity: 0.85, cursor: 'not-allowed' }}
+                />
+              ) : (
               <select
                 id="edit-user-role-select"
                 className="form-select"
@@ -1071,6 +1104,7 @@ export const CompanyUsersPage: React.FC = () => {
                   </option>
                 ))}
               </select>
+              )}
             </div>
           </div>
         )}

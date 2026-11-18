@@ -15,6 +15,7 @@ import { DocumentList } from '../../components/common/DocumentList';
 import { ErrorAlertBanner } from '../../components/common/ErrorAlertBanner';
 import { Investor360Modal } from './Investor360Modal';
 import { canPlaceCalls } from '../../utils/agentRoleUtils';
+import { markRouteSeen, markSeenIds } from '../../components/layout/Sidebar';
 import './InvestorsPage.css';
 
 // ─── Form state shape ────────────────────────────────────────────────────────
@@ -107,7 +108,11 @@ export const InvestorsPage: React.FC = () => {
       if (resInv.status === 'rejected') {
         throw (resInv as PromiseRejectedResult).reason;
       }
-      setInvestors(val(resInv, []));
+      const loadedInvestors = val(resInv, []);
+      setInvestors(loadedInvestors);
+      const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+      const tenantId = tenant?.id || tenant?.slug || 'ghl';
+      markRouteSeen(tenantId, uid, 'investors', loadedInvestors, (inv: any) => String(inv.id || inv.investorId || inv.phone || inv.email));
       setDeals(val(resDeals, []));
       setAllCalls(val(resCalls, []));
       setAllConsultations(val(resConsultations, []));

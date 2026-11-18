@@ -48,8 +48,10 @@ import { Modal } from '../../components/common/Modal';
 import { SlotConflictModal } from '../../components/common/SlotConflictModal';
 import { ErrorAlertBanner } from '../../components/common/ErrorAlertBanner';
 import { getAgentRoleInfo, getAssigningSalesAgentInfo, canPlaceCalls } from '../../utils/agentRoleUtils';
+import { isJaminAdminUser } from '../../utils/tenantRoles';
 import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawerContent';
 import { LeadSelectedPlots } from '../../components/common/LeadSelectedPlots';
+import { markRouteSeen, markSeenIds } from '../../components/layout/Sidebar';
 import './LeadsPage.css';
 
 export const normalizePhone = (phone?: string): string | null => {
@@ -174,6 +176,8 @@ const CAPACITY_OPTIONS = [
   '₹10 Cr – ₹25 Cr',
   '₹25 Cr+'
 ];
+
+const JAMIN_BUDGET_OPTIONS = ['₹25L - ₹45L', '₹45L - ₹65L', '₹65L - ₹90L', '₹80L - ₹1.1 Cr', '₹90L+'];
 
 const MOCK_AGENTS = storageService.getMockAgents();
 export { MOCK_AGENTS };
@@ -484,6 +488,9 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
   const isGhlAdmin =
     (tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01' || tenant?.id === '1' || tenant?.slug === '1' || tenant?.name?.toLowerCase().includes('ghl') || user?.companySlug === 'ghl') &&
     (roleCode === 'company_admin' || (roleCode as string) === 'admin' || roleCode === 'super_admin');
+  // Jamin Bazaar admin gets the exact same assign workflow (assign to Jamin sales executives).
+  const isJaminAdmin = !isGhlAdmin && isJaminAdminUser(tenant, user);
+  const isAssignAdmin = isGhlAdmin || isJaminAdmin;
   const [assignMode, setAssignMode] = useState<'manual' | 'auto'>('manual');
   const [selectedLeadIds, setSelectedLeadIds] = useState<Set<string>>(new Set());
   const [isAssignModalOpen, setIsAssignModalOpen] = useState(false);
@@ -555,6 +562,9 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
     if (apiClient.isMockMode()) {
       const updated = storageService.getLeads(tenant?.id);
       setLeads(updated);
+      const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+      const tenantId = tenant?.id || tenant?.slug || 'ghl';
+      markRouteSeen(tenantId, uid, 'leads', updated, (l: any) => String(l.id || l.phone || l.name));
       const allFus = storageService.getFollowups ? storageService.getFollowups(tenant?.id) : [];
       const pendingFus = (allFus || []).filter((f: any) => f.status === 'Pending');
       setAllFollowups(pendingFus);
@@ -574,11 +584,30 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
 
     try {
       setLoadError(null);
-      const [updatedFollowups, updatedCustomers, updatedDeals, irmsList] = await Promise.all([
+      const leadsPromise = (async (): Promise<Lead[]> => {
+        if (isAssignAdmin) {
+          const res = await apiClient.get<any>('/sales-executive/leads?page=1&pageSize=200&assignment=unassigned');
+          if (res.success && res.data && res.data.items) {
+            return res.data.items.map((item: any) => ({
+              ...item,
+              id: String(item.id),
+              assignedAgentId: item.assignedAgentId ? String(item.assignedAgentId) : undefined,
+              customFields: item.customFields || {}
+            }));
+          } else {
+            throw new Error(res.message || 'Failed to load unassigned leads from server.');
+          }
+        } else {
+          return await getLeads(tenant?.id);
+        }
+      })();
+
+      const [updatedFollowups, updatedCustomers, updatedDeals, irmsList, loadedLeads] = await Promise.all([
         getFollowups(tenant?.id).catch(() => storageService.getFollowups(tenant?.id) || []),
         getCustomers(tenant?.id).catch(() => storageService.getCustomers(tenant?.id) || []),
         getDeals(tenant?.id).catch(() => storageService.getDeals(tenant?.id) || []),
         getCompanyIrms(tenant?.id).catch(() => []),
+        leadsPromise,
       ]);
       const localFus = storageService.getFollowups(tenant?.id) || [];
       const combinedFusMap = new Map<string, any>();
@@ -593,24 +622,10 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
       setCustomers(updatedCustomers || []);
       setDeals(updatedDeals || []);
       setCompanyIrms(irmsList || []);
-
-      let loadedLeads: Lead[] = [];
-      if (isGhlAdmin) {
-        const res = await apiClient.get<any>('/sales-executive/leads?page=1&pageSize=200&assignment=unassigned');
-        if (res.success && res.data && res.data.items) {
-          loadedLeads = res.data.items.map((item: any) => ({
-            ...item,
-            id: String(item.id),
-            assignedAgentId: item.assignedAgentId ? String(item.assignedAgentId) : undefined,
-            customFields: item.customFields || {}
-          }));
-        } else {
-          throw new Error(res.message || 'Failed to load unassigned leads from server.');
-        }
-      } else {
-        loadedLeads = await getLeads(tenant?.id);
-      }
       setLeads(loadedLeads);
+      const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+      const tenantId = tenant?.id || tenant?.slug || 'ghl';
+      markRouteSeen(tenantId, uid, 'leads', loadedLeads, (l: any) => String(l.id || l.phone || l.name));
       setSelectedLead(prev => {
         if (!prev) return null;
         const found = loadedLeads.find((l: any) => l.id === prev.id);
@@ -660,7 +675,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
       window.removeEventListener('focus', handleFocus);
       clearInterval(interval);
     };
-  }, [tenant?.id, isGhlAdmin]);
+  }, [tenant?.id, isAssignAdmin]);
 
   const isGhlSalesExec =
     (tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01' || tenant?.id === '1' || tenant?.slug === '1' || tenant?.name?.toLowerCase().includes('ghl') || user?.companySlug === 'ghl') &&
@@ -673,6 +688,11 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
 
   const matchCapacity = (lead: Lead, filterRange: string): boolean => {
     if (!filterRange || filterRange === 'All') return true;
+    if (isJaminAdmin) {
+      const norm = (v: string) => String(v || '').replace(/[–—]/g, '-').replace(/s+/g, '').toLowerCase();
+      const budget = lead.customFields?.budgetRange || (lead as any).budgetRange || lead.customFields?.investmentCapacity || '';
+      return norm(budget) === norm(filterRange);
+    }
     // 1.3: Check all field names where investment capacity might be stored
     const rawCap = (
       lead.customFields?.investmentCapacity ||
@@ -754,9 +774,9 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
       });
       if (hasPendingFollowup) return false;
     }
-    if (!isGhlAdmin && !isIrm && statusFilter !== 'All' && (lead.status as string) !== statusFilter) return false;
+    if (!isAssignAdmin && !isIrm && statusFilter !== 'All' && (lead.status as string) !== statusFilter) return false;
     // Agent filter is only shown for non-admin, non-GhlAdmin scoped views
-    if (!isGhlAdmin && agentFilter !== 'All' && lead.assignedAgentName !== agentFilter) return false;
+    if (!isAssignAdmin && agentFilter !== 'All' && lead.assignedAgentName !== agentFilter) return false;
     if (capacityFilter !== 'All') {
       if (!matchCapacity(lead, capacityFilter)) return false;
     }
@@ -1735,7 +1755,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
   };
 
   const columns: Column<Lead>[] = [
-    ...(isGhlAdmin && assignMode === 'manual' ? [{
+    ...(isAssignAdmin && assignMode === 'manual' ? [{
       key: 'select',
       header: (
         <input
@@ -1828,12 +1848,13 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
     },
     {
       key: 'investmentAmount',
-      header: 'Investment Amount',
+      header: isJaminAdmin ? 'Budget Range' : 'Investment Amount',
       sortable: true,
       render: l => {
         const amount =
           l.customFields?.investmentCapacity ||
           l.customFields?.budgetRange ||
+          (l as any).budgetRange ||
           (l as any).investmentAmount ||
           '—';
         return <span className="lead-investment-val">{amount}</span>;
@@ -1868,6 +1889,9 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
       label: 'View 360 Drawer',
       icon: <ExternalLink size={14} className="leads-action-icon" />,
       onClick: l => {
+        const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+        const tenantId = tenant?.id || tenant?.slug || 'ghl';
+        markSeenIds(tenantId, uid, 'leads', [l.id]);
         setSelectedLead(l);
         setIsDetailDrawerOpen(true);
       },
@@ -1888,7 +1912,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
       danger: true,
       onClick: l => handleDeleteLead(l),
       // Hide Delete for Admin role (1.5) and IRM
-      hidden: () => isIrm || isGhlAdmin,
+      hidden: () => isIrm || isAssignAdmin,
     },
   ];
 
@@ -1936,6 +1960,9 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
         keyExtractor={l => l.id}
         rowActions={rowActions}
         onRowClick={l => {
+          const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
+          const tenantId = tenant?.id || tenant?.slug || 'ghl';
+          markSeenIds(tenantId, uid, 'leads', [l.id]);
           setSelectedLead(l);
           setIsDetailDrawerOpen(true);
         }}
@@ -1955,7 +1982,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
                   onChange: setHandoverFilter,
                   options: handoverOptions
                 }] : []),
-                ...(isGhlAdmin || isIrm ? [] : [{
+                ...(isAssignAdmin || isIrm ? [] : [{
                   key: 'status',
                   label: 'Status',
                   value: statusFilter,
@@ -1967,20 +1994,20 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
                   ],
                 }]),
                 // 1.2: Agent filter hidden for GhlAdmin (they see all unassigned leads already)
-                ...(!isExec && !isGhlAdmin ? [{
+                ...(!isExec && !isAssignAdmin ? [{
                   key: 'agent',
                   label: 'Agent',
                   value: agentFilter,
                   onChange: setAgentFilter,
                   options: agentOptions,
                 }] : []),
-                ...(isGhlAdmin ? [{
+                ...(isAssignAdmin ? [{
                   key: 'investmentCapacity',
-                  label: 'Investment Capacity Range',
+                  label: isJaminAdmin ? 'Budget Range' : 'Investment Capacity Range',
                   value: capacityFilter,
                   onChange: setCapacityFilter,
                   placeholder: 'Select a range',
-                  options: CAPACITY_OPTIONS.map(o => ({ value: o, label: o })),
+                  options: (isJaminAdmin ? JAMIN_BUDGET_OPTIONS : CAPACITY_OPTIONS).map(o => ({ value: o, label: o })),
                 }] : []),
               ]}
               dateRange={{
@@ -2000,7 +2027,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
                 setDateTo('');
               }}
             />
-            {isGhlAdmin && (
+            {isAssignAdmin && (
               <div className="assign-toggle">
                 <span className="assign-toggle-label">Assign:</span>
                 <div className="assign-toggle-group">
@@ -2727,7 +2754,7 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
       </Modal>
 
       {/* ── GHL Admin: Manual selection action bar ──────────────────────── */}
-      {isGhlAdmin && assignMode === 'manual' && selectedLeadIds.size > 0 && (
+      {isAssignAdmin && assignMode === 'manual' && selectedLeadIds.size > 0 && (
         <div className="assign-action-bar">
           <span className="assign-action-bar-text">
             {selectedLeadIds.size} lead{selectedLeadIds.size !== 1 ? 's' : ''} selected

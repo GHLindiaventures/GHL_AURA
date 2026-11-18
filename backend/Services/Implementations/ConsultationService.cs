@@ -226,6 +226,25 @@ public class ConsultationService : IConsultationService
         _context.Consultations.Add(consultation);
         await _context.SaveChangesAsync(ct);
 
+        var actorRole = _currentUser.Role == "sales_executive" ? "Sales Executive" : (_currentUser.Role == "irm" ? "IRM" : "Admin");
+        var actorName = callerUser?.Name ?? "User";
+        var actorEmail = callerUser?.Email ?? _currentUser.Email ?? "user@ghl.com";
+        _context.AuditLogs.Add(new AuditLog
+        {
+            CompanyId = consultation.CompanyId,
+            Timestamp = DateTime.UtcNow,
+            ActorName = actorName,
+            ActorEmail = actorEmail,
+            Action = "CONSULTATION_SCHEDULED",
+            EntityType = "Consultation",
+            EntityId = consultation.Id.ToString(),
+            CustomerId = consultation.InvestorId,
+            Module = "Consultations",
+            Details = $"{actorRole} {actorName} scheduled private wealth consultation with '{consultation.InvestorName}' on {consultation.ScheduledAt:MMM dd, yyyy hh:mm tt} (Consultant: {consultation.ConsultantName}, Agenda: {consultation.Agenda}).",
+            Status = "success"
+        });
+        await _context.SaveChangesAsync(ct);
+
         await _context.Entry(consultation).Reference(c => c.Consultant).LoadAsync(ct);
 
         return ApiResponse<ConsultationResponseDto>.SuccessResult(MapToSalesExecDto(consultation), "Consultation scheduled successfully.");
@@ -276,7 +295,25 @@ public class ConsultationService : IConsultationService
         if (dto.Agenda != null) consultation.Agenda = dto.Agenda.Trim();
         if (dto.OutcomeNotes != null) consultation.OutcomeNotes = dto.OutcomeNotes.Trim();
 
-        consultation.UpdatedAt = DateTime.UtcNow;
+        var actorRole = _currentUser.Role == "sales_executive" ? "Sales Executive" : (_currentUser.Role == "irm" ? "IRM" : "Admin");
+        var callerUser = _currentUser.UserId.HasValue ? await _context.Users.AsNoTracking().FirstOrDefaultAsync(u => u.Id == _currentUser.UserId.Value, ct) : null;
+        var actorName = callerUser?.Name ?? "User";
+        var actorEmail = callerUser?.Email ?? _currentUser.Email ?? "user@ghl.com";
+
+        _context.AuditLogs.Add(new AuditLog
+        {
+            CompanyId = consultation.CompanyId,
+            Timestamp = DateTime.UtcNow,
+            ActorName = actorName,
+            ActorEmail = actorEmail,
+            Action = dto.ScheduledAt.HasValue ? "CONSULTATION_RESCHEDULED" : "CONSULTATION_UPDATED",
+            EntityType = "Consultation",
+            EntityId = consultation.Id.ToString(),
+            CustomerId = consultation.InvestorId,
+            Module = "Consultations",
+            Details = $"{actorRole} {actorName} updated consultation with '{consultation.InvestorName}' (Status: {consultation.Status}, Outcome: {consultation.OutcomeNotes ?? "None"}).",
+            Status = "success"
+        });
 
         await _context.SaveChangesAsync(ct);
 

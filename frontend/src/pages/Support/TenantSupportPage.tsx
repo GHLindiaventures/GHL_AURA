@@ -17,6 +17,7 @@ import {
 import { PlatformTicket } from '../../types';
 import { supportService } from '../../services/supportService';
 import { Modal } from '../../components/common/Modal';
+import { markRouteSeen, markSeenIds } from '../../components/layout/Sidebar';
 import './TenantSupportPage.css';
 
 type StatusFilter = 'all' | 'open' | 'in_progress' | 'resolved';
