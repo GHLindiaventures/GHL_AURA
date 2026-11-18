@@ -22,6 +22,7 @@ import {
 } from 'lucide-react';
 import { Customer, CallRecord, Followup, Deal, Lead, IrmProfile, CustomFieldDefinition } from '../../types';
 import { useAuth } from '../../context/AuthContext';
+import { isJaminTenant } from '../../utils/tenantRoles';
 import { storageService } from '../../services/storageService';
 import { adminUserService } from '../../services/adminUserService';
 import { isMockMode } from '../../config/environment';
@@ -145,8 +146,11 @@ export const CustomersPage: React.FC = () => {
   // Leads marked "Interested" are shown in Customer 360 even before they are formally converted.
   // They are virtual entries (id = `lead-<leadId>`) built from the Leads table, de-duplicated against
   // real customers by phone / email. IRM users already see these in "My Leads", so they are skipped.
+  // Jamin Bazaar: an 'Interested' lead is still a LEAD (no IRM hand-off exists), so it must NOT appear
+  // in Customer 360 — only real customers (converted / booked) are listed there.
+  const isJaminCompany = !isGhlTenant && isJaminTenant(tenant, user);
   const interestedLeadCustomers = useMemo<Customer[]>(() => {
-    if (roleCode === 'irm') return [];
+    if (roleCode === 'irm' || isJaminCompany) return [];
     const customerPhones = new Set(customers.map(c => lastTenDigits(c.phone)).filter(Boolean));
     const customerEmails = new Set(
       customers.map(c => (c.email || '').trim().toLowerCase()).filter(Boolean)
@@ -161,7 +165,7 @@ export const CustomersPage: React.FC = () => {
         return true;
       })
       .map(leadToCustomer);
-  }, [leads, customers, roleCode]);
+  }, [leads, customers, roleCode, isJaminCompany]);
 
   const allCustomers = useMemo<Customer[]>(
     () => [...interestedLeadCustomers, ...customers],

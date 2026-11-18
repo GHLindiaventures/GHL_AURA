@@ -118,9 +118,16 @@ public class WorkHandoverService : IWorkHandoverService
             KycsCount = counts.KycsCount,
             OpportunitiesCount = counts.OpportunitiesCount,
             ConsultationsCount = counts.ConsultationsCount,
-            PipelineCardsCount = counts.PipelineCardsCount
+            PipelineCardsCount = counts.PipelineCardsCount,
+            SiteVisitsCount = counts.SiteVisitsCount
         };
     }
+
+    /// <summary>Open (not completed / cancelled / no-show) site visits owned by a sales executive.</summary>
+    private IQueryable<SiteVisit> OpenSiteVisitsQuery(int companyId, int userId) =>
+        _db.SiteVisits.Where(s => s.TenantId == companyId && s.AssignedAgentId == userId &&
+                                  s.Status != "Completed" && s.Status != "Cancelled" && s.Status != "Canceled" &&
+                                  s.Status != "No-show" && s.Status != "No Show");
 
     public async Task<WorkHandoverDto> StartHandoverAsync(int companyId, int actorId, string actorName, string actorEmail, StartWorkHandoverRequestDto request, CancellationToken ct = default)
     {
@@ -254,6 +261,23 @@ public class WorkHandoverService : IWorkHandoverService
                     HandoverId = handover.Id,
                     EntityType = "Followup",
                     EntityId = followup.Id,
+                    Origin = "included_at_start",
+                    CreatedAt = DateTime.UtcNow
+                });
+            }
+
+            // 3. Open site visits (Jamin Bazaar). GHL has no site visits, so this is a no-op there.
+            var openVisits = await OpenSiteVisitsQuery(companyId, fromUser.Id).ToListAsync(ct);
+            foreach (var visit in openVisits)
+            {
+                visit.AssignedAgentId = toUser.Id;
+                visit.AssignedAgentName = toUser.Name;
+                visit.UpdatedAt = DateTime.UtcNow;
+                items.Add(new WorkHandoverItem
+                {
+                    HandoverId = handover.Id,
+                    EntityType = "SiteVisit",
+                    EntityId = visit.Id,
                     Origin = "included_at_start",
                     CreatedAt = DateTime.UtcNow
                 });
@@ -609,6 +633,25 @@ public class WorkHandoverService : IWorkHandoverService
                     {
                         item.ReturnedAt = DateTime.UtcNow;
                         item.ReturnOutcome = "missing";
+                    }
+                    break;
+
+                case "SiteVisit":
+                    var siteVisitEnd = await _db.SiteVisits.FirstOrDefaultAsync(s => s.Id == item.EntityId, ct);
+                    if (siteVisitEnd != null && siteVisitEnd.AssignedAgentId == handover.CoveringUserId)
+                    {
+                        siteVisitEnd.AssignedAgentId = handover.OriginalUserId;
+                        siteVisitEnd.AssignedAgentName = handover.OriginalUser?.Name ?? siteVisitEnd.AssignedAgentName;
+                        siteVisitEnd.UpdatedAt = DateTime.UtcNow;
+                        item.ReturnedAt = DateTime.UtcNow;
+                        item.ReturnOutcome = "returned";
+                        returnedCount++;
+                    }
+                    else
+                    {
+                        // Visit completed/cancelled or reassigned during coverage — keep with current owner.
+                        item.ReturnedAt = DateTime.UtcNow;
+                        item.ReturnOutcome = siteVisitEnd == null ? "missing" : "kept_with_covering";
                     }
                     break;
 
@@ -972,6 +1015,25 @@ public class WorkHandoverService : IWorkHandoverService
                     }
                     break;
 
+                case "SiteVisit":
+                    var siteVisitSel = await _db.SiteVisits.FirstOrDefaultAsync(s => s.Id == item.EntityId, ct);
+                    if (siteVisitSel != null && siteVisitSel.AssignedAgentId == handover.CoveringUserId)
+                    {
+                        siteVisitSel.AssignedAgentId = handover.OriginalUserId;
+                        siteVisitSel.AssignedAgentName = handover.OriginalUser?.Name ?? siteVisitSel.AssignedAgentName;
+                        siteVisitSel.UpdatedAt = DateTime.UtcNow;
+                        item.ReturnedAt = DateTime.UtcNow;
+                        item.ReturnOutcome = "returned";
+                        returnedCount++;
+                    }
+                    else
+                    {
+                        // Visit completed/cancelled or reassigned during coverage — keep with current owner.
+                        item.ReturnedAt = DateTime.UtcNow;
+                        item.ReturnOutcome = siteVisitSel == null ? "missing" : "kept_with_covering";
+                    }
+                    break;
+
                 case "Followup":
                     var f = await _db.Followups.FirstOrDefaultAsync(f => f.Id == item.EntityId, ct);
                     if (f != null && f.AssignedAgentId == handover.CoveringUserId)
@@ -1229,10 +1291,13 @@ public class WorkHandoverService : IWorkHandoverService
                 return false;
             });
 
+            var openSiteVisitsCount = await OpenSiteVisitsQuery(companyId, userId).CountAsync(ct);
+
             return new WorkHandoverCountsDto
             {
                 LeadsCount = eligibleLeads.Count,
                 FollowupsCount = eligibleFollowupsCount,
+                SiteVisitsCount = openSiteVisitsCount,
                 CustomersCount = 0,
                 DealsCount = 0,
                 InvestorsCount = 0,

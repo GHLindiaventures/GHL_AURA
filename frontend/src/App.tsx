@@ -137,6 +137,7 @@ import { DashboardPage } from './pages/Dashboard/DashboardPage';
 import { LeadsPage } from './pages/Leads/LeadsPage';
 import { CustomersPage } from './pages/Customers/CustomersPage';
 import { PipelinePage } from './pages/Pipeline/PipelinePage';
+import { JaminAdminKanbanBoard } from './components/admin/JaminAdminKanbanBoard';
 import { DealsPage } from './pages/Deals/DealsPage';
 import { FollowupsPage } from './pages/Followups/FollowupsPage';
 import { CallCenterPage } from './pages/CallCenter/CallCenterPage';
@@ -215,6 +216,7 @@ import {
 } from './services/ghlApiService';
 import { PERMISSIONS } from './constants/permissions';
 import { canPlaceCalls } from './utils/agentRoleUtils';
+import { isJaminAdminUser } from './utils/tenantRoles';
 import { useNavigationGuard, useUnsavedChanges } from './context/NavigationGuardContext';
 import './App.css';
 
@@ -240,6 +242,20 @@ export const App: React.FC = () => {
   const isGhlAdmin =
     (tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01' || tenant?.id === '1' || tenant?.slug === '1' || tenant?.name?.toLowerCase().includes('ghl') || user?.companySlug === 'ghl') &&
     (roleCode === 'company_admin' || (roleCode as string) === 'admin' || roleCode === 'super_admin');
+  // Jamin Bazaar admin: mirrors GHL admin lead-management pages (no IRM role in Jamin).
+  const isJaminAdmin = !isGhlAdmin && isJaminAdminUser(tenant, user);
+  const isLeadAdmin = isGhlAdmin || isJaminAdmin;
+
+  // Jamin admin has no Converted Customers page — bounce any stale route to the dashboard.
+  useEffect(() => {
+    if (isJaminAdmin && currentRoute === 'converted-customers') {
+      setCurrentRoute('dashboard');
+      sessionStorage.setItem('nexus_current_route', 'dashboard');
+      if (window.location.pathname.includes('converted-customers')) {
+        window.history.replaceState(window.history.state, '', '/dashboard');
+      }
+    }
+  }, [isJaminAdmin, currentRoute]);
 
   // Set default route for IRM user
   useEffect(() => {
@@ -784,7 +800,7 @@ export const App: React.FC = () => {
           </ProtectedRoute>
         ) : currentRoute === 'assigned-leads' ? (
           <ProtectedRoute permission={PERMISSIONS.LEADS_ASSIGNED_VIEW}>
-            {isGhlAdmin ? (
+            {isLeadAdmin ? (
               <AssignedLeadsPage onNavigate={navigate} />
             ) : (
               <DashboardPage onNavigate={navigate} onOpenQuickCreate={handleOpenQuickCreate} />
@@ -792,7 +808,7 @@ export const App: React.FC = () => {
           </ProtectedRoute>
         ) : currentRoute === 'pending-leads' ? (
           <ProtectedRoute permission={PERMISSIONS.LEADS_PENDING_VIEW}>
-            {isGhlAdmin ? (
+            {isLeadAdmin ? (
               <PendingLeadsPage />
             ) : (
               <DashboardPage onNavigate={navigate} onOpenQuickCreate={handleOpenQuickCreate} />
@@ -800,7 +816,7 @@ export const App: React.FC = () => {
           </ProtectedRoute>
         ) : currentRoute === 'archived-leads' ? (
           <ProtectedRoute permission={PERMISSIONS.LEADS_ARCHIVED_VIEW}>
-            {isGhlAdmin ? (
+            {isLeadAdmin ? (
               <ArchivedLeadsPage />
             ) : (
               <DashboardPage onNavigate={navigate} onOpenQuickCreate={handleOpenQuickCreate} />
@@ -811,12 +827,20 @@ export const App: React.FC = () => {
             <CustomersPage />
           </ProtectedRoute>
         ) : currentRoute === 'converted-customers' ? (
-          <ProtectedRoute permission={PERMISSIONS.CUSTOMERS_CONVERTED_VIEW}>
-            <ConvertedCustomersPage onNavigate={navigate} />
-          </ProtectedRoute>
+          isJaminAdmin ? (
+            <DashboardPage onNavigate={navigate} onOpenQuickCreate={handleOpenQuickCreate} />
+          ) : (
+            <ProtectedRoute permission={PERMISSIONS.CUSTOMERS_CONVERTED_VIEW}>
+              <ConvertedCustomersPage onNavigate={navigate} />
+            </ProtectedRoute>
+          )
         ) : currentRoute === 'pipeline' ? (
           <ProtectedRoute permission={PERMISSIONS.DEALS_VIEW}>
-            <PipelinePage onOpenQuickCreate={handleOpenQuickCreate} />
+            {isJaminAdmin ? (
+              <JaminAdminKanbanBoard onOpenQuickCreate={handleOpenQuickCreate} />
+            ) : (
+              <PipelinePage onOpenQuickCreate={handleOpenQuickCreate} />
+            )}
           </ProtectedRoute>
         ) : currentRoute === 'deals' ? (
           <ProtectedRoute permission={PERMISSIONS.DEALS_VIEW}>
@@ -936,7 +960,7 @@ export const App: React.FC = () => {
           </ProtectedRoute>
         ) : currentRoute === 'work-handover' ? (
           <ProtectedRoute permission={PERMISSIONS.WORK_HANDOVER_VIEW}>
-            {isGhlAdmin ? (
+            {isLeadAdmin ? (
               <WorkHandoverPage initialParams={navExtraState} onNavigate={navigate} />
             ) : (
               <DashboardPage onNavigate={navigate} onOpenQuickCreate={handleOpenQuickCreate} />

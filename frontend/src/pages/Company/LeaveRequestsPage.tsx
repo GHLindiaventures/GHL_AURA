@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { useAuth } from '../../context/AuthContext';
+import { isJaminAdminUser } from '../../utils/tenantRoles';
 import {
   leaveRequestService,
   LeaveRequestDto,
@@ -47,9 +48,12 @@ export const LeaveRequestsPage: React.FC<LeaveRequestsPageProps> = ({ onNavigate
   const roleCode = user?.role?.code;
   const isGhlAdmin = (tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01') &&
                      (roleCode === 'company_admin' || roleCode === 'admin' || roleCode === 'super_admin');
+  // Jamin Bazaar admin gets the same Team leave approval + handover flow (Sales Executives only — no IRM).
+  const isJaminAdmin = !isGhlAdmin && isJaminAdminUser(tenant, user);
+  const isTeamAdmin = isGhlAdmin || isJaminAdmin;
 
   // Main data state
-  const [activeTab, setActiveTab] = useState<'Team' | 'Personal'>(isGhlAdmin ? 'Team' : 'Personal');
+  const [activeTab, setActiveTab] = useState<'Team' | 'Personal'>(isTeamAdmin ? 'Team' : 'Personal');
   const [requests, setRequests] = useState<LeaveRequestDto[]>([]);
   const [myBalances, setMyBalances] = useState<LeaveBalanceDto[]>([]);
   const [workforce, setWorkforce] = useState<WorkforceAvailabilityDto[]>([]);
@@ -114,7 +118,7 @@ export const LeaveRequestsPage: React.FC<LeaveRequestsPageProps> = ({ onNavigate
       if (!isSilent) setLoading(true);
       setErrorBanner(null);
 
-      if (isGhlAdmin && activeTab === 'Team') {
+      if (isTeamAdmin && activeTab === 'Team') {
         const [allReqs, wf] = await Promise.all([
           leaveRequestService.getAllRequests(),
           leaveRequestService.getWorkforceAvailability()
@@ -143,7 +147,7 @@ export const LeaveRequestsPage: React.FC<LeaveRequestsPageProps> = ({ onNavigate
     } finally {
       if (!isSilent) setLoading(false);
     }
-  }, [isGhlAdmin, activeTab]);
+  }, [isTeamAdmin, activeTab]);
 
   useEffect(() => {
     fetchData();
@@ -573,7 +577,7 @@ export const LeaveRequestsPage: React.FC<LeaveRequestsPageProps> = ({ onNavigate
       </div>
 
       {/* View Tabs (Admin only: Team vs My Requests) */}
-      {isGhlAdmin && (
+      {isTeamAdmin && (
         <div className="main-tabs-row">
           <div className="tabs-group">
             <button
@@ -597,7 +601,7 @@ export const LeaveRequestsPage: React.FC<LeaveRequestsPageProps> = ({ onNavigate
       )}
 
       {/* ── ADMIN VIEW: TEAM REQUESTS ─────────────────────────────────── */}
-      {activeTab === 'Team' && isGhlAdmin && (
+      {activeTab === 'Team' && isTeamAdmin && (
         <>
           {/* 4 KPI Cards */}
           <div className="kpi-grid">
@@ -754,7 +758,7 @@ export const LeaveRequestsPage: React.FC<LeaveRequestsPageProps> = ({ onNavigate
               >
                 <option value="All">All Roles</option>
                 <option value="sales_executive">Sales Executive</option>
-                <option value="irm">IRM</option>
+                {!isJaminAdmin && <option value="irm">IRM</option>}
               </select>
 
               <select
@@ -963,7 +967,7 @@ export const LeaveRequestsPage: React.FC<LeaveRequestsPageProps> = ({ onNavigate
                       <td style={{ textAlign: 'right' }} onClick={e => e.stopPropagation()}>
                         <div className="row-actions">
                           {/* Admin Actions */}
-                          {isGhlAdmin && activeTab === 'Team' && req.status === 'Pending' && (
+                          {isTeamAdmin && activeTab === 'Team' && req.status === 'Pending' && (
                             <>
                               <button
                                 type="button"
@@ -1571,7 +1575,7 @@ export const LeaveRequestsPage: React.FC<LeaveRequestsPageProps> = ({ onNavigate
                               <AlertTriangle size={16} color="#f59e0b" />
                               <span>No work handover is arranged for this leave period yet.</span>
                             </div>
-                            {isGhlAdmin && (
+                            {isTeamAdmin && (
                               <div className="handover-buttons-row">
                                 <button
                                   type="button"

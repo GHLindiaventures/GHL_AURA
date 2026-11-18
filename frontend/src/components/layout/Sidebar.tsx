@@ -56,6 +56,7 @@ import { leaveRequestService } from '../../services/leaveRequestService';
 import { FEATURES } from '../../constants/features';
 import { PERMISSIONS } from '../../constants/permissions';
 import { canPlaceCalls } from '../../utils/agentRoleUtils';
+import { isJaminAdminUser } from '../../utils/tenantRoles';
 import './Sidebar.css';
 
 interface SidebarProps {
@@ -490,6 +491,9 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
     (tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01' || tenant?.id === '1' || tenant?.slug === '1' || tenant?.name?.toLowerCase().includes('ghl') || user?.companySlug === 'ghl' || user?.companyName?.toLowerCase().includes('ghl')) &&
     (roleCode === 'company_admin' || (roleCode as string) === 'admin' || roleCode === 'super_admin' || (roleCode as string) === 'ghl_admin');
 
+  // Jamin Bazaar admin mirrors GHL admin lead pages (Sales Executives only — no IRM in Jamin).
+  const isJaminAdmin = !isGhlAdmin && isJaminAdminUser(tenant, user);
+  const isLeadAdmin = isGhlAdmin || isJaminAdmin;
   const isAdmin =
     isGhlAdmin ||
     roleCode === 'company_admin' ||
@@ -1385,15 +1389,17 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
       header: 'Sales',
       items: [
         { id: 'leads', label: 'Leads', icon: <Users size={18} />, feature: FEATURES.LEADS, permission: PERMISSIONS.LEADS_VIEW, badge: getBadge('leads', leadsCount) },
-        ...(isGhlAdmin ? [
+        ...(isLeadAdmin ? [
           { id: 'assigned-leads', label: 'Assigned Leads', icon: <UserCheck size={18} />, feature: FEATURES.LEADS, permission: PERMISSIONS.LEADS_ASSIGNED_VIEW, badge: getBadge('assigned-leads', assignedIrmLeadsCount) },
           { id: 'pending-leads', label: 'Pending Leads', icon: <Clock size={18} />, feature: FEATURES.LEADS, permission: PERMISSIONS.LEADS_PENDING_VIEW },
         ] : []),
         { id: 'followups', label: 'Follow-ups', icon: <CalendarCheck size={18} />, feature: FEATURES.FOLLOWUPS, permission: PERMISSIONS.FOLLOWUPS_VIEW, badge: getBadge('followups', pendingFollowupsCount) },
         { id: 'customers', label: 'Customers 360', icon: <Building2 size={18} />, feature: FEATURES.CUSTOMERS, permission: PERMISSIONS.CUSTOMERS_VIEW, badge: getBadge('customers', customersCount) },
-        { id: 'converted-customers', label: 'Converted Customers', icon: <UserCheck size={18} />, feature: FEATURES.CUSTOMERS, permission: PERMISSIONS.CUSTOMERS_CONVERTED_VIEW },
+        ...(isJaminAdmin ? [] : [
+          { id: 'converted-customers', label: 'Converted Customers', icon: <UserCheck size={18} />, feature: FEATURES.CUSTOMERS, permission: PERMISSIONS.CUSTOMERS_CONVERTED_VIEW },
+        ]),
         { id: 'pipeline', label: 'Pipeline', icon: <Kanban size={18} />, feature: FEATURES.DEALS, permission: PERMISSIONS.DEALS_VIEW },
-        ...(isGhlAdmin ? [
+        ...(isLeadAdmin ? [
           { id: 'archived-leads', label: 'Archived Leads', icon: <Trash2 size={18} />, feature: FEATURES.LEADS, permission: PERMISSIONS.LEADS_ARCHIVED_VIEW, badge: getBadge('archived-leads', archivedLeadsCount) }
         ] : []),
       ],
@@ -1437,7 +1443,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
       items: [
         { id: 'company-documents', label: 'Company Documents', icon: <FolderArchive size={18} />, permission: PERMISSIONS.DOCUMENTS_VIEW, badge: getBadge('company-documents', documentsCount) },
         { id: 'company-users', label: 'Users', icon: <Users size={18} />, feature: FEATURES.USERS, permission: PERMISSIONS.USERS_VIEW },
-        ...(isGhlAdmin ? [
+        ...(isLeadAdmin ? [
           { id: 'work-handover', label: 'Work Handover', icon: <UserCheck size={18} />, feature: FEATURES.USERS, permission: PERMISSIONS.WORK_HANDOVER_VIEW }
         ] : []),
         { id: 'leave-requests', label: 'Leave Requests', icon: <CalendarOff size={18} />, feature: FEATURES.USERS, permission: PERMISSIONS.LEAVE_REQUESTS_VIEW, badge: getBadge('leave-requests', leaveRequestsCount) },

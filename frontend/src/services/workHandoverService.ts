@@ -30,6 +30,8 @@ export interface HandoverPreviewCounts {
   opportunitiesCount: number;
   consultationsCount: number;
   pipelineCardsCount: number;
+  /** Open Jamin Bazaar site visits (Sales Executive handover). 0 / absent for GHL. */
+  siteVisitsCount?: number;
   totalCount: number;
 }
 

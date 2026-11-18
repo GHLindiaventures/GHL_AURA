@@ -27,6 +27,8 @@ import {
   HandoverItemDto,
   CoverSuggestionDto
 } from '../../services/workHandoverService';
+import { useAuth } from '../../context/AuthContext';
+import { isJaminAdminUser } from '../../utils/tenantRoles';
 import './WorkHandoverPage.css';
 
 export interface WorkHandoverPageProps {
@@ -43,10 +45,16 @@ export interface WorkHandoverPageProps {
 }
 
 export const WorkHandoverPage: React.FC<WorkHandoverPageProps> = ({ initialParams, onNavigate }) => {
+  const { tenant, user } = useAuth();
+  // Jamin Bazaar has ONE operational role (Sales Executive): no role switch, no IRM record types.
+  const isJaminAdmin = isJaminAdminUser(tenant, user) && !(tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01');
   const [selectedRole, setSelectedRole] = useState<'sales_executive' | 'irm'>(() => {
-    if (initialParams?.roleCode === 'irm') return 'irm';
+    if (initialParams?.roleCode === 'irm' && !isJaminAdminUser(tenant, user)) return 'irm';
     return 'sales_executive';
   });
+  useEffect(() => {
+    if (isJaminAdmin && selectedRole !== 'sales_executive') setSelectedRole('sales_executive');
+  }, [isJaminAdmin, selectedRole]);
   const [activeTab, setActiveTab] = useState<'active' | 'history'>('active');
 
   // Leave prefill & banner info
@@ -146,7 +154,7 @@ export const WorkHandoverPage: React.FC<WorkHandoverPageProps> = ({ initialParam
   useEffect(() => {
     if (initialParams?.fromUserId) {
       if (initialParams.roleCode) {
-        setSelectedRole(initialParams.roleCode === 'irm' ? 'irm' : 'sales_executive');
+        setSelectedRole(initialParams.roleCode === 'irm' && !isJaminAdmin ? 'irm' : 'sales_executive');
       }
       setSourceUserId(initialParams.fromUserId);
       if (initialParams.plannedEndAt) {
@@ -334,11 +342,21 @@ export const WorkHandoverPage: React.FC<WorkHandoverPageProps> = ({ initialParam
             Work Handover Administration
           </div>
           <div className="page-subtitle">
-            Manage temporary coverage for team members on leave or vacation with automated record handover and return tracking.
+            {isJaminAdmin
+              ? "Hand over a Sales Executive's open leads, follow-ups and site visits to a peer while they are on leave — everything returns automatically when coverage ends."
+              : 'Manage temporary coverage for team members on leave or vacation with automated record handover and return tracking.'}
           </div>
         </div>
 
-        {/* Role Selector Pills */}
+        {/* Role Selector Pills (GHL only — Jamin has Sales Executives only) */}
+        {isJaminAdmin ? (
+          <div className="handover-role-selector">
+            <span className="role-pill-btn active" style={{ cursor: 'default' }}>
+              <Users size={16} />
+              Sales Executives
+            </span>
+          </div>
+        ) : (
         <div className="handover-role-selector">
           <button
             type="button"
@@ -357,6 +375,7 @@ export const WorkHandoverPage: React.FC<WorkHandoverPageProps> = ({ initialParam
             IRMs (Investors)
           </button>
         </div>
+        )}
       </div>
 
       {/* Leave Arrangement Banner */}
@@ -630,6 +649,12 @@ export const WorkHandoverPage: React.FC<WorkHandoverPageProps> = ({ initialParam
                           <span>Pending Follow-ups:</span>
                           <span className="preview-chip-count">{preview.followupsCount}</span>
                         </div>
+                        {isJaminAdmin && (
+                          <div className="preview-chip">
+                            <span>Open Site Visits:</span>
+                            <span className="preview-chip-count">{preview.siteVisitsCount ?? 0}</span>
+                          </div>
+                        )}
                       </>
                     ) : (
                       <>
@@ -1094,7 +1119,9 @@ export const WorkHandoverPage: React.FC<WorkHandoverPageProps> = ({ initialParam
                             />
                             <div>
                               <div style={{ fontWeight: 600 }}>
-                                {item.entityTitle || `${item.entityType} #${item.entityId}`}
+                                {item.entityType === 'SiteVisit'
+                                  ? `Site Visit #${item.entityId}`
+                                  : (item.entityTitle || `${item.entityType} #${item.entityId}`)}
                               </div>
                               <div style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
                                 Type: {item.entityType} | Origin: {item.origin.replace(/_/g, ' ')}

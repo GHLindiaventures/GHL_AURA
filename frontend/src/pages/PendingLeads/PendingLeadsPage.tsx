@@ -27,6 +27,7 @@ import { Drawer } from '../../components/common/Drawer';
 import { Modal } from '../../components/common/Modal';
 import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawerContent';
 import { canPlaceCalls } from '../../utils/agentRoleUtils';
+import { isJaminAdminUser } from '../../utils/tenantRoles';
 import './PendingLeadsPage.css';
 
 // Statuses that represent leads that have moved beyond the initial leads stage to the next step / module
@@ -45,6 +46,8 @@ const EXCLUDED_PENDING_STATUSES = [
 export const PendingLeadsPage: React.FC = () => {
   const { tenant, user } = useAuth();
   const { initiateCall } = useCall();
+  // Jamin Bazaar has NO IRM role — pending leads are Sales Executive leads only.
+  const isJaminAdmin = isJaminAdminUser(tenant, user) && !(tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01');
 
   const [leads, setLeads] = useState<Lead[]>([]);
   const [usersList, setUsersList] = useState<User[]>([]);
@@ -81,12 +84,16 @@ export const PendingLeadsPage: React.FC = () => {
       }
       setUsersList(fetchedUsers);
 
-      // Fetch IRMs
-      try {
-        const irms = await getCompanyIrms(tenant?.id);
-        setCompanyIrms(irms || []);
-      } catch (err) {
-        console.warn('Failed to load company IRMs', err);
+      // Fetch IRMs (GHL only — Jamin has no IRM role)
+      if (!isJaminAdmin) {
+        try {
+          const irms = await getCompanyIrms(tenant?.id);
+          setCompanyIrms(irms || []);
+        } catch (err) {
+          console.warn('Failed to load company IRMs', err);
+        }
+      } else {
+        setCompanyIrms([]);
       }
 
       // 2. Fetch Leads
@@ -160,6 +167,7 @@ export const PendingLeadsPage: React.FC = () => {
 
   // Determine an agent's role for a lead
   const getAgentRole = (lead: Lead): 'sales_executive' | 'irm' => {
+    if (isJaminAdmin) return 'sales_executive';
     // If the lead is in 'Interested' status, it's definitively in the IRM module
     if (lead.status === 'Interested') return 'irm';
 
@@ -216,6 +224,16 @@ export const PendingLeadsPage: React.FC = () => {
       const isAssigned = (hasAssignedId || hasAssignedName || hasIrm) && l.assignmentStatus !== 'unassigned';
       if (!isAssigned) return false;
 
+      if (isJaminAdmin) {
+        // Jamin: only leads sitting with a Sales Executive (not the admin's own queue) in 'New' status
+        const ownerRole = String(l.assignedAgentRole || '').toLowerCase();
+        if (ownerRole === 'company_admin' || ownerRole === 'super_admin' || ownerRole === 'admin') return false;
+        if (user?.id && String(l.assignedAgentId || '') === String(user.id)) return false;
+        const execUser = usersList.find(u => String(u.id) === String(l.assignedAgentId || ''));
+        if (execUser && execUser.role?.code && execUser.role.code !== 'sales_executive') return false;
+        return l.status === 'New';
+      }
+
       // Strict whitelist: Only 'New' and 'Interested' leads can ever be pending leads
       if (l.status !== 'New' && l.status !== 'Interested') {
         return false;
@@ -233,7 +251,7 @@ export const PendingLeadsPage: React.FC = () => {
 
       return false;
     });
-  }, [leads, agentRoleMap, companyIrms]);
+  }, [leads, agentRoleMap, companyIrms, usersList, isJaminAdmin, user?.id]);
 
   // Available Person Options filtered by selected Role
   const availablePersons = useMemo(() => {
@@ -254,7 +272,7 @@ export const PendingLeadsPage: React.FC = () => {
     // Also include any DB user matching the role even if 0 pending
     usersList.forEach(u => {
       const role = u.role?.code;
-      if ((role === 'sales_executive' || role === 'irm') && !agentMap.has(u.name)) {
+      if ((role === 'sales_executive' || (!isJaminAdmin && role === 'irm')) && !agentMap.has(u.name)) {
         agentMap.set(u.name, { id: String(u.id), name: u.name, role: role as 'sales_executive' | 'irm', count: 0 });
       }
     });
@@ -362,6 +380,23 @@ export const PendingLeadsPage: React.FC = () => {
 
     if (apiClient.isMockMode()) {
       storageService.saveLead(updatedLead);
+    } else if (isJaminAdmin) {
+      // Jamin: use the audited reassign endpoint (validates the target is an active Sales Executive)
+      try {
+        const res = await apiClient.post<any>('/ghl/leads/reassign', {
+          leadIds: [parseInt(String(leadToReassign.id).replace('db-', ''), 10)],
+          agentId: parseInt(selectedNewAgentId, 10),
+        });
+        const skipped = res?.data?.skipped || [];
+        if (!res?.success || ((res?.data?.assigned ?? 0) === 0 && skipped.length > 0)) {
+          setReassignSuccessMsg('');
+          alert(skipped[0]?.reason ? `Reassign skipped: ${skipped[0].reason}` : (res?.message || 'Reassignment failed.'));
+          return;
+        }
+      } catch (err: any) {
+        alert(`Reassignment failed: ${err?.message || 'Unknown error'}`);
+        return;
+      }
     } else {
       try {
         const leadId = parseInt(leadToReassign.id, 10);
@@ -402,7 +437,7 @@ export const PendingLeadsPage: React.FC = () => {
     },
     {
       key: 'assignedAgent',
-      header: 'Assigned Person & Role',
+      header: isJaminAdmin ? 'Assigned Sales Executive' : 'Assigned Person & Role',
       sortable: true,
       render: l => {
         const role = getAgentRole(l);
@@ -501,7 +536,9 @@ export const PendingLeadsPage: React.FC = () => {
             <Clock size={24} color="#f59e0b" /> Pending Leads
           </h1>
           <p className="page-subtitle">
-            Leads assigned to Sales Executives and IRMs that are still in initial stages and have not yet moved to follow-ups, calls, or consultations.
+            {isJaminAdmin
+              ? 'Leads assigned to Sales Executives that are still in the initial stage and have not yet moved to follow-ups, site visits, or calls.'
+              : 'Leads assigned to Sales Executives and IRMs that are still in initial stages and have not yet moved to follow-ups, calls, or consultations.'}
           </p>
         </div>
 
@@ -534,7 +571,7 @@ export const PendingLeadsPage: React.FC = () => {
       )}
 
       {/* Top Metric Cards */}
-      <div className="pending-leads-kpi-grid">
+      <div className="pending-leads-kpi-grid" style={isJaminAdmin ? { gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' } : undefined}>
         <div className="pending-leads-kpi-card">
           <div className="pending-leads-kpi-icon-box" style={{ backgroundColor: 'rgba(245, 158, 11, 0.12)', color: '#f59e0b' }}>
             <Clock size={22} />
@@ -557,7 +594,7 @@ export const PendingLeadsPage: React.FC = () => {
           </div>
         </div>
 
-        <div className="pending-leads-kpi-card">
+        {!isJaminAdmin && <div className="pending-leads-kpi-card">
           <div className="pending-leads-kpi-icon-box" style={{ backgroundColor: 'rgba(16, 185, 129, 0.12)', color: '#059669' }}>
             <ShieldCheck size={22} />
           </div>
@@ -566,7 +603,7 @@ export const PendingLeadsPage: React.FC = () => {
             <span className="pending-leads-kpi-value">{stats.irmTotal}</span>
             <span className="pending-leads-kpi-subtext">Assigned to IRMs (Interested)</span>
           </div>
-        </div>
+        </div>}
 
         <div className="pending-leads-kpi-card">
           <div className="pending-leads-kpi-icon-box" style={{ backgroundColor: 'rgba(99, 102, 241, 0.12)', color: '#6366f1' }}>
@@ -594,8 +631,8 @@ export const PendingLeadsPage: React.FC = () => {
           />
         </div>
 
-        {/* Role Filter */}
-        <div className="pending-leads-filter-group">
+        {/* Role Filter (GHL only — Jamin has Sales Executives only) */}
+        {!isJaminAdmin && <div className="pending-leads-filter-group">
           <label className="pending-leads-filter-label">Role:</label>
           <select
             className="pending-leads-select"
@@ -609,7 +646,7 @@ export const PendingLeadsPage: React.FC = () => {
             <option value="sales_executive">Sales Executive</option>
             <option value="irm">Investor Relationship Manager (IRM)</option>
           </select>
-        </div>
+        </div>}
 
         {/* Person / Agent Filter */}
         <div className="pending-leads-filter-group">
@@ -644,7 +681,7 @@ export const PendingLeadsPage: React.FC = () => {
           >
             <option value="all">All Pending Statuses</option>
             <option value="New">New (Sales Exec)</option>
-            <option value="Interested">Interested (IRM)</option>
+            {!isJaminAdmin && <option value="Interested">Interested (IRM)</option>}
           </select>
         </div>
 
@@ -731,7 +768,8 @@ export const PendingLeadsPage: React.FC = () => {
                 >
                   <option value="">-- Choose Agent --</option>
                   {usersList
-                    .filter(u => u.role?.code === 'sales_executive' || u.role?.code === 'irm')
+                    .filter(u => u.role?.code === 'sales_executive' || (!isJaminAdmin && u.role?.code === 'irm'))
+                    .filter(u => !isJaminAdmin || (String(u.id) !== String(leadToReassign?.assignedAgentId || '') && (u as any).status !== 'Disabled'))
                     .map(u => (
                       <option key={u.id} value={u.id}>
                         {u.name} ({u.role?.name || (u.role?.code === 'irm' ? 'IRM' : 'Sales Executive')})

@@ -9,10 +9,13 @@ import { adminUserService } from '../../services/adminUserService';
 import { getCompanyIrms, getArchivedLeads } from '../../services/ghlApiService';
 import { storageService } from '../../services/storageService';
 import { markRouteSeen, getArchivedLeadKey } from '../../components/layout/Sidebar';
+import { isJaminAdminUser } from '../../utils/tenantRoles';
 import '../Leads/LeadsPage.css';
 
 export const ArchivedLeadsPage: React.FC = () => {
   const { tenant, user } = useAuth();
+  // Jamin Bazaar has NO IRM role — archived leads belong to Sales Executives only.
+  const isJaminAdmin = isJaminAdminUser(tenant, user) && !(tenant?.slug === 'ghl' || tenant?.id === 't-ghl-01');
   const [leads, setLeads] = useState<Lead[]>([]);
   const [loading, setLoading] = useState(true);
 
@@ -37,6 +40,10 @@ export const ArchivedLeadsPage: React.FC = () => {
         console.warn('Failed to load users from adminUserService, using storage fallback', e);
       }
 
+      if (isJaminAdmin) {
+        setCompanyIrms([]);
+        return;
+      }
       try {
         const irms = await getCompanyIrms(tenant?.id);
         if (irms && irms.length > 0) {
@@ -49,7 +56,7 @@ export const ArchivedLeadsPage: React.FC = () => {
       }
     };
     fetchTeam();
-  }, [tenant?.id, tenant?.slug]);
+  }, [tenant?.id, tenant?.slug, isJaminAdmin]);
 
   const loadData = async () => {
     setLoading(true);
@@ -100,6 +107,14 @@ export const ArchivedLeadsPage: React.FC = () => {
 
   // Determine an agent/owner's role and display name for a lead
   const getLeadRoleAndPerson = (lead: Lead) => {
+    if (isJaminAdmin) {
+      const name = (lead.assignedAgentName || '').trim();
+      if (!lead.assignedAgentId && !name) {
+        return { role: 'unassigned' as const, personName: 'Unassigned', personId: '' };
+      }
+      const matchUser = usersList.find(u => lead.assignedAgentId && String(u.id) === String(lead.assignedAgentId));
+      return { role: 'sales_executive' as const, personName: matchUser?.name || name || '—', personId: String(lead.assignedAgentId || '') };
+    }
     const irmName = (lead.assignedIrmName || lead.customFields?.assignedIrmName || '').toString().trim();
     const agentName = (lead.assignedAgentName || '').trim();
     const agentRole = ((lead as any).assignedAgentRole || (lead as any).assignedRole || '').toLowerCase();
@@ -173,7 +188,7 @@ export const ArchivedLeadsPage: React.FC = () => {
 
       if (isSales) {
         personMap.set(u.name.toLowerCase().trim(), { id: String(u.id), name: u.name, role: 'sales_executive' });
-      } else if (isIrm) {
+      } else if (isIrm && !isJaminAdmin) {
         personMap.set(u.name.toLowerCase().trim(), { id: String(u.id), name: u.name, role: 'irm' });
       }
     });
@@ -186,8 +201,8 @@ export const ArchivedLeadsPage: React.FC = () => {
       }
     });
 
-    // 3. Storage fallbacks
-    const storageAgents = storageService.getAgents(tenant?.id);
+    // 3. Storage fallbacks (skip for Jamin — use real DB sales executives only)
+    const storageAgents = isJaminAdmin ? [] : storageService.getAgents(tenant?.id);
     (storageAgents || []).forEach(a => {
       const key = a.name.toLowerCase().trim();
       if (!personMap.has(key)) {
@@ -205,10 +220,10 @@ export const ArchivedLeadsPage: React.FC = () => {
         personMap.set(agentName.toLowerCase(), {
           id: String(l.assignedAgentId || agentName),
           name: agentName,
-          role: agentRole === 'irm' ? 'irm' : 'sales_executive'
+          role: agentRole === 'irm' && !isJaminAdmin ? 'irm' : 'sales_executive'
         });
       }
-      if (irmName && irmName !== '—' && irmName.toLowerCase() !== 'unassigned' && !personMap.has(irmName.toLowerCase())) {
+      if (!isJaminAdmin && irmName && irmName !== '—' && irmName.toLowerCase() !== 'unassigned' && !personMap.has(irmName.toLowerCase())) {
         personMap.set(irmName.toLowerCase(), {
           id: String(l.assignedIrmId || l.customFields?.assignedIrmId || irmName),
           name: irmName,
@@ -222,7 +237,7 @@ export const ArchivedLeadsPage: React.FC = () => {
       list = list.filter(p => p.role === roleFilter);
     }
     return list.sort((a, b) => a.name.localeCompare(b.name));
-  }, [usersList, companyIrms, leads, roleFilter, tenant?.id]);
+  }, [usersList, companyIrms, leads, roleFilter, tenant?.id, isJaminAdmin]);
 
   const filteredLeads = leads.filter(lead => {
     // 1. Status Filter
@@ -286,7 +301,7 @@ export const ArchivedLeadsPage: React.FC = () => {
       render: (row: Lead) => <span className="lead-text-muted">{row.email || '—'}</span>
     },
     {
-      header: 'ASSIGNED PERSON',
+      header: isJaminAdmin ? 'ASSIGNED SALES EXEC' : 'ASSIGNED PERSON',
       key: 'assignedAgentName',
       render: (row: any) => {
         const { role, personName } = getLeadRoleAndPerson(row);
@@ -408,8 +423,8 @@ export const ArchivedLeadsPage: React.FC = () => {
           </select>
         </div>
 
-        {/* Role Filter */}
-        <div className="filterbar-item">
+        {/* Role Filter (GHL only — Jamin has Sales Executives only) */}
+        {!isJaminAdmin && <div className="filterbar-item">
           <label className="filterbar-label">
             <Briefcase size={14} />
             Role:
@@ -426,7 +441,7 @@ export const ArchivedLeadsPage: React.FC = () => {
             <option value="sales_executive">Sales Executive</option>
             <option value="irm">IRM</option>
           </select>
-        </div>
+        </div>}
 
         {/* Person Filter */}
         <div className="filterbar-item">
@@ -440,7 +455,9 @@ export const ArchivedLeadsPage: React.FC = () => {
             onChange={(e) => setPersonFilter(e.target.value)}
           >
             <option value="all">
-              {roleFilter === 'all'
+              {isJaminAdmin
+                ? 'All Sales Executives'
+                : roleFilter === 'all'
                 ? 'All Team Members'
                 : roleFilter === 'sales_executive'
                 ? 'All Sales Executives'
