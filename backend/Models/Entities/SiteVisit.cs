@@ -32,6 +32,11 @@ public class SiteVisit
     public int? AssignedAgentId { get; set; }
     public string? AssignedAgentName { get; set; }
 
+    /// <summary>User who assigned the follow-up to <see cref="AssignedAgentId"/> (equals the agent when they took it themselves).</summary>
+    public int? AssignedById { get; set; }
+    public string? AssignedByName { get; set; }
+    public DateTime? AssignedAt { get; set; }
+
     public string Status { get; set; } = "Pending";
     public string? VisitorNote { get; set; }
     public string? OutcomeNotes { get; set; }

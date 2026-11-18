@@ -4,6 +4,22 @@ import { apiClient } from './apiClient';
 import { storageService } from './storageService';
 import type { Lead, SiteVisit, Followup, Customer } from '../types';
 
+export interface LeadPlotSelection {
+  plotId: number;
+  projectId: number;
+  projectName?: string | null;
+  plotNumber: string;
+  facing: string;
+  areaSqFt: number;
+  price: number;
+  plotStatus: string;
+  /** 'Hold' | 'Booking' | 'SiteVisit' */
+  source: 'Hold' | 'Booking' | 'SiteVisit' | string;
+  sourceStatus: string;
+  holdExpiresAt?: string | null;
+  selectedAt?: string | null;
+}
+
 export interface JaminAgent {
   id: number;
   name: string;
@@ -94,10 +110,11 @@ export const jaminApiService = {
   // ── 1. LEADS ───────────────────────────────────────────────────────────────
   async getLeads(isAdmin: boolean = false, agentId?: number, status?: string): Promise<Lead[]> {
     try {
-      const endpoint = isAdmin ? '/leads' : '/sales-executive/leads';
+      // There is no /leads route: both admins and agents read Jamin leads from the sales-executive endpoint (role-scoped by the server).
+      const endpoint = '/sales-executive/leads';
       const params = new URLSearchParams();
-      if (isAdmin) params.append('tenantId', '2');
-      else params.append('companyId', '2');
+      params.append('pageSize', '200');
+      if (isAdmin && !status) params.append('status', 'all');
       if (agentId) params.append('agentId', String(agentId));
       if (status && status !== 'All') params.append('status', status);
 
@@ -148,7 +165,7 @@ export const jaminApiService = {
     const seenPhones = new Set<string>();
 
     try {
-      const res = await apiClient.get<any>('/sales-executive/customers?page=1&pageSize=100&tenantId=2');
+      const res = await apiClient.get<any>('/sales-executive/customers?page=1&pageSize=500');
       const rawList = Array.isArray(res?.data)
         ? res.data
         : (Array.isArray(res?.data?.items) ? res.data.items : (Array.isArray(res?.items) ? res.items : []));
@@ -364,6 +381,9 @@ export const jaminApiService = {
           scheduledAt: sv.scheduledAt,
           assignedAgentId: sv.assignedAgentId ? String(sv.assignedAgentId) : '',
           assignedAgentName: sv.assignedAgentName || 'Agent',
+          assignedById: sv.assignedById ? String(sv.assignedById) : undefined,
+          assignedByName: sv.assignedByName || undefined,
+          customerEmail: sv.customerEmail || undefined,
           status: sv.status,
           contactType: sv.contactType || 'lead',
           visitorNote: sv.visitorNote,
@@ -410,6 +430,9 @@ export const jaminApiService = {
           scheduledAt: sv.scheduledAt,
           assignedAgentId: sv.assignedAgentId ? String(sv.assignedAgentId) : '',
           assignedAgentName: sv.assignedAgentName || 'Agent',
+          assignedById: sv.assignedById ? String(sv.assignedById) : undefined,
+          assignedByName: sv.assignedByName || undefined,
+          customerEmail: sv.customerEmail || undefined,
           status: sv.status,
           contactType: sv.contactType || 'lead',
           visitorNote: sv.visitorNote,
@@ -693,11 +716,16 @@ export const jaminApiService = {
   },
 
   // ── 5. PLOTS INVENTORY ─────────────────────────────────────────────────────
-  async getPlots(projectId?: string, status?: string): Promise<any[]> {
+  async getPlots(projectId?: string, status?: string, filters?: { facing?: string[]; minArea?: number; maxArea?: number; minPrice?: number; maxPrice?: number }): Promise<any[]> {
     try {
       const params = new URLSearchParams();
       if (projectId) params.append('projectId', projectId);
       if (status && status !== 'All') params.append('status', status);
+      if (filters?.facing?.length) params.append('facing', filters.facing.join(','));
+      if (filters?.minArea !== undefined) params.append('minArea', String(filters.minArea));
+      if (filters?.maxArea !== undefined) params.append('maxArea', String(filters.maxArea));
+      if (filters?.minPrice !== undefined) params.append('minPrice', String(filters.minPrice));
+      if (filters?.maxPrice !== undefined) params.append('maxPrice', String(filters.maxPrice));
       const res = await apiClient.get<any>(`/jamin/plots?${params.toString()}`);
       if (res && res.success && Array.isArray(res.data)) {
         return res.data;
@@ -769,10 +797,11 @@ export const jaminApiService = {
     }
   },
 
-  async holdPlot(plotId: string | number, customerName: string, customerPhone: string, holdDays: number = 7, notes?: string, holdByAgent?: string, heldByCustomerId?: number | string): Promise<boolean> {
+  async holdPlot(plotId: string | number, customerName: string, customerPhone: string, holdDays: number = 7, notes?: string, holdByAgent?: string, heldByCustomerId?: number | string, heldByLeadId?: number | string): Promise<boolean> {
     try {
       const res = await apiClient.post<any>(`/jamin/plots/${plotId}/hold`, {
         heldByCustomerId: heldByCustomerId ? Number(heldByCustomerId) : undefined,
+        heldByLeadId: heldByLeadId ? Number(heldByLeadId) : undefined,
         customerName,
         customerPhone,
         holdDays,
@@ -784,6 +813,19 @@ export const jaminApiService = {
       console.error(`Failed to place plot #${plotId} on hold`, err);
       return false;
     }
+  },
+
+  /** Plots a lead has selected (held for them, booked, or planned for a site visit). */
+  async getPlotsForLead(leadId: string | number): Promise<LeadPlotSelection[]> {
+    try {
+      const res = await apiClient.get<any>(`/jamin/plots/by-lead/${leadId}`);
+      if (res && res.success && Array.isArray(res.data)) {
+        return res.data as LeadPlotSelection[];
+      }
+    } catch (err) {
+      console.error(`Failed to fetch selected plots for lead #${leadId}`, err);
+    }
+    return [];
   },
 
   async releasePlot(plotId: string | number): Promise<boolean> {

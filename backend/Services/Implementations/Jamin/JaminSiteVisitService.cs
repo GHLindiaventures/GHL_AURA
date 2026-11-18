@@ -33,7 +33,44 @@ public class JaminSiteVisitService : IJaminSiteVisitService
 
         if (canViewAll) return query;
         if (!_currentUser.UserId.HasValue) return query.Where(_ => false);
-        return query.Where(s => s.AssignedAgentId == _currentUser.UserId.Value);
+        var me = _currentUser.UserId.Value;
+
+        // An agent sees a visit when they follow it up, when they assigned it to someone else,
+        // or when the lead / customer it is for is theirs (so a visit hosted by a colleague never hides my customer).
+        return query.Where(s =>
+            s.AssignedAgentId == me ||
+            s.AssignedById == me ||
+            (s.LeadId != null && _context.Leads.Any(l => l.Id == s.LeadId && l.AssignedAgentId == me)) ||
+            (s.CustomerId != null && _context.Customers.Any(c => c.Id == s.CustomerId && c.AssignedAgentId == me)));
+    }
+
+    /// <summary>Roles that can be given a site-visit follow-up.</summary>
+    private static readonly string[] AssignableRoleCodes = { "sales_executive", "company_admin", "admin" };
+
+    private async Task<User?> FindAssignableAgentAsync(int agentId, CancellationToken ct) =>
+        await _context.Users.Include(u => u.Role).FirstOrDefaultAsync(
+            u => u.Id == agentId && u.CompanyId == JaminTenantId && u.Status != backend.Models.Enums.UserStatus.Disabled
+                 && u.Role != null && AssignableRoleCodes.Contains(u.Role.Code), ct);
+
+    /// <summary>Tells the newly assigned agent who the customer is and who assigned the follow-up.</summary>
+    private void NotifyAssignedAgent(SiteVisit visit, User agent)
+    {
+        if (agent.Id == _currentUser.UserId) return; // took it themselves — nothing to notify
+
+        var assigner = !string.IsNullOrWhiteSpace(visit.AssignedByName) ? visit.AssignedByName : "A colleague";
+        var where = string.IsNullOrWhiteSpace(visit.PlotNumber) ? visit.ProjectName : $"{visit.ProjectName} (Plot {visit.PlotNumber})";
+        _context.Notifications.Add(new Notification
+        {
+            CompanyId = JaminTenantId,
+            UserId = agent.Id,
+            Title = "Site visit assigned to you",
+            Message = $"{assigner} assigned you the site visit follow-up for {visit.CustomerName} ({visit.CustomerPhone}) — {where}, {visit.ScheduledAt}.",
+            Type = "site_visit",
+            IsRead = false,
+            LeadId = visit.LeadId,
+            CustomerId = visit.CustomerId,
+            CreatedAt = DateTime.UtcNow
+        });
     }
 
     private bool CanManageAllSiteVisits =>
@@ -68,7 +105,42 @@ public class JaminSiteVisitService : IJaminSiteVisitService
         }
 
         var visits = await query.OrderByDescending(s => s.CreatedAt).ToListAsync(ct);
-        return ApiResponse<List<JaminSiteVisitDto>>.SuccessResult(visits.Select(MapToDto).ToList());
+        return ApiResponse<List<JaminSiteVisitDto>>.SuccessResult(await MapWithContactsAsync(visits, ct));
+    }
+
+    /// <summary>
+    /// Maps rows and refreshes the customer details from the linked lead / customer, so a row always shows
+    /// the current name and phone (the stored copy is only a fallback) plus the email.
+    /// </summary>
+    private async Task<List<JaminSiteVisitDto>> MapWithContactsAsync(List<SiteVisit> visits, CancellationToken ct)
+    {
+        var leadIds = visits.Where(v => v.LeadId.HasValue).Select(v => v.LeadId!.Value).Distinct().ToList();
+        var customerIds = visits.Where(v => v.CustomerId.HasValue).Select(v => v.CustomerId!.Value).Distinct().ToList();
+
+        var leads = leadIds.Count == 0 ? new Dictionary<int, Lead>() : await _context.Leads.AsNoTracking()
+            .Where(l => l.CompanyId == JaminTenantId && leadIds.Contains(l.Id)).ToDictionaryAsync(l => l.Id, ct);
+        var customers = customerIds.Count == 0 ? new Dictionary<int, Customer>() : await _context.Customers.AsNoTracking()
+            .Where(c => c.CompanyId == JaminTenantId && customerIds.Contains(c.Id)).ToDictionaryAsync(c => c.Id, ct);
+
+        return visits.Select(v =>
+        {
+            var dto = MapToDto(v);
+            if (v.CustomerId.HasValue && customers.TryGetValue(v.CustomerId.Value, out var c))
+            {
+                if (!string.IsNullOrWhiteSpace(c.Name)) dto.CustomerName = c.Name;
+                if (!string.IsNullOrWhiteSpace(c.Phone)) dto.CustomerPhone = c.Phone;
+                dto.CustomerEmail = string.IsNullOrWhiteSpace(c.Email) ? null : c.Email;
+                dto.ContactType = "customer";
+            }
+            else if (v.LeadId.HasValue && leads.TryGetValue(v.LeadId.Value, out var l))
+            {
+                if (!string.IsNullOrWhiteSpace(l.Name)) dto.CustomerName = l.Name;
+                if (!string.IsNullOrWhiteSpace(l.Phone)) dto.CustomerPhone = l.Phone;
+                dto.CustomerEmail = string.IsNullOrWhiteSpace(l.Email) ? null : l.Email;
+                dto.ContactType ??= "lead";
+            }
+            return dto;
+        }).ToList();
     }
 
 
@@ -90,26 +162,30 @@ public class JaminSiteVisitService : IJaminSiteVisitService
         {
             var lead = await _context.Leads.FirstOrDefaultAsync(l => l.Id == dto.LeadId.Value && l.CompanyId == JaminTenantId, ct);
             if (lead == null) return ApiResponse<JaminSiteVisitDto>.FailureResult("Active Jamin lead not found.");
-            if (IsSalesExecutive && lead.AssignedAgentId.HasValue && lead.AssignedAgentId != _currentUser.UserId)
-                return ApiResponse<JaminSiteVisitDto>.FailureResult("You can schedule site visits only for leads assigned to you.");
+            // An agent can take a lead that is theirs or unassigned, or hand it to the agent who owns it.
+            if (IsSalesExecutive && lead.AssignedAgentId.HasValue
+                && lead.AssignedAgentId != _currentUser.UserId
+                && lead.AssignedAgentId != (dto.AssignedAgentId ?? _currentUser.UserId))
+                return ApiResponse<JaminSiteVisitDto>.FailureResult("You can schedule site visits only for leads assigned to you or to the agent you assign it to.");
         }
         if (dto.CustomerId.HasValue)
         {
             var customer = await _context.Customers.FirstOrDefaultAsync(c => c.Id == dto.CustomerId.Value && c.CompanyId == JaminTenantId, ct);
             if (customer == null) return ApiResponse<JaminSiteVisitDto>.FailureResult("Jamin customer not found.");
-            if (IsSalesExecutive && customer.AssignedAgentId.HasValue && customer.AssignedAgentId != _currentUser.UserId)
-                return ApiResponse<JaminSiteVisitDto>.FailureResult("You can schedule site visits only for customers assigned to you.");
+            if (IsSalesExecutive && customer.AssignedAgentId.HasValue
+                && customer.AssignedAgentId != _currentUser.UserId
+                && customer.AssignedAgentId != (dto.AssignedAgentId ?? _currentUser.UserId))
+                return ApiResponse<JaminSiteVisitDto>.FailureResult("You can schedule site visits only for customers assigned to you or to the agent you assign it to.");
         }
-        if (IsSalesExecutive && dto.AssignedAgentId.HasValue && dto.AssignedAgentId != _currentUser.UserId)
-            return ApiResponse<JaminSiteVisitDto>.FailureResult("Sales agents can assign site visits only to themselves.");
-        if (!CanManageAllSiteVisits && dto.AssignedAgentId.HasValue && dto.AssignedAgentId != _currentUser.UserId)
-            return ApiResponse<JaminSiteVisitDto>.FailureResult("You can assign site visits only to yourself.");
-        var scheduledAgentId = CanManageAllSiteVisits
-            ? (dto.AssignedAgentId.HasValue && dto.AssignedAgentId.Value > 0 ? dto.AssignedAgentId : _currentUser.UserId)
-            : _currentUser.UserId;
-        if (scheduledAgentId.HasValue && scheduledAgentId.Value > 0 && !await _context.Users.AnyAsync(
-                u => u.Id == scheduledAgentId.Value && u.CompanyId == JaminTenantId, ct))
-            return ApiResponse<JaminSiteVisitDto>.FailureResult("Selected host does not belong to Jamin.");
+        // Follow-up agent: the caller takes it themselves by default, or hands it to another Jamin agent.
+        var scheduledAgentId = dto.AssignedAgentId.HasValue && dto.AssignedAgentId.Value > 0 ? dto.AssignedAgentId : _currentUser.UserId;
+        User? followUpAgent = null;
+        if (scheduledAgentId.HasValue && scheduledAgentId.Value > 0)
+        {
+            followUpAgent = await FindAssignableAgentAsync(scheduledAgentId.Value, ct);
+            if (followUpAgent == null)
+                return ApiResponse<JaminSiteVisitDto>.FailureResult("Selected follow-up agent was not found in Jamin.");
+        }
 
         int? resolvedProjectId = dto.ProjectId;
         int? resolvedPlotId = dto.PlotId;
@@ -171,7 +247,10 @@ public class JaminSiteVisitService : IJaminSiteVisitService
             PlotNumber = plotNumber,
             ScheduledAt = dto.ScheduledAt,
             AssignedAgentId = scheduledAgentId,
-            AssignedAgentName = !CanManageAllSiteVisits ? _currentUser.Name ?? string.Empty : dto.AssignedAgentName ?? string.Empty,
+            AssignedAgentName = followUpAgent?.Name ?? dto.AssignedAgentName ?? string.Empty,
+            AssignedById = _currentUser.UserId,
+            AssignedByName = _currentUser.Name,
+            AssignedAt = DateTime.UtcNow,
             Status = "Scheduled",
             VisitorNote = dto.VisitorNote,
             OutcomeNotes = dto.OutcomeNotes,
@@ -192,6 +271,8 @@ public class JaminSiteVisitService : IJaminSiteVisitService
             leadToUpdate.UpdatedAt = DateTime.UtcNow;
             if (!siteVisit.LeadId.HasValue) siteVisit.LeadId = leadToUpdate.Id;
         }
+
+        if (followUpAgent != null) NotifyAssignedAgent(siteVisit, followUpAgent);
 
         await _context.SaveChangesAsync(ct);
 
@@ -330,15 +411,18 @@ public class JaminSiteVisitService : IJaminSiteVisitService
         else if (dto.ProjectId.HasValue) visit.ProjectId = dto.ProjectId.Value;
         if (!string.IsNullOrWhiteSpace(dto.ProjectName)) visit.ProjectName = dto.ProjectName.Trim();
         if (dto.PlotNumber != null) visit.PlotNumber = dto.PlotNumber.Trim();
-        if (dto.AssignedAgentId.HasValue && dto.AssignedAgentId.Value > 0)
+        User? reassignedTo = null;
+        if (dto.AssignedAgentId.HasValue && dto.AssignedAgentId.Value > 0 && dto.AssignedAgentId != visit.AssignedAgentId)
         {
-            if (!CanManageAllSiteVisits && dto.AssignedAgentId.Value != _currentUser.UserId)
-                return ApiResponse<JaminSiteVisitDto>.FailureResult("You can assign site visits only to yourself.");
-            if (!await _context.Users.AnyAsync(u => u.Id == dto.AssignedAgentId.Value && u.CompanyId == JaminTenantId, ct))
-                return ApiResponse<JaminSiteVisitDto>.FailureResult("Selected host does not belong to Jamin.");
-            visit.AssignedAgentId = CanManageAllSiteVisits ? dto.AssignedAgentId.Value : _currentUser.UserId;
+            reassignedTo = await FindAssignableAgentAsync(dto.AssignedAgentId.Value, ct);
+            if (reassignedTo == null)
+                return ApiResponse<JaminSiteVisitDto>.FailureResult("Selected follow-up agent was not found in Jamin.");
+            visit.AssignedAgentId = reassignedTo.Id;
+            visit.AssignedAgentName = reassignedTo.Name;
+            visit.AssignedById = _currentUser.UserId;
+            visit.AssignedByName = _currentUser.Name;
+            visit.AssignedAt = DateTime.UtcNow;
         }
-        if (CanManageAllSiteVisits && !string.IsNullOrWhiteSpace(dto.AssignedAgentName)) visit.AssignedAgentName = dto.AssignedAgentName.Trim();
         if (dto.LeadId.HasValue || dto.CustomerId.HasValue)
         {
             if (dto.LeadId.HasValue && dto.CustomerId.HasValue)
@@ -419,6 +503,9 @@ public class JaminSiteVisitService : IJaminSiteVisitService
             }
         }
 
+        // Contact details are filled in above only when the link changed, so notify after they are final.
+        if (reassignedTo != null) NotifyAssignedAgent(visit, reassignedTo);
+
         await _context.SaveChangesAsync(ct);
         return ApiResponse<JaminSiteVisitDto>.SuccessResult(MapToDto(visit), "Site visit updated successfully.");
     }
@@ -430,7 +517,7 @@ public class JaminSiteVisitService : IJaminSiteVisitService
             .OrderByDescending(s => s.CreatedAt)
             .ToListAsync(ct);
 
-        return ApiResponse<List<JaminSiteVisitDto>>.SuccessResult(visits.Select(MapToDto).ToList());
+        return ApiResponse<List<JaminSiteVisitDto>>.SuccessResult(await MapWithContactsAsync(visits, ct));
     }
 
     public async Task<ApiResponse<List<JaminSiteVisitDto>>> GetCustomerSiteVisitsAsync(int customerId, CancellationToken ct = default)
@@ -440,7 +527,7 @@ public class JaminSiteVisitService : IJaminSiteVisitService
             .OrderByDescending(s => s.CreatedAt)
             .ToListAsync(ct);
 
-        return ApiResponse<List<JaminSiteVisitDto>>.SuccessResult(visits.Select(MapToDto).ToList());
+        return ApiResponse<List<JaminSiteVisitDto>>.SuccessResult(await MapWithContactsAsync(visits, ct));
     }
 
     public async Task<ApiResponse<bool>> DeleteSiteVisitAsync(int id, CancellationToken ct = default)
@@ -473,6 +560,9 @@ public class JaminSiteVisitService : IJaminSiteVisitService
         ScheduledAt = s.ScheduledAt,
         AssignedAgentId = s.AssignedAgentId,
         AssignedAgentName = s.AssignedAgentName,
+        AssignedById = s.AssignedById,
+        AssignedByName = s.AssignedByName,
+        AssignedAt = s.AssignedAt,
         Status = s.Status,
         VisitorNote = s.VisitorNote,
         OutcomeNotes = s.OutcomeNotes,

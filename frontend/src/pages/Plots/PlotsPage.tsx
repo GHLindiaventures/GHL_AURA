@@ -23,6 +23,11 @@ export const PlotsPage: React.FC = () => {
   const [blueprintRotation, setBlueprintRotation] = useState<number>(0);
   const [isBlueprintFullScreen, setIsBlueprintFullScreen] = useState<boolean>(false);
   const [statusFilter, setStatusFilter] = useState<'All' | 'Available' | 'Hold' | 'Sold'>('All');
+  const [facingFilter, setFacingFilter] = useState<string[]>([]);
+  const [areaMin, setAreaMin] = useState('');
+  const [areaMax, setAreaMax] = useState('');
+  const [priceMinLakh, setPriceMinLakh] = useState('');
+  const [priceMaxLakh, setPriceMaxLakh] = useState('');
   const canManagePlots = user?.role?.code === 'company_admin' || user?.role?.code === 'super_admin';
 
   // Hold action state
@@ -140,6 +145,11 @@ export const PlotsPage: React.FC = () => {
   const handleProjectChange = async (projId: string) => {
     setSelectedProject(projId);
     setStatusFilter('All');
+    setFacingFilter([]);
+    setAreaMin('');
+    setAreaMax('');
+    setPriceMinLakh('');
+    setPriceMaxLakh('');
     setLoading(true);
     try {
       const plotList = await jaminApiService.getPlots(projId || undefined);
@@ -157,16 +167,74 @@ export const PlotsPage: React.FC = () => {
     ? plots.filter(p => String(p.projectId) === String(currentProjectId)).sort(comparePlotNumbers)
     : [...plots].sort(comparePlotNumbers);
 
-  const availableCount = projectPlots.filter(p => p.status === 'Available').length;
-  const holdCount = projectPlots.filter(p => p.status === 'Hold').length;
-  const soldCount = projectPlots.filter(p => p.status === 'Booked' || p.status === 'Registered' || p.status === 'Sold').length;
+  // Requirement filters (facing / area / price) — applied on top of the status filter.
+  const normalizeFacing = (v: unknown) => String(v ?? '').replace(/[^a-zA-Z]/g, '').toLowerCase();
+  const toNum = (v: string): number | null => {
+    if (v.trim() === '') return null;
+    const n = Number(v);
+    return Number.isFinite(n) && n >= 0 ? n : null;
+  };
+  const areaMinNum = toNum(areaMin);
+  const areaMaxNum = toNum(areaMax);
+  const priceMinNum = toNum(priceMinLakh);
+  const priceMaxNum = toNum(priceMaxLakh);
+  const hasSpecFilters =
+    facingFilter.length > 0 || areaMinNum !== null || areaMaxNum !== null || priceMinNum !== null || priceMaxNum !== null;
+
+  const clearSpecFilters = () => {
+    setFacingFilter([]);
+    setAreaMin('');
+    setAreaMax('');
+    setPriceMinLakh('');
+    setPriceMaxLakh('');
+  };
+
+  const toggleFacing = (dir: string) => {
+    const key = normalizeFacing(dir);
+    setFacingFilter(prev => (prev.includes(key) ? prev.filter(k => k !== key) : [...prev, key]));
+  };
+
+  const specFilteredPlots = useMemo(() => {
+    if (!hasSpecFilters) return projectPlots;
+    return projectPlots.filter(p => {
+      if (facingFilter.length > 0 && !facingFilter.includes(normalizeFacing(p.facing))) return false;
+      const area = Number(p.areaSqFt ?? 0);
+      if (areaMinNum !== null && area < areaMinNum) return false;
+      if (areaMaxNum !== null && area > areaMaxNum) return false;
+      const priceLakh = Number(p.price ?? p.totalPrice ?? 0) / 100000;
+      if (priceMinNum !== null && priceLakh < priceMinNum) return false;
+      if (priceMaxNum !== null && priceLakh > priceMaxNum) return false;
+      return true;
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectPlots, facingFilter, areaMin, areaMax, priceMinLakh, priceMaxLakh]);
+
+  // Facing options: the standard compass directions plus anything else present in this project.
+  const facingOptions = useMemo(() => {
+    const standard = ['North', 'North-East', 'East', 'South-East', 'South', 'South-West', 'West', 'North-West'];
+    const seen = new Set(standard.map(normalizeFacing));
+    const extra: string[] = [];
+    projectPlots.forEach(p => {
+      const key = normalizeFacing(p.facing);
+      if (key && !seen.has(key)) {
+        seen.add(key);
+        extra.push(String(p.facing).trim());
+      }
+    });
+    return [...standard, ...extra];
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectPlots]);
+
+  const availableCount = specFilteredPlots.filter(p => p.status === 'Available').length;
+  const holdCount = specFilteredPlots.filter(p => p.status === 'Hold').length;
+  const soldCount = specFilteredPlots.filter(p => p.status === 'Booked' || p.status === 'Registered' || p.status === 'Sold').length;
 
   const displayedPlots = useMemo(() => {
-    if (statusFilter === 'Available') return projectPlots.filter(p => p.status === 'Available');
-    if (statusFilter === 'Hold') return projectPlots.filter(p => p.status === 'Hold');
-    if (statusFilter === 'Sold') return projectPlots.filter(p => p.status === 'Booked' || p.status === 'Registered' || p.status === 'Sold');
-    return projectPlots;
-  }, [projectPlots, statusFilter]);
+    if (statusFilter === 'Available') return specFilteredPlots.filter(p => p.status === 'Available');
+    if (statusFilter === 'Hold') return specFilteredPlots.filter(p => p.status === 'Hold');
+    if (statusFilter === 'Sold') return specFilteredPlots.filter(p => p.status === 'Booked' || p.status === 'Registered' || p.status === 'Sold');
+    return specFilteredPlots;
+  }, [specFilteredPlots, statusFilter]);
 
   const handleToggleStatusFilter = (status: 'All' | 'Available' | 'Hold' | 'Sold') => {
     if (status === 'All') {
@@ -265,7 +333,8 @@ export const PlotsPage: React.FC = () => {
         parseInt(holdDays, 10),
         undefined,
         user?.name || undefined,
-        holdSourceType === 'customer' && selectedCustomerId ? selectedCustomerId : undefined
+        holdSourceType === 'customer' && selectedCustomerId ? selectedCustomerId : undefined,
+        holdSourceType === 'lead' && selectedLeadId ? selectedLeadId : undefined
       );
       if (success) {
         setIsHoldModalOpen(false);
@@ -666,6 +735,88 @@ export const PlotsPage: React.FC = () => {
         </div>
       </div>
 
+      {/* Requirement filters: facing / area / price */}
+      <div className="card plots-spec-filters" aria-label="Plot requirement filters">
+        <div className="plots-spec-group">
+          <span className="plots-spec-label">Facing</span>
+          <div className="plots-spec-chips">
+            {facingOptions.map(dir => {
+              const active = facingFilter.includes(normalizeFacing(dir));
+              return (
+                <button
+                  key={dir}
+                  type="button"
+                  className={`plots-spec-chip ${active ? 'active' : ''}`}
+                  aria-pressed={active}
+                  onClick={() => toggleFacing(dir)}
+                >
+                  {dir}
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <div className="plots-spec-group">
+          <span className="plots-spec-label">Area (sq ft)</span>
+          <div className="plots-spec-range">
+            <input
+              type="number"
+              min={0}
+              inputMode="numeric"
+              placeholder="Min"
+              aria-label="Minimum area in square feet"
+              value={areaMin}
+              onChange={e => setAreaMin(e.target.value)}
+            />
+            <span>–</span>
+            <input
+              type="number"
+              min={0}
+              inputMode="numeric"
+              placeholder="Max"
+              aria-label="Maximum area in square feet"
+              value={areaMax}
+              onChange={e => setAreaMax(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="plots-spec-group">
+          <span className="plots-spec-label">Price (₹ lakh)</span>
+          <div className="plots-spec-range">
+            <input
+              type="number"
+              min={0}
+              inputMode="decimal"
+              placeholder="Min"
+              aria-label="Minimum price in lakh rupees"
+              value={priceMinLakh}
+              onChange={e => setPriceMinLakh(e.target.value)}
+            />
+            <span>–</span>
+            <input
+              type="number"
+              min={0}
+              inputMode="decimal"
+              placeholder="Max"
+              aria-label="Maximum price in lakh rupees"
+              value={priceMaxLakh}
+              onChange={e => setPriceMaxLakh(e.target.value)}
+            />
+          </div>
+        </div>
+
+        {hasSpecFilters && (
+          <div className="plots-spec-summary">
+            <span>{specFilteredPlots.length} of {projectPlots.length} plots match</span>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={clearSpecFilters}>
+              Clear filters
+            </button>
+          </div>
+        )}
+      </div>
+
       {/* Visual Plot Layout Grid */}
       {loading && projectPlots.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '48px', color: '#64748b' }}>
@@ -687,11 +838,22 @@ export const PlotsPage: React.FC = () => {
       ) : displayedPlots.length === 0 ? (
         <div style={{ textAlign: 'center', padding: '48px', color: '#64748b' }}>
           <p style={{ fontSize: '1.1rem', marginBottom: '16px' }}>
-            No plots found with status <strong>{statusFilter === 'Sold' ? 'Booked / Sold' : statusFilter}</strong> in this project.
+            {hasSpecFilters
+              ? <>No plots match your facing, area or price filters{statusFilter !== 'All' ? <> with status <strong>{statusFilter === 'Sold' ? 'Booked / Sold' : statusFilter}</strong></> : null}.</>
+              : <>No plots found with status <strong>{statusFilter === 'Sold' ? 'Booked / Sold' : statusFilter}</strong> in this project.</>}
           </p>
-          <button className="btn btn-secondary btn-sm" onClick={() => setStatusFilter('All')}>
-            Show All Plots ({projectPlots.length})
-          </button>
+          <div style={{ display: 'inline-flex', gap: 8 }}>
+            {hasSpecFilters && (
+              <button className="btn btn-primary btn-sm" onClick={clearSpecFilters}>
+                Clear filters
+              </button>
+            )}
+            {statusFilter !== 'All' && (
+              <button className="btn btn-secondary btn-sm" onClick={() => setStatusFilter('All')}>
+                Show All Plots ({specFilteredPlots.length})
+              </button>
+            )}
+          </div>
         </div>
       ) : (
         <div className="plots-grid-container">

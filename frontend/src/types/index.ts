@@ -465,6 +465,10 @@ export interface SiteVisit {
   scheduledTimeSlot?: string;
   assignedAgentId?: string;
   assignedAgentName?: string;
+  /** Who assigned the follow-up to the agent above (same user when they took it themselves). */
+  assignedById?: string;
+  assignedByName?: string;
+  customerEmail?: string;
   status: 'Requested' | 'Pending' | 'Scheduled' | 'Confirmed' | 'Completed' | 'Rescheduled' | 'Cancelled' | 'No-show' | string;
   outcomeNotes?: string;
   visitorNote?: string;

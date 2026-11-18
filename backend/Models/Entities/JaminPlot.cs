@@ -40,6 +40,9 @@ public class JaminPlot
     public Customer? HeldByCustomer { get; set; }
     public string? HeldByCustomerName { get; set; }
     public string? HeldByCustomerPhone { get; set; }
+
+    /// <summary>Lead this plot is currently held for (null when held for a customer or a walk-in).</summary>
+    public int? HeldByLeadId { get; set; }
     public string? HoldByAgent { get; set; }
     public DateTime? HoldExpiresAt { get; set; }
 

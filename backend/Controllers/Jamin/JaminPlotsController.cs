@@ -18,7 +18,15 @@ public class JaminPlotsController : JaminTenantControllerBase
     public JaminPlotsController(ApplicationDbContext db) => _db = db;
 
     [HttpGet]
-    public async Task<IActionResult> GetPlots([FromQuery] int? projectId, [FromQuery] string? status, CancellationToken ct)
+    public async Task<IActionResult> GetPlots(
+        [FromQuery] int? projectId,
+        [FromQuery] string? status,
+        [FromQuery] string? facing,
+        [FromQuery] int? minArea,
+        [FromQuery] int? maxArea,
+        [FromQuery] decimal? minPrice,
+        [FromQuery] decimal? maxPrice,
+        CancellationToken ct)
     {
         try
         {
@@ -28,7 +36,23 @@ public class JaminPlotsController : JaminTenantControllerBase
             var query = _db.JaminPlots.AsNoTracking().Where(p => p.CompanyId == companyId);
             if (projectId.HasValue) query = query.Where(p => p.ProjectId == projectId.Value);
             if (!string.IsNullOrWhiteSpace(status) && status != "All") query = query.Where(p => p.Status == status);
-            var plots = (await query.OrderBy(p => p.ProjectId).ThenBy(p => p.PlotNumber).ToListAsync(ct)).Select(ToDto).ToList();
+            if (minArea.HasValue) query = query.Where(p => p.AreaSqFt >= minArea.Value);
+            if (maxArea.HasValue) query = query.Where(p => p.AreaSqFt <= maxArea.Value);
+            if (minPrice.HasValue) query = query.Where(p => p.Price >= minPrice.Value);
+            if (maxPrice.HasValue) query = query.Where(p => p.Price <= maxPrice.Value);
+
+            var rows = await query.OrderBy(p => p.ProjectId).ThenBy(p => p.PlotNumber).ToListAsync(ct);
+
+            // Facing is free text ("North-East", "north east"), so match on a normalized key in memory.
+            var facingKeys = (facing ?? string.Empty)
+                .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                .Select(NormalizeFacing)
+                .Where(k => k.Length > 0)
+                .ToHashSet();
+            if (facingKeys.Count > 0)
+                rows = rows.Where(p => facingKeys.Contains(NormalizeFacing(p.Facing))).ToList();
+
+            var plots = rows.Select(ToDto).ToList();
             return Ok(ApiResponse<List<JaminPlotResponseDto>>.SuccessResult(plots));
         }
         catch (Exception ex)
@@ -38,6 +62,63 @@ public class JaminPlotsController : JaminTenantControllerBase
         }
     }
 
+
+    /// <summary>
+    /// Plots a lead has selected: the plot currently held for them, their bookings, and site visits tied to a plot.
+    /// Access follows the normal lead scoping rules (the lead must be visible to the caller).
+    /// </summary>
+    [HttpGet("by-lead/{leadId:int}")]
+    public async Task<IActionResult> GetPlotsForLead(int leadId, [FromServices] backend.Services.Interfaces.ILeadService leadService, CancellationToken ct)
+    {
+        var companyId = JaminCompanyId;
+        var visible = await leadService.GetLeadByIdAsync(leadId, ct);
+        if (!visible.Success || visible.Data == null || visible.Data.CompanyId != companyId)
+            return NotFound(ApiResponse<List<LeadPlotSelectionDto>>.FailureResult("Lead not found."));
+
+        await ExpireOverdueHoldsAsync(companyId, ct);
+
+        var result = new List<LeadPlotSelectionDto>();
+
+        var held = await _db.JaminPlots.AsNoTracking()
+            .Where(p => p.CompanyId == companyId && p.HeldByLeadId == leadId && p.Status == "Hold")
+            .ToListAsync(ct);
+        foreach (var p in held)
+            result.Add(new LeadPlotSelectionDto { PlotId = p.Id, ProjectId = p.ProjectId, PlotNumber = p.PlotNumber, Facing = p.Facing, AreaSqFt = p.AreaSqFt, Price = p.Price, PlotStatus = p.Status, Source = "Hold", SourceStatus = "Hold", HoldExpiresAt = p.HoldExpiresAt, SelectedAt = p.UpdatedAt ?? p.CreatedAt });
+
+        var bookings = await _db.JaminBookings.AsNoTracking()
+            .Include(b => b.Plot)
+            .Where(b => b.CompanyId == companyId && b.LeadId == leadId && b.PlotId != null
+                        && b.Status != "Cancelled" && b.Status != "Voided" && b.Status != "Hold Expired")
+            .ToListAsync(ct);
+        foreach (var b in bookings.Where(b => b.Plot != null))
+        {
+            var p = b.Plot!;
+            result.Add(new LeadPlotSelectionDto { PlotId = p.Id, ProjectId = p.ProjectId, PlotNumber = p.PlotNumber, Facing = p.Facing, AreaSqFt = p.AreaSqFt, Price = p.Price, PlotStatus = p.Status, Source = "Booking", SourceStatus = b.Status, SelectedAt = b.CreatedAt });
+        }
+
+        var visits = await _db.SiteVisits.AsNoTracking()
+            .Include(v => v.Plot)
+            .Where(v => v.TenantId == companyId && v.LeadId == leadId && v.PlotId != null
+                        && v.Status != "Cancelled")
+            .ToListAsync(ct);
+        foreach (var v in visits.Where(v => v.Plot != null))
+        {
+            var p = v.Plot!;
+            result.Add(new LeadPlotSelectionDto { PlotId = p.Id, ProjectId = p.ProjectId, PlotNumber = p.PlotNumber, Facing = p.Facing, AreaSqFt = p.AreaSqFt, Price = p.Price, PlotStatus = p.Status, Source = "SiteVisit", SourceStatus = v.Status, SelectedAt = v.CreatedAt });
+        }
+
+        var projectIds = result.Select(r => r.ProjectId).Distinct().ToList();
+        var names = await _db.JaminProjects.AsNoTracking()
+            .Where(pr => pr.CompanyId == companyId && projectIds.Contains(pr.Id))
+            .ToDictionaryAsync(pr => pr.Id, pr => pr.Name, ct);
+        foreach (var r in result) r.ProjectName = names.GetValueOrDefault(r.ProjectId);
+
+        return Ok(ApiResponse<List<LeadPlotSelectionDto>>.SuccessResult(
+            result.OrderByDescending(r => r.SelectedAt).ToList()));
+    }
+
+    private static string NormalizeFacing(string? value) =>
+        new string((value ?? string.Empty).Where(char.IsLetter).ToArray()).ToLowerInvariant();
 
     [HttpGet("{id:int}")]
     public async Task<IActionResult> GetPlot(int id, CancellationToken ct)
@@ -125,9 +206,17 @@ public class JaminPlotsController : JaminTenantControllerBase
         if (plot == null) return NotFound(ApiResponse<JaminPlotResponseDto>.FailureResult("Plot not found."));
         if (plot.Status == "Hold" && plot.HoldExpiresAt <= DateTime.UtcNow)
         {
-            plot.Status = "Available"; plot.HeldByCustomerId = null; plot.HeldByCustomerName = null; plot.HeldByCustomerPhone = null; plot.HoldByAgent = null; plot.HoldExpiresAt = null;
+            plot.Status = "Available"; plot.HeldByLeadId = null; plot.HeldByCustomerId = null; plot.HeldByCustomerName = null; plot.HeldByCustomerPhone = null; plot.HoldByAgent = null; plot.HoldExpiresAt = null;
         }
         if (plot.Status != "Available") return Conflict(ApiResponse<JaminPlotResponseDto>.FailureResult("Only available plots can be placed on hold."));
+        int? heldByLeadId = null;
+        if (dto.HeldByLeadId.HasValue)
+        {
+            var leadOk = await _db.Leads.AsNoTracking().AnyAsync(l => l.Id == dto.HeldByLeadId.Value && l.CompanyId == JaminCompanyId, ct);
+            if (!leadOk) return BadRequest(ApiResponse<JaminPlotResponseDto>.FailureResult("Lead not found."));
+            heldByLeadId = dto.HeldByLeadId;
+        }
+        plot.HeldByLeadId = heldByLeadId;
         plot.Status = "Hold"; plot.HeldByCustomerId = dto.HeldByCustomerId; plot.HeldByCustomerName = dto.CustomerName.Trim(); plot.HeldByCustomerPhone = dto.CustomerPhone.Trim(); plot.HoldByAgent = dto.HoldByAgent?.Trim();
         plot.HoldExpiresAt = DateTime.UtcNow.AddDays(dto.HoldDays); plot.UpdatedAt = DateTime.UtcNow;
         var holdProject = await _db.JaminProjects.FirstOrDefaultAsync(p => p.Id == plot.ProjectId && p.CompanyId == plot.CompanyId, ct);
@@ -154,6 +243,7 @@ public class JaminPlotsController : JaminTenantControllerBase
 
             plot.Status = "Available";
             plot.HeldByCustomerId = null;
+            plot.HeldByLeadId = null;
             plot.HeldByCustomerName = null;
             plot.HeldByCustomerPhone = null;
             plot.HoldByAgent = null;
@@ -212,7 +302,7 @@ public class JaminPlotsController : JaminTenantControllerBase
     {
         Id = p.Id, CompanyId = p.CompanyId, ProjectId = p.ProjectId, PlotNumber = p.PlotNumber,
         Dimensions = p.Dimensions, AreaSqFt = p.AreaSqFt, Facing = p.Facing, Status = p.Status,
-        Price = p.Price, PricePerSqft = p.PricePerSqft, HeldByCustomerId = p.HeldByCustomerId, HeldByCustomerName = p.HeldByCustomerName, HeldByCustomerPhone = p.HeldByCustomerPhone, HoldByAgent = p.HoldByAgent,
+        Price = p.Price, PricePerSqft = p.PricePerSqft, HeldByCustomerId = p.HeldByCustomerId, HeldByCustomerName = p.HeldByCustomerName, HeldByCustomerPhone = p.HeldByCustomerPhone, HeldByLeadId = p.HeldByLeadId, HoldByAgent = p.HoldByAgent,
         HoldExpiresAt = p.HoldExpiresAt, Notes = p.Notes, CreatedAt = p.CreatedAt, UpdatedAt = p.UpdatedAt
     };
 
@@ -240,6 +330,7 @@ public class JaminPlotsController : JaminTenantControllerBase
             {
                 p.Status = "Available";
                 p.HeldByCustomerId = null;
+                p.HeldByLeadId = null;
                 p.HeldByCustomerName = null;
                 p.HeldByCustomerPhone = null;
                 p.HoldByAgent = null;

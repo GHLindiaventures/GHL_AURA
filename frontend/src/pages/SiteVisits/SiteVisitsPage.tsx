@@ -115,11 +115,10 @@ export const SiteVisitsPage: React.FC = () => {
       const dedupedCustomers: Customer[] = [];
 
       for (const c of combinedCustomers) {
-        if (!c.name || !c.phone) continue;
+        if (!c.name) continue; // keep customers without a phone; only exact duplicates (same id or phone) are dropped
         const phoneKey = normPhone(c.phone);
         const nameKey = c.name.trim().toLowerCase();
         if (phoneKey && seenCustomerPhones.has(phoneKey)) continue;
-        if (nameKey && seenCustomerNames.has(nameKey)) continue;
         if (phoneKey) seenCustomerPhones.add(phoneKey);
         if (nameKey) seenCustomerNames.add(nameKey);
         dedupedCustomers.push(c);
@@ -143,11 +142,9 @@ export const SiteVisitsPage: React.FC = () => {
 
           // If this person already exists in Customers, do not show in Leads dropdown
           if (phoneKey && seenCustomerPhones.has(phoneKey)) continue;
-          if (nameKey && seenCustomerNames.has(nameKey)) continue;
 
           // Deduplicate among leads
           if (phoneKey && seenLeadPhones.has(phoneKey)) continue;
-          if (nameKey && seenLeadNames.has(nameKey)) continue;
 
           if (phoneKey) seenLeadPhones.add(phoneKey);
           if (nameKey) seenLeadNames.add(nameKey);
@@ -216,6 +213,7 @@ export const SiteVisitsPage: React.FC = () => {
     setSelectedCustomerId('');
     setCustomerName('');
     setCustomerPhone('');
+    // An agent follows the visit up themselves by default (and can hand it to a colleague); admins pick one.
     const defaultAgent = canAssignSiteVisits
       ? agents[0]
       : agents.find(agent => String(agent.id) === String(user?.id));
@@ -276,48 +274,7 @@ export const SiteVisitsPage: React.FC = () => {
         throw new Error('The site visit could not be saved. Please try again.');
       }
 
-      // Save locally to storageService to ensure immediate linkage
-      storageService.saveSiteVisit(created);
-
-      // If linked to a lead, log in lead timeline/notes and update status strictly by LeadId
-      const leadMatch = cleanLeadId
-        ? (leads.find(l => l.id === cleanLeadId || String(l.id) === String(cleanLeadId)) || null)
-        : null;
-
-      if (leadMatch) {
-        const newStatus = (leadMatch.status !== 'Converted' && leadMatch.status !== 'Booking In Progress')
-          ? ('Site Visit Scheduled' as const)
-          : leadMatch.status;
-        const updatedLead = {
-          ...leadMatch,
-          status: newStatus,
-          notes: `${leadMatch.notes ? leadMatch.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] Site Visit Scheduled: ${project?.name || ''} (${plot?.plotNumber || 'Tour'}) on ${dateFormatted}`,
-        };
-        storageService.saveLead(updatedLead);
-        setLeads(prev => prev.map(l => l.id === leadMatch.id ? updatedLead : l));
-
-        // Persist directly to backend database
-        const numericId = parseInt(String(leadMatch.id).replace('db-', ''), 10);
-        if (!Number.isNaN(numericId)) {
-          apiClient.put(`/leads/${numericId}`, {
-            name: updatedLead.name,
-            phone: updatedLead.phone,
-            status: newStatus,
-            companyId: 2,
-          }).catch(() => { });
-        }
-      }
-
-      // If linked to a customer, log in customer notes
-      if (cleanCustomerId) {
-        const matchingCust = customers.find(c => c.id === cleanCustomerId);
-        if (matchingCust) {
-          storageService.saveCustomer({
-            ...matchingCust,
-            notes: `${matchingCust.notes ? matchingCust.notes + '\n\n' : ''}[${new Date().toLocaleDateString()}] Site Visit Scheduled: ${project?.name || ''} (${plot?.plotNumber || 'Tour'}) on ${dateFormatted}`,
-          });
-        }
-      }
+      // The server is the single source of truth: it saves the visit, updates the lead status and notifies the follow-up agent.
 
       window.dispatchEvent(new Event('nexus_storage_updated'));
       setIsScheduleModalOpen(false);
@@ -441,7 +398,6 @@ export const SiteVisitsPage: React.FC = () => {
 
     // ── 1. INSTANT 0ms OPTIMISTIC UI UPDATE ────────────────────────────────────
     setSiteVisits(prev => prev.map(sv => String(sv.id) === String(updatedVisit.id) ? updatedVisit : sv));
-    storageService.saveSiteVisit(updatedVisit);
     setIsManageModalOpen(false);
     setManagingVisit(null);
     toast.success(`✓ Site visit updated to "${manageStatus}"!`);
@@ -460,8 +416,8 @@ export const SiteVisitsPage: React.FC = () => {
         if (project?.name) payload.projectName = project.name;
         if (managePlotId) payload.plotId = Number(managePlotId);
         if (plot?.plotNumber) payload.plotNumber = plot.plotNumber;
-        if (canAssignSiteVisits && manageHostAgentId) payload.assignedAgentId = manageHostAgentId;
-        if (canAssignSiteVisits && manageHostAgentName) payload.assignedAgentName = manageHostAgentName;
+        if (manageHostAgentId) payload.assignedAgentId = manageHostAgentId;
+        if (manageHostAgentName) payload.assignedAgentName = manageHostAgentName;
       }
 
       const updated = await jaminApiService.updateSiteVisit(oldVisit.id, payload);
@@ -469,39 +425,8 @@ export const SiteVisitsPage: React.FC = () => {
         throw new Error('Server update failed');
       }
 
-      // If linked to a lead, log in lead timeline/notes and update status strictly by LeadId
-      const manageLeadMatch = oldVisit.leadId
-        ? (leads.find(l => l.id === oldVisit.leadId || String(l.id) === String(oldVisit.leadId)) || null)
-        : null;
-
-      if (manageLeadMatch) {
-        const timestamp = new Date().toLocaleDateString();
-        const shouldMarkCompleted = manageStatus === 'Completed' && manageLeadMatch.status !== 'Converted' && manageLeadMatch.status !== 'Booking In Progress';
-        const shouldMarkScheduled = (manageStatus === 'Scheduled' || manageStatus === 'Rescheduled') && manageLeadMatch.status !== 'Converted' && manageLeadMatch.status !== 'Booking In Progress';
-        const newStatus = shouldMarkCompleted
-          ? ('Site Visit Completed' as const)
-          : shouldMarkScheduled
-            ? ('Site Visit Scheduled' as const)
-            : manageLeadMatch.status;
-        const updatedLead = {
-          ...manageLeadMatch,
-          status: newStatus,
-          notes: `${manageLeadMatch.notes ? manageLeadMatch.notes + '\n\n' : ''}[${timestamp}] Site Visit Status: ${manageStatus}${isRescheduled ? ` (New slot: ${formattedSlot})` : ''} — ${trimmedNote || 'Updated'}`,
-        };
-        storageService.saveLead(updatedLead);
-        setLeads(prev => prev.map(l => l.id === manageLeadMatch.id ? updatedLead : l));
-
-        const numericId = parseInt(String(manageLeadMatch.id).replace('db-', ''), 10);
-        if (!Number.isNaN(numericId)) {
-          apiClient.put(`/leads/${numericId}`, {
-            name: updatedLead.name,
-            phone: updatedLead.phone,
-            status: newStatus,
-            companyId: 2,
-          }).catch(() => { });
-        }
-      }
-
+      // Lead status / follow-ups are updated by the server; reload so the row shows the server's assignment details.
+      void loadAll();
       storageService.addAuditLog({
         id: `aud-${Date.now()}`,
         timestamp: new Date().toISOString(),
@@ -522,7 +447,6 @@ export const SiteVisitsPage: React.FC = () => {
       console.error('Failed to update visit on backend:', err);
       // Revert optimistic update on error
       setSiteVisits(prev => prev.map(sv => String(sv.id) === String(oldVisit.id) ? oldVisit : sv));
-      storageService.saveSiteVisit(oldVisit);
       const msg = err?.response?.data?.message || err?.message || 'Failed to update visit on server. Reverted.';
       toast.error(msg);
     }
@@ -530,20 +454,6 @@ export const SiteVisitsPage: React.FC = () => {
 
   const handleConfirmVisit = async (sv: SiteVisit) => {
     await jaminApiService.confirmSiteVisit(sv.id);
-    const targetLead = sv.leadId
-      ? (leads.find(l => l.id === sv.leadId || String(l.id) === String(sv.leadId)) || null)
-      : null;
-    if (targetLead && targetLead.status !== 'Converted' && targetLead.status !== 'Booking In Progress') {
-      const numId = parseInt(String(targetLead.id).replace('db-', ''), 10);
-      if (!Number.isNaN(numId)) {
-        apiClient.put(`/leads/${numId}`, {
-          name: targetLead.name,
-          phone: targetLead.phone,
-          status: 'Site Visit Scheduled',
-          companyId: 2,
-        }).catch(() => { });
-      }
-    }
     await loadAll();
   };
 
@@ -583,7 +493,10 @@ export const SiteVisitsPage: React.FC = () => {
               </span>
             )}
           </div>
-          <div className="sitevisit-client-phone">{sv.customerPhone}</div>
+          <div className="sitevisit-client-phone">{sv.customerPhone || '—'}</div>
+          {sv.customerEmail ? (
+            <div className="sitevisit-client-phone" style={{ opacity: 0.8 }}>{sv.customerEmail}</div>
+          ) : null}
         </div>
       ),
     },
@@ -602,8 +515,31 @@ export const SiteVisitsPage: React.FC = () => {
     },
     {
       key: 'assignedAgentName',
-      header: 'Host Agent',
-      render: sv => <span className="sitevisit-agent-name">{sv.assignedAgentName}</span>,
+      header: 'Follow-up Agent',
+      sortable: true,
+      render: sv => {
+        const agent = sv.assignedAgentName || 'Unassigned';
+        const selfTaken = !!sv.assignedById && sv.assignedById === sv.assignedAgentId;
+        const assigner = !selfTaken ? sv.assignedByName : '';
+        const isMe = !!user?.id && String(sv.assignedAgentId) === String(user.id);
+        return (
+          <div>
+            <span className="sitevisit-agent-name">
+              {agent}
+              {isMe ? <span style={{ marginLeft: 6, fontSize: 10, fontWeight: 700, color: '#047857' }}>(you)</span> : null}
+            </span>
+            {assigner ? (
+              <div style={{ fontSize: 11.5, color: 'var(--text-secondary, #64748b)', marginTop: 2 }}>
+                Assigned by {assigner}
+              </div>
+            ) : selfTaken ? (
+              <div style={{ fontSize: 11.5, color: 'var(--text-secondary, #64748b)', marginTop: 2 }}>
+                Self-assigned
+              </div>
+            ) : null}
+          </div>
+        );
+      },
     },
     {
       key: 'status',
@@ -973,9 +909,9 @@ export const SiteVisitsPage: React.FC = () => {
             </div>
           </div>
 
-          {/* Host Agent */}
-          {canAssignSiteVisits && <div className="form-group">
-            <label className="form-label">Host Escort Agent</label>
+          {/* Follow-up Agent */}
+          <div className="form-group">
+            <label className="form-label">Follow-up Agent *</label>
             <select
               className="form-select"
               value={hostAgentId}
@@ -989,11 +925,14 @@ export const SiteVisitsPage: React.FC = () => {
               <option value="0">-- Select Agent --</option>
               {agents.map(ag => (
                 <option key={ag.id} value={ag.id}>
-                  {ag.name} ({ag.email})
+                  {String(ag.id) === String(user?.id) ? `${ag.name} (me)` : `${ag.name} (${ag.email})`}
                 </option>
               ))}
             </select>
-          </div>}
+            <div style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)', marginTop: 4 }}>
+              Follow it up yourself, or pick a colleague. They are notified with the customer details and that you assigned it.
+            </div>
+          </div>
 
           {/* Notes */}
           <div className="form-group">
@@ -1179,9 +1118,9 @@ export const SiteVisitsPage: React.FC = () => {
                 </div>
               </div>
 
-              {/* Host Agent */}
-              {canAssignSiteVisits && <div className="form-group">
-                <label className="form-label">Host Escort Agent</label>
+              {/* Follow-up Agent */}
+              {<div className="form-group">
+                <label className="form-label">Follow-up Agent</label>
                 <select
                   className="form-select"
                   value={manageHostAgentId}

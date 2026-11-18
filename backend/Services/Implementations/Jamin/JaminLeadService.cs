@@ -68,6 +68,8 @@ public class JaminLeadService : IJaminLeadService
             ScheduledAt = scheduledAt,
             AssignedAgentId = agentId,
             AssignedAgentName = agentName,
+            AssignedByName = "Website (auto-assigned)",
+            AssignedAt = DateTime.UtcNow,
             Status = "Requested",
             VisitorNote = dto.AnythingWeShouldKnow,
             OutcomeNotes = "Website site visit booking received. Needs desk confirmation call.",

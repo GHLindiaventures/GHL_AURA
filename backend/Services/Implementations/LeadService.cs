@@ -1020,6 +1020,10 @@ public class LeadService : ILeadService
         lead.CustomFieldsJson = customFields.Count > 0 ? JsonSerializer.Serialize(customFields) : null;
         lead.UpdatedAt = DateTime.UtcNow;
 
+        // Jamin: a lead scheduled for a site visit from the Leads module must appear in the Site Visit module.
+        if (!string.Equals(previousStatus, lead.Status, StringComparison.OrdinalIgnoreCase))
+            await backend.Services.Implementations.Jamin.JaminSiteVisitSync.EnsureForLeadAsync(_context, lead, ct);
+
         await _context.SaveChangesAsync(ct);
 
         if (isNewCustomer && newCustomer?.HandoverId.HasValue == true)

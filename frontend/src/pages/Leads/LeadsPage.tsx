@@ -49,6 +49,7 @@ import { SlotConflictModal } from '../../components/common/SlotConflictModal';
 import { ErrorAlertBanner } from '../../components/common/ErrorAlertBanner';
 import { getAgentRoleInfo, getAssigningSalesAgentInfo, canPlaceCalls } from '../../utils/agentRoleUtils';
 import { LeadDetailDrawerContent } from '../../components/common/LeadDetailDrawerContent';
+import { LeadSelectedPlots } from '../../components/common/LeadSelectedPlots';
 import './LeadsPage.css';
 
 export const normalizePhone = (phone?: string): string | null => {
@@ -2243,6 +2244,10 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
                   )}
                 </div>
               </div>
+
+              {tenant?.slug === 'jamin' && !apiClient.isMockMode() && (
+                <LeadSelectedPlots leadId={selectedLead.id} />
+              )}
 
               <LeadDetailDrawerContent
                 contactName={selectedLead.name}

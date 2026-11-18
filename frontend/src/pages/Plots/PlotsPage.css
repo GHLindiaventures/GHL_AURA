@@ -261,3 +261,89 @@
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
 }
 
+
+/* ── Requirement filters (facing / area / price) ───────────────────────── */
+.plots-spec-filters {
+  padding: 14px 20px;
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 16px 28px;
+  background-color: var(--bg-surface);
+}
+
+.plots-spec-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  min-width: 0;
+}
+
+.plots-spec-label {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-secondary, #64748b);
+}
+
+.plots-spec-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.plots-spec-chip {
+  padding: 5px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--border-base, #e2e8f0);
+  background: var(--bg-surface, #ffffff);
+  color: var(--text-primary, #334155);
+  font-size: 12.5px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s;
+}
+
+.plots-spec-chip:hover {
+  border-color: #94a3b8;
+}
+
+.plots-spec-chip.active {
+  background: #ecfdf5;
+  border-color: #34d399;
+  color: #047857;
+  font-weight: 600;
+}
+
+.plots-spec-range {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.plots-spec-range input {
+  width: 96px;
+  padding: 6px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border-base, #e2e8f0);
+  background: var(--bg-surface, #ffffff);
+  color: var(--text-primary, #334155);
+  font-size: 13px;
+}
+
+.plots-spec-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-left: auto;
+  align-self: flex-end;
+  font-size: 12.5px;
+  color: var(--text-secondary, #64748b);
+}
+
+@media (max-width: 640px) {
+  .plots-spec-filters { padding: 12px 16px; gap: 14px; }
+  .plots-spec-range input { width: 84px; }
+  .plots-spec-summary { margin-left: 0; width: 100%; justify-content: space-between; }
+}

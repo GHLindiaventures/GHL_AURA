@@ -16,6 +16,11 @@ public class JaminSiteVisitDto
     public string ScheduledAt { get; set; } = string.Empty;
     public int? AssignedAgentId { get; set; }
     public string? AssignedAgentName { get; set; }
+    /// <summary>Who assigned the follow-up to the agent above (same as the agent when they took it themselves).</summary>
+    public int? AssignedById { get; set; }
+    public string? AssignedByName { get; set; }
+    public DateTime? AssignedAt { get; set; }
+    public string? CustomerEmail { get; set; }
     public string Status { get; set; } = "Requested"; // Requested | Pending | Scheduled | Completed | Rescheduled | Cancelled | No-show
     public string? VisitorNote { get; set; }
     public string? OutcomeNotes { get; set; }

@@ -293,7 +293,7 @@ export const NotificationsPage: React.FC<NotificationsPageProps> = ({ onNavigate
                   >
                     {n.type === 'call' ? (
                       <Phone size={18} />
-                    ) : n.type === 'followup' ? (
+                    ) : n.type === 'followup' || n.type === 'site_visit' ? (
                       <Calendar size={18} />
                     ) : n.type === 'alert' || n.type === 'broadcast' ? (
                       <AlertTriangle size={18} />

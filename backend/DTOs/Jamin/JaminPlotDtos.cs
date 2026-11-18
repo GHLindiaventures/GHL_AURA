@@ -17,6 +17,7 @@ public class JaminPlotResponseDto
     public int? HeldByCustomerId { get; set; }
     public string? HeldByCustomerName { get; set; }
     public string? HeldByCustomerPhone { get; set; }
+    public int? HeldByLeadId { get; set; }
     public string? HoldByAgent { get; set; }
     public DateTime? HoldExpiresAt { get; set; }
     public string? Notes { get; set; }
@@ -41,6 +42,7 @@ public class CreateJaminPlotDto
 public class HoldPlotRequestDto
 {
     public int? HeldByCustomerId { get; set; }
+    public int? HeldByLeadId { get; set; }
     public string CustomerName { get; set; } = string.Empty;
     public string CustomerPhone { get; set; } = string.Empty;
     public string? HoldByAgent { get; set; }
@@ -62,4 +64,23 @@ public class UpdateJaminPlotDto
     public string? HeldByCustomerPhone { get; set; }
     public string? HoldByAgent { get; set; }
     public string? Notes { get; set; }
+}
+
+/// <summary>A plot a lead has shown interest in (held, booked, or planned for a site visit).</summary>
+public class LeadPlotSelectionDto
+{
+    public int PlotId { get; set; }
+    public int ProjectId { get; set; }
+    public string? ProjectName { get; set; }
+    public string PlotNumber { get; set; } = string.Empty;
+    public string Facing { get; set; } = string.Empty;
+    public int AreaSqFt { get; set; }
+    public decimal Price { get; set; }
+    public string PlotStatus { get; set; } = string.Empty;
+
+    /// <summary>Hold | Booking | SiteVisit.</summary>
+    public string Source { get; set; } = string.Empty;
+    public string SourceStatus { get; set; } = string.Empty;
+    public DateTime? HoldExpiresAt { get; set; }
+    public DateTime? SelectedAt { get; set; }
 }

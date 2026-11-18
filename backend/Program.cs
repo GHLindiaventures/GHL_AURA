@@ -706,6 +706,11 @@ using (var scope = app.Services.CreateScope())
                         CONSTRAINT ""FK_site_visits_tenants_TenantId"" FOREIGN KEY (""TenantId"") REFERENCES tenants (""Id"") ON DELETE CASCADE
                     );
 
+                    ALTER TABLE site_visits ADD COLUMN IF NOT EXISTS ""AssignedById"" integer;
+                    ALTER TABLE site_visits ADD COLUMN IF NOT EXISTS ""AssignedByName"" character varying(150);
+                    ALTER TABLE site_visits ADD COLUMN IF NOT EXISTS ""AssignedAt"" timestamp with time zone;
+                    CREATE INDEX IF NOT EXISTS ""IX_site_visits_AssignedAgentId"" ON site_visits (""AssignedAgentId"");
+
                     -- 6. Ensure Lead columns for Jamin
                     IF EXISTS (SELECT 1 FROM information_schema.tables WHERE table_name = 'leads') THEN
                         ALTER TABLE leads ADD COLUMN IF NOT EXISTS ""TargetDevelopment"" text;
@@ -746,7 +751,9 @@ using (var scope = app.Services.CreateScope())
 
                     -- 10. Add helpful indexes
                     CREATE INDEX IF NOT EXISTS ""IX_jamin_plots_CompanyId_ProjectId_Status"" ON jamin_plots (""CompanyId"", ""ProjectId"", ""Status"");
+                    ALTER TABLE jamin_plots ADD COLUMN IF NOT EXISTS ""HeldByLeadId"" integer;
                     CREATE INDEX IF NOT EXISTS ""IX_jamin_plots_HeldByCustomerId"" ON jamin_plots (""HeldByCustomerId"");
+                    CREATE INDEX IF NOT EXISTS ""IX_jamin_plots_HeldByLeadId"" ON jamin_plots (""HeldByLeadId"");
                     CREATE INDEX IF NOT EXISTS ""IX_jamin_bookings_CompanyId_Status"" ON jamin_bookings (""CompanyId"", ""Status"");
                     CREATE INDEX IF NOT EXISTS ""IX_jamin_bookings_LeadId"" ON jamin_bookings (""LeadId"");
                     CREATE INDEX IF NOT EXISTS ""IX_jamin_bookings_CustomerId"" ON jamin_bookings (""CustomerId"");
@@ -754,6 +761,17 @@ using (var scope = app.Services.CreateScope())
                 END $$;
             ";
             db.Database.ExecuteSqlRaw(jaminSql);
+
+            // Single source of truth: make sure every Jamin lead already marked "Site Visit Scheduled" has a site_visits row.
+            try
+            {
+                var created = backend.Services.Implementations.Jamin.JaminSiteVisitSync.BackfillScheduledLeads(db);
+                if (created > 0) Console.WriteLine($"[Jamin Bazaar] Backfilled {created} site visit(s) from scheduled leads.");
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[Jamin Bazaar] Site visit backfill skipped: {ex.Message}");
+            }
 
             // Real Jamin Bazaar Data Initialization: Purge legacy mock data & populate genuine DTCP plots
             try
