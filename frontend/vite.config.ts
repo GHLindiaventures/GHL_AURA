@@ -7,7 +7,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     host: process.env.VITE_DOCKER === 'true' ? '0.0.0.0' : undefined,
-    allowedHosts: ['rocky-irritant-pointless.ngrok-free.dev'],
+    allowedHosts: true,
     watch: {
       usePolling: true,
       interval: 300,

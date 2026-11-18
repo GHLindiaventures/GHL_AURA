@@ -245,13 +245,14 @@ export const CustomersPage: React.FC = () => {
   const loadData = async () => {
     try {
       setLoadError(null);
-      const [custs, cCalls, cFollowups, cDeals, cLeads, cIrms] = await Promise.all([
+      const [custs, cCalls, cFollowups, cDeals, cLeads, cIrms, fetchedUsers] = await Promise.all([
         getCustomers(tenant?.id),
         getCalls(tenant?.id),
         getFollowups(tenant?.id),
         getDeals(tenant?.id),
         getLeads(tenant?.id),
         getCompanyIrms(tenant?.id).catch(() => storageService.getIrms(tenant?.id)),
+        adminUserService.getUsers(tenant?.id || tenant?.slug || '1').catch(() => null),
       ]);
       setCustomers(custs);
       const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
@@ -269,34 +270,35 @@ export const CustomersPage: React.FC = () => {
 
       // Load real IRM users and Sales Executives from database / adminUserService
       try {
-        const fetchedUsers = await adminUserService.getUsers(tenant?.id || tenant?.slug || '1');
-        const apiIrms: IrmProfile[] = (fetchedUsers || [])
-          .filter(u => !u.isCovered && (u.role?.code === 'irm' || u.role?.name?.toLowerCase().includes('irm') || u.role?.name?.toLowerCase().includes('investor')))
-          .map(u => ({
-            id: String(u.id),
-            name: u.name,
-            email: u.email,
-            phone: u.phone,
-            experience: '5 Years',
-            experienceYears: 5,
-            experienceLevel: 'Experienced' as const,
-            performance: 95,
-            status: 'Available' as const,
-          }));
-        if (apiIrms.length > 0) {
-          setDbIrms(apiIrms);
-        }
+        if (fetchedUsers) {
+          const apiIrms: IrmProfile[] = (fetchedUsers || [])
+            .filter(u => !u.isCovered && (u.role?.code === 'irm' || u.role?.name?.toLowerCase().includes('irm') || u.role?.name?.toLowerCase().includes('investor')))
+            .map(u => ({
+              id: String(u.id),
+              name: u.name,
+              email: u.email,
+              phone: u.phone,
+              experience: '5 Years',
+              experienceYears: 5,
+              experienceLevel: 'Experienced' as const,
+              performance: 95,
+              status: 'Available' as const,
+            }));
+          if (apiIrms.length > 0) {
+            setDbIrms(apiIrms);
+          }
 
-        const salesExecs = (fetchedUsers || [])
-          .filter(u => {
-            const code = (u.role?.code || '').toLowerCase();
-            const roleId = String(u.role?.id || '');
-            const roleName = (u.role?.name || '').toLowerCase();
-            return code === 'sales_executive' || roleId === '3' || roleName.includes('sales');
-          })
-          .map(u => ({ id: String(u.id), name: u.name }));
-        if (salesExecs.length > 0) {
-          setSalesExecutives(salesExecs);
+          const salesExecs = (fetchedUsers || [])
+            .filter(u => {
+              const code = (u.role?.code || '').toLowerCase();
+              const roleId = String(u.role?.id || '');
+              const roleName = (u.role?.name || '').toLowerCase();
+              return code === 'sales_executive' || roleId === '3' || roleName.includes('sales');
+            })
+            .map(u => ({ id: String(u.id), name: u.name }));
+          if (salesExecs.length > 0) {
+            setSalesExecutives(salesExecs);
+          }
         }
       } catch (userErr) {
         console.warn('Could not load users via adminUserService, using storage IRMs/Agents', userErr);

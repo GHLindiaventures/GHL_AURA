@@ -526,11 +526,30 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
 
     try {
       setLoadError(null);
-      const [updatedFollowups, updatedCustomers, updatedDeals, irmsList] = await Promise.all([
+      const leadsPromise = (async (): Promise<Lead[]> => {
+        if (isGhlAdmin) {
+          const res = await apiClient.get<any>('/sales-executive/leads?page=1&pageSize=200&assignment=unassigned');
+          if (res.success && res.data && res.data.items) {
+            return res.data.items.map((item: any) => ({
+              ...item,
+              id: String(item.id),
+              assignedAgentId: item.assignedAgentId ? String(item.assignedAgentId) : undefined,
+              customFields: item.customFields || {}
+            }));
+          } else {
+            throw new Error(res.message || 'Failed to load unassigned leads from server.');
+          }
+        } else {
+          return await getLeads(tenant?.id);
+        }
+      })();
+
+      const [updatedFollowups, updatedCustomers, updatedDeals, irmsList, loadedLeads] = await Promise.all([
         getFollowups(tenant?.id).catch(() => storageService.getFollowups(tenant?.id) || []),
         getCustomers(tenant?.id).catch(() => storageService.getCustomers(tenant?.id) || []),
         getDeals(tenant?.id).catch(() => storageService.getDeals(tenant?.id) || []),
         getCompanyIrms(tenant?.id).catch(() => []),
+        leadsPromise,
       ]);
       const localFus = storageService.getFollowups(tenant?.id) || [];
       const combinedFusMap = new Map<string, any>();
@@ -545,23 +564,6 @@ export const LeadsPage: React.FC<LeadsPageProps> = ({ onNavigate }) => {
       setCustomers(updatedCustomers || []);
       setDeals(updatedDeals || []);
       setCompanyIrms(irmsList || []);
-
-      let loadedLeads: Lead[] = [];
-      if (isGhlAdmin) {
-        const res = await apiClient.get<any>('/sales-executive/leads?page=1&pageSize=200&assignment=unassigned');
-        if (res.success && res.data && res.data.items) {
-          loadedLeads = res.data.items.map((item: any) => ({
-            ...item,
-            id: String(item.id),
-            assignedAgentId: item.assignedAgentId ? String(item.assignedAgentId) : undefined,
-            customFields: item.customFields || {}
-          }));
-        } else {
-          throw new Error(res.message || 'Failed to load unassigned leads from server.');
-        }
-      } else {
-        loadedLeads = await getLeads(tenant?.id);
-      }
       setLeads(loadedLeads);
       const uid = user?.id ? String(user.id) : (user?.email ? user.email.toLowerCase().trim() : '');
       const tenantId = tenant?.id || tenant?.slug || 'ghl';

@@ -209,6 +209,8 @@ export const getLastSeenTime = (tenantId: string, userId: string, route: string)
 export const setLastSeenTime = (tenantId: string, userId: string, route: string, timestamp?: number): void => {
   try {
     const time = timestamp && !isNaN(timestamp) ? timestamp : Date.now();
+    const current = getLastSeenTime(tenantId, userId, route);
+    if (current >= time) return;
     const tenants = getTenantAliases(tenantId);
     const uids = getUserAliases(userId);
     tenants.forEach(t => {
@@ -513,6 +515,13 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
   const [notificationsCount, setNotificationsCount] = useState(0);
   const [unreadChatCount, setUnreadChatCount] = useState(0);
   const routeItemsRef = useRef<Record<string, { items: any[]; getKey?: (item: any) => string }>>({});
+  const currentRouteRef = useRef(currentRoute);
+  currentRouteRef.current = currentRoute;
+  const updateSyncCountsRef = useRef<() => void>(() => {});
+
+  useEffect(() => {
+    updateSyncCountsRef.current();
+  }, [currentRoute]);
 
   useEffect(() => {
     let mounted = true;
@@ -536,7 +545,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         const getFuKey = (f: any) => String(f.id || f.followupId || `${f.contactName || f.contactPhone}_${f.scheduledAt || f.date || ''}`);
         routeItemsRef.current['followups'] = { items: scoped, getKey: getFuKey };
         if (currentRoute === 'followups') {
-          markRouteSeen(tenantId, uid, 'followups', scoped, getFuKey);
           setPendingFollowupsCount(0);
         } else {
           setPendingFollowupsCount(countUnseenItems(scoped, 'followups', getFuKey, tenantId, uid));
@@ -593,7 +601,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         const getLeadKey = (l: any) => String(l.id || l.phone || l.name);
         routeItemsRef.current['leads'] = { items: scoped, getKey: getLeadKey };
         if (currentRoute === 'leads') {
-          markRouteSeen(tenantId, uid, 'leads', scoped, getLeadKey);
           setLeadsCount(0);
         } else {
           setLeadsCount(countUnseenItems(scoped, 'leads', getLeadKey, tenantId, uid));
@@ -610,7 +617,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         const getIrmLeadKey = (l: any) => String(l.id || l.phone || l.name);
         routeItemsRef.current['assigned-leads'] = { items: irmLeads, getKey: getIrmLeadKey };
         if (currentRoute === 'assigned-leads') {
-          markRouteSeen(tenantId, uid, 'assigned-leads', irmLeads, getIrmLeadKey);
           setAssignedIrmLeadsCount(0);
         } else {
           setAssignedIrmLeadsCount(countUnseenItems(irmLeads, 'assigned-leads', getIrmLeadKey, tenantId, uid));
@@ -635,7 +641,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         const getConsKey = (c: any) => String(c.id || c.consultationId || `${c.clientName || c.contactPhone}_${c.dateTime || c.date || ''}`);
         routeItemsRef.current['consultations'] = { items: targetList, getKey: getConsKey };
         if (currentRoute === 'consultations') {
-          markRouteSeen(tenantId, uid, 'consultations', targetList, getConsKey);
           setConsultationsCount(0);
         } else {
           setConsultationsCount(countUnseenItems(targetList, 'consultations', getConsKey, tenantId, uid));
@@ -680,7 +685,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         const getCustKey = (c: any) => String(c.id || c.customerId || c.phone || c.email || c.name);
         routeItemsRef.current['customers'] = { items: scoped, getKey: getCustKey };
         if (currentRoute === 'customers') {
-          markRouteSeen(tenantId, uid, 'customers', scoped, getCustKey);
           setCustomersCount(0);
         } else {
           setCustomersCount(countUnseenItems(scoped, 'customers', getCustKey, tenantId, uid));
@@ -695,7 +699,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         const getDocKey = (d: any) => String(d.id || d.url || d.title || d.name);
         routeItemsRef.current['company-documents'] = { items: filtered, getKey: getDocKey };
         if (currentRoute === 'company-documents') {
-          markRouteSeen(tenantId, uid, 'company-documents', filtered, getDocKey);
           setDocumentsCount(0);
         } else {
           setDocumentsCount(countUnseenItems(filtered, 'company-documents', getDocKey, tenantId, uid));
@@ -720,7 +723,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         const getNiKey = (l: any) => String(l.id || l.phone || l.name);
         routeItemsRef.current['not-interested'] = { items: scoped, getKey: getNiKey };
         if (currentRoute === 'not-interested') {
-          markRouteSeen(tenantId, uid, 'not-interested', scoped, getNiKey);
           setNotInterestedCount(0);
         } else {
           setNotInterestedCount(countUnseenItems(scoped, 'not-interested', getNiKey, tenantId, uid));
@@ -748,7 +750,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         const getJunkKey = (l: any) => String(l.id || l.phone || l.name);
         routeItemsRef.current['junk'] = { items: scoped, getKey: getJunkKey };
         if (currentRoute === 'junk') {
-          markRouteSeen(tenantId, uid, 'junk', scoped, getJunkKey);
           setJunkCount(0);
         } else {
           setJunkCount(countUnseenItems(scoped, 'junk', getJunkKey, tenantId, uid));
@@ -764,7 +765,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         });
         routeItemsRef.current['archived-leads'] = { items: archivedLeads, getKey: getArchivedLeadKey };
         if (currentRoute === 'archived-leads') {
-          markRouteSeen(tenantId, uid, 'archived-leads', archivedLeads, getArchivedLeadKey);
           setArchivedLeadsCount(0);
         } else {
           setArchivedLeadsCount(countUnseenItems(archivedLeads, 'archived-leads', getArchivedLeadKey, tenantId, uid));
@@ -792,7 +792,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         const getKycKey = (d: any) => String(d.id || d.dealId || d.customerId);
         routeItemsRef.current['kyc'] = { items: kycDeals, getKey: getKycKey };
         if (currentRoute === 'kyc') {
-          markRouteSeen(tenantId, uid, 'kyc', kycDeals, getKycKey);
           setKycCount(0);
         } else {
           setKycCount(countUnseenItems(kycDeals, 'kyc', getKycKey, tenantId, uid));
@@ -812,7 +811,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         const getOppKey = (o: any) => String(o.id);
         routeItemsRef.current['opportunities'] = { items: scopedOpps, getKey: getOppKey };
         if (currentRoute === 'opportunities') {
-          markRouteSeen(tenantId, uid, 'opportunities', scopedOpps, getOppKey);
           setOpportunitiesCount(0);
         } else {
           setOpportunitiesCount(countUnseenItems(scopedOpps, 'opportunities', getOppKey, tenantId, uid));
@@ -832,7 +830,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         const getInvKey = (inv: any) => String(inv.id || inv.investorId || inv.phone || inv.email);
         routeItemsRef.current['investors'] = { items: scopedInvestors, getKey: getInvKey };
         if (currentRoute === 'investors') {
-          markRouteSeen(tenantId, uid, 'investors', scopedInvestors, getInvKey);
           setInvestorsCount(0);
         } else {
           setInvestorsCount(countUnseenItems(scopedInvestors, 'investors', getInvKey, tenantId, uid));
@@ -853,7 +850,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         const getLrKey = (r: any) => String(r.id);
         routeItemsRef.current['leave-requests'] = { items: pendingReqs, getKey: getLrKey };
         if (currentRoute === 'leave-requests') {
-          markRouteSeen(tenantId, uid, 'leave-requests', pendingReqs, getLrKey);
           setLeaveRequestsCount(0);
         } else {
           setLeaveRequestsCount(countUnseenItems(pendingReqs, 'leave-requests', getLrKey, tenantId, uid));
@@ -874,7 +870,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         const getTicketKey = (t: any) => String(t.id);
         routeItemsRef.current['support'] = { items: activeTickets, getKey: getTicketKey };
         if (currentRoute === 'support') {
-          markRouteSeen(tenantId, uid, 'support', activeTickets, getTicketKey);
           setSupportCount(0);
         } else {
           setSupportCount(countUnseenItems(activeTickets, 'support', getTicketKey, tenantId, uid));
@@ -941,7 +936,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
             const getFuKey = (f: any) => String(f.id || f.followupId || `${f.contactName || f.contactPhone}_${f.scheduledAt || f.date || ''}`);
             routeItemsRef.current['followups'] = { items: scoped, getKey: getFuKey };
             if (currentRoute === 'followups') {
-              markRouteSeen(tenantId, uid, 'followups', scoped, getFuKey);
               setPendingFollowupsCount(0);
             } else {
               setPendingFollowupsCount(countUnseenItems(scoped, 'followups', getFuKey, tenantId, uid));
@@ -1000,7 +994,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
           const getLeadKey = (l: any) => String(l.id || l.phone || l.name);
           routeItemsRef.current['leads'] = { items: scopedLeads, getKey: getLeadKey };
           if (currentRoute === 'leads') {
-            markRouteSeen(tenantId, uid, 'leads', scopedLeads, getLeadKey);
             setLeadsCount(0);
           } else {
             setLeadsCount(countUnseenItems(scopedLeads, 'leads', getLeadKey, tenantId, uid));
@@ -1014,7 +1007,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
           const getIrmLeadKey = (l: any) => String(l.id || l.phone || l.name);
           routeItemsRef.current['assigned-leads'] = { items: irmLeads, getKey: getIrmLeadKey };
           if (currentRoute === 'assigned-leads') {
-            markRouteSeen(tenantId, uid, 'assigned-leads', irmLeads, getIrmLeadKey);
             setAssignedIrmLeadsCount(0);
           } else {
             setAssignedIrmLeadsCount(countUnseenItems(irmLeads, 'assigned-leads', getIrmLeadKey, tenantId, uid));
@@ -1039,7 +1031,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
           const getConsKey = (c: any) => String(c.id || c.consultationId || `${c.clientName || c.contactPhone}_${c.dateTime || c.date || ''}`);
           routeItemsRef.current['consultations'] = { items: targetList, getKey: getConsKey };
           if (currentRoute === 'consultations') {
-            markRouteSeen(tenantId, uid, 'consultations', targetList, getConsKey);
             setConsultationsCount(0);
           } else {
             setConsultationsCount(countUnseenItems(targetList, 'consultations', getConsKey, tenantId, uid));
@@ -1086,7 +1077,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
           const getCustKey = (c: any) => String(c.id || c.customerId || c.phone || c.email || c.name);
           routeItemsRef.current['customers'] = { items: scoped, getKey: getCustKey };
           if (currentRoute === 'customers') {
-            markRouteSeen(tenantId, uid, 'customers', scoped, getCustKey);
             setCustomersCount(0);
           } else {
             setCustomersCount(countUnseenItems(scoped, 'customers', getCustKey, tenantId, uid));
@@ -1099,7 +1089,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
             const getDocKey = (d: any) => String(d.id || d.url || d.title || d.name);
             routeItemsRef.current['company-documents'] = { items: res.data, getKey: getDocKey };
             if (currentRoute === 'company-documents') {
-              markRouteSeen(tenantId, uid, 'company-documents', res.data, getDocKey);
               setDocumentsCount(0);
             } else {
               setDocumentsCount(countUnseenItems(res.data, 'company-documents', getDocKey, tenantId, uid));
@@ -1124,7 +1113,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
           const getNiKey = (l: any) => String(l.id || l.phone || l.name);
           routeItemsRef.current['not-interested'] = { items: scoped, getKey: getNiKey };
           if (currentRoute === 'not-interested') {
-            markRouteSeen(tenantId, uid, 'not-interested', scoped, getNiKey);
             setNotInterestedCount(0);
           } else {
             setNotInterestedCount(countUnseenItems(scoped, 'not-interested', getNiKey, tenantId, uid));
@@ -1148,7 +1136,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
           const getJunkKey = (l: any) => String(l.id || l.phone || l.name);
           routeItemsRef.current['junk'] = { items: scoped, getKey: getJunkKey };
           if (currentRoute === 'junk') {
-            markRouteSeen(tenantId, uid, 'junk', scoped, getJunkKey);
             setJunkCount(0);
           } else {
             setJunkCount(countUnseenItems(scoped, 'junk', getJunkKey, tenantId, uid));
@@ -1165,7 +1152,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
           });
           routeItemsRef.current['archived-leads'] = { items: archived, getKey: getArchivedLeadKey };
           if (currentRoute === 'archived-leads') {
-            markRouteSeen(tenantId, uid, 'archived-leads', archived, getArchivedLeadKey);
             setArchivedLeadsCount(0);
           } else {
             setArchivedLeadsCount(countUnseenItems(archived, 'archived-leads', getArchivedLeadKey, tenantId, uid));
@@ -1193,7 +1179,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
           const getKycKey = (d: any) => String(d.id || d.dealId || d.customerId);
           routeItemsRef.current['kyc'] = { items: kycDeals, getKey: getKycKey };
           if (currentRoute === 'kyc') {
-            markRouteSeen(tenantId, uid, 'kyc', kycDeals, getKycKey);
             setKycCount(0);
           } else {
             setKycCount(countUnseenItems(kycDeals, 'kyc', getKycKey, tenantId, uid));
@@ -1213,7 +1198,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
           const getOppKey = (o: any) => String(o.id);
           routeItemsRef.current['opportunities'] = { items: scopedOpps, getKey: getOppKey };
           if (currentRoute === 'opportunities') {
-            markRouteSeen(tenantId, uid, 'opportunities', scopedOpps, getOppKey);
             setOpportunitiesCount(0);
           } else {
             setOpportunitiesCount(countUnseenItems(scopedOpps, 'opportunities', getOppKey, tenantId, uid));
@@ -1233,7 +1217,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
           const getInvKey = (inv: any) => String(inv.id || inv.investorId || inv.phone || inv.email);
           routeItemsRef.current['investors'] = { items: scopedInvestors, getKey: getInvKey };
           if (currentRoute === 'investors') {
-            markRouteSeen(tenantId, uid, 'investors', scopedInvestors, getInvKey);
             setInvestorsCount(0);
           } else {
             setInvestorsCount(countUnseenItems(scopedInvestors, 'investors', getInvKey, tenantId, uid));
@@ -1246,7 +1229,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
           const getLrKey = (r: any) => String(r.id);
           routeItemsRef.current['leave-requests'] = { items: remoteReqs, getKey: getLrKey };
           if (currentRoute === 'leave-requests') {
-            markRouteSeen(tenantId, uid, 'leave-requests', remoteReqs, getLrKey);
             setLeaveRequestsCount(0);
           } else {
             setLeaveRequestsCount(countUnseenItems(remoteReqs, 'leave-requests', getLrKey, tenantId, uid));
@@ -1259,7 +1241,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
           const getTicketKey = (t: any) => String(t.id);
           routeItemsRef.current['support'] = { items: remoteTickets, getKey: getTicketKey };
           if (currentRoute === 'support') {
-            markRouteSeen(tenantId, uid, 'support', remoteTickets, getTicketKey);
             setSupportCount(0);
           } else {
             setSupportCount(countUnseenItems(remoteTickets, 'support', getTicketKey, tenantId, uid));
@@ -1268,53 +1249,61 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
       } catch {}
     };
 
-updateAllBadges();
+    updateAllBadges();
     if (uid && uid !== 'anonymous') {
       syncBadgeStateWithServer(tenantId, uid).then(() => {
-        if (mounted) updateAllBadges();
+        if (mounted) updateSyncCounts();
       });
     }
 
     const serverSyncInterval = setInterval(() => {
       if (mounted && uid && uid !== 'anonymous') {
-        syncBadgeStateWithServer(tenantId, uid);
+        syncBadgeStateWithServer(tenantId, uid).then(() => {
+          if (mounted) updateSyncCounts();
+        });
       }
-    }, 20000);
+    }, 60000);
 
-    let timeoutId: any;
-    const handleDebouncedUpdate = () => {
-      clearTimeout(timeoutId);
-      timeoutId = setTimeout(() => {
-        updateAllBadges();
-      }, 200);
+    let remoteTimeoutId: any;
+    const handleDebouncedRemoteUpdate = () => {
+      clearTimeout(remoteTimeoutId);
+      remoteTimeoutId = setTimeout(() => {
+        if (mounted) updateAllBadges();
+      }, 1000);
     };
 
-    window.addEventListener('nexus_storage_updated', handleDebouncedUpdate);
-    window.addEventListener('nexus_seen_updated', handleDebouncedUpdate);
-    window.addEventListener('nexus_chat_updated', handleDebouncedUpdate);
-    window.addEventListener('nexus_docs_updated', handleDebouncedUpdate);
-    window.addEventListener('nexus_handover_updated', handleDebouncedUpdate);
-    window.addEventListener('storage', handleDebouncedUpdate);
-    window.addEventListener('storage-updated', handleDebouncedUpdate);
+    let localTimeoutId: any;
+    const handleSeenUpdate = () => {
+      clearTimeout(localTimeoutId);
+      localTimeoutId = setTimeout(() => {
+        if (mounted) updateSyncCounts();
+      }, 150);
+    };
+
+    window.addEventListener('nexus_storage_updated', handleDebouncedRemoteUpdate);
+    window.addEventListener('nexus_seen_updated', handleSeenUpdate);
+    window.addEventListener('nexus_chat_updated', handleSeenUpdate);
+    window.addEventListener('nexus_docs_updated', handleDebouncedRemoteUpdate);
+    window.addEventListener('nexus_handover_updated', handleDebouncedRemoteUpdate);
+    window.addEventListener('storage', handleDebouncedRemoteUpdate);
+    window.addEventListener('storage-updated', handleDebouncedRemoteUpdate);
     const handleFocusSync = () => {
-      handleDebouncedUpdate();
-      if (uid && uid !== 'anonymous') {
-        syncBadgeStateWithServer(tenantId, uid);
-      }
+      handleSeenUpdate();
     };
     window.addEventListener('focus', handleFocusSync);
 
     return () => {
       mounted = false;
       clearInterval(serverSyncInterval);
-      clearTimeout(timeoutId);
-      window.removeEventListener('nexus_storage_updated', handleDebouncedUpdate);
-      window.removeEventListener('nexus_seen_updated', handleDebouncedUpdate);
-      window.removeEventListener('nexus_chat_updated', handleDebouncedUpdate);
-      window.removeEventListener('nexus_docs_updated', handleDebouncedUpdate);
-      window.removeEventListener('nexus_handover_updated', handleDebouncedUpdate);
-      window.removeEventListener('storage', handleDebouncedUpdate);
-      window.removeEventListener('storage-updated', handleDebouncedUpdate);
+      clearTimeout(remoteTimeoutId);
+      clearTimeout(localTimeoutId);
+      window.removeEventListener('nexus_storage_updated', handleDebouncedRemoteUpdate);
+      window.removeEventListener('nexus_seen_updated', handleSeenUpdate);
+      window.removeEventListener('nexus_chat_updated', handleSeenUpdate);
+      window.removeEventListener('nexus_docs_updated', handleDebouncedRemoteUpdate);
+      window.removeEventListener('nexus_handover_updated', handleDebouncedRemoteUpdate);
+      window.removeEventListener('storage', handleDebouncedRemoteUpdate);
+      window.removeEventListener('storage-updated', handleDebouncedRemoteUpdate);
       window.removeEventListener('focus', handleFocusSync);
     };
   }, [tenant?.id, tenant?.slug, user?.id, user?.name, user?.role?.code, user?.companyId, currentRoute]);

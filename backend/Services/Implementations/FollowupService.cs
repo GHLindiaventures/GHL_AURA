@@ -14,6 +14,7 @@ public class FollowupService : IFollowupService
     private readonly ApplicationDbContext _context;
     private readonly ICurrentUserService _currentUser;
     private readonly IIrmOtherService _otherService;
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<int, DateTime> _lastStaleFollowupCleanup = new();
 
     public FollowupService(ApplicationDbContext context, ICurrentUserService currentUser, IIrmOtherService? otherService = null)
     {
@@ -212,8 +213,10 @@ public class FollowupService : IFollowupService
         // in the Follow-up stage (i.e., Qualified, Converted, Not Interested, Junk)
         // or a Deal exists in KYC or Opportunities stages.
         var pendingEntities = entities.Where(f => f.Status == FollowupStatus.Pending).ToList();
-        if (pendingEntities.Count > 0)
+        var shouldRunCleanup = pendingEntities.Count > 0 && (!_lastStaleFollowupCleanup.TryGetValue(companyId, out var lastClean) || (DateTime.UtcNow - lastClean) > TimeSpan.FromSeconds(60));
+        if (shouldRunCleanup)
         {
+            _lastStaleFollowupCleanup[companyId] = DateTime.UtcNow;
             var pendingContactIds = pendingEntities.Where(f => !string.IsNullOrEmpty(f.ContactId)).Select(f => f.ContactId).Distinct().ToList();
             var pendingContactPhones = pendingEntities.Where(f => !string.IsNullOrEmpty(f.ContactPhone)).Select(f => f.ContactPhone).Distinct().ToList();
 

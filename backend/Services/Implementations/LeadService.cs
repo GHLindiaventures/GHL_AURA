@@ -18,6 +18,7 @@ public class LeadService : ILeadService
     private readonly ICurrentUserService _currentUser;
     private readonly IIrmOtherService _otherService;
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> _leadCreationLocks = new();
+    private static readonly ConcurrentDictionary<int, DateTime> _lastReconciliationTimes = new();
 
     private readonly backend.Services.Interfaces.ICompanyClock _clock;
 
@@ -167,6 +168,9 @@ public class LeadService : ILeadService
     {
         try
         {
+            if (_lastReconciliationTimes.TryGetValue(companyId, out var lastRun) && DateTime.UtcNow - lastRun < TimeSpan.FromSeconds(60))
+                return;
+            _lastReconciliationTimes[companyId] = DateTime.UtcNow;
             var candidateLeads = await _context.Leads
                 .Where(l => l.CompanyId == companyId && l.Status != "Converted")
                 .ToListAsync(ct);

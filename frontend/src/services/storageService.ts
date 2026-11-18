@@ -1082,11 +1082,16 @@ class StorageService {
         const nCompId = (n.companyId || '').toLowerCase();
         const nSlug = (n.companySlug || '').toLowerCase();
         let companyMatches = false;
-        if (isGhlTarget) companyMatches = nCompId === 't-ghl-01' || nSlug === 'ghl';
+        if (isGhlTarget) companyMatches = !nCompId || nCompId === 't-ghl-01' || nSlug === 'ghl';
         else if (isJaminTarget) companyMatches = nCompId === 't-jamin-02' || nSlug === 'jamin';
-        else companyMatches = nCompId === targetCompanyId || nSlug === targetCompanyId;
+        else companyMatches = !nCompId || nCompId === targetCompanyId || nSlug === targetCompanyId;
 
         if (!companyMatches) return n;
+      }
+
+      const rawRecipient = (n as any).recipientUserId;
+      if (userId && rawRecipient && rawRecipient !== userId) {
+        return n;
       }
 
       if (userId && n.targetUserId && n.targetUserId !== 'all' && n.targetUserId !== userId) {
