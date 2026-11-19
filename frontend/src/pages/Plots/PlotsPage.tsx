@@ -16,6 +16,7 @@ import {
   ExtendHoldModal, VerifyHoldPaymentModal, HoldHistoryModal, PaymentBadge, toLocalInput, fmtDateTime,
 } from '../../components/common/PlotHoldDialogs';
 import { ShareDocumentsModal, type ShareDocumentsTarget } from '../../components/jamin/ShareDocumentsModal';
+import { HoldShareDocuments } from '../../components/jamin/HoldShareDocuments';
 import { PlotDocumentsPanel, VerificationChip } from '../../components/jamin/PlotDocumentsPanel';
 import { documentPackService, latestShareByPlot, type PlotDocumentShare } from '../../services/documentPackService';
 import './PlotsPage.css';
@@ -1790,6 +1791,21 @@ export const PlotsPage: React.FC = () => {
             <label htmlFor="plot-hold-notes" className="form-label">Reason / notes</label>
             <input id="plot-hold-notes" type="text" className="form-input" value={holdNotes} onChange={e => setHoldNotes(e.target.value)} placeholder="Why is the plot being held?" />
           </div>
+
+          {selectedPlot && (
+            <HoldShareDocuments
+              plotId={selectedPlot.id}
+              plotNumber={selectedPlot.plotNumber}
+              projectName={currentProjectObj?.name}
+              leadId={holdSourceType === 'lead' && selectedLeadId ? selectedLeadId : null}
+              recipientName={holdCustomer}
+              recipientPhone={holdPhone}
+              recipientEmail={
+                (leadsList.find((l: any) => String(l.id) === String(selectedLeadId)) as any)?.email || ''
+              }
+              holdExpiry={holdExpiry}
+            />
+          )}
 
           <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
             Responsible agent: <strong>{user?.name || 'you'}</strong> · Project: <strong>{currentProjectObj?.name || '—'}</strong> · Plot: <strong>{selectedPlot?.plotNumber}</strong>

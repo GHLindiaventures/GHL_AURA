@@ -115,7 +115,7 @@ export interface CreateShareInput {
   recipientName: string;
   recipientPhone: string;
   recipientEmail?: string;
-  channel: 'whatsapp' | 'email' | 'link';
+  channel: 'whatsapp' | 'email' | 'link' | 'sms';
   documentIds: number[];
   includeCostSheet: boolean;
   message?: string;
