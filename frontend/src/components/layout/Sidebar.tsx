@@ -1627,14 +1627,14 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
             ? 'center'
             : isSuperAdmin
               ? 'space-between'
-              : tenant?.slug === 'ghl'
+              : tenant?.slug === 'ghl' || tenant?.slug === 'jamin'
                 ? 'center'
                 : 'space-between',
           padding: collapsed
             ? '0'
             : isSuperAdmin
               ? '0 20px'
-              : tenant?.slug === 'ghl'
+              : tenant?.slug === 'ghl' || tenant?.slug === 'jamin'
                 ? '0 48px'
                 : '0 20px',
           borderBottom: `1px solid ${isSuperAdmin ? '#1e293b' : 'var(--border-base)'}`,
