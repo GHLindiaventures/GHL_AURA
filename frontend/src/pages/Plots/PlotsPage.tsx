@@ -533,6 +533,7 @@ export const PlotsPage: React.FC = () => {
     setBookingPaymentTerms('');
     setBookingNotes('');
     setIsBookingModalOpen(true);
+    return { custs, lds };
   };
 
   const handleBookingSourceTypeChange = (type: 'customer' | 'lead' | 'custom') => {
@@ -572,20 +573,46 @@ export const PlotsPage: React.FC = () => {
   /** Open the booking form for a plot with the customer already filled in. */
   const openBookingForContact = async (plot: any, sel: BookingContactInfo) => {
     setSelectedProject(String(plot.projectId));
-    await handleOpenBooking(plot);
-    if (sel.leadId) {
-      setBookingSourceType('lead');
-      setSelectedBookingLeadId(String(sel.leadId));
-      setSelectedBookingCustomerId('');
-    } else if (sel.customerId) {
+    const loaded = await handleOpenBooking(plot);
+    const digits = (v?: string | number) => String(v ?? '').replace(/\D/g, '');
+    const phoneKey = (v?: string) => digits(v).slice(-10);
+    const leadsPool: any[] = loaded?.lds ?? [];
+    const custsPool: any[] = loaded?.custs ?? [];
+
+    // Find the real lead / customer record: by id first, then by phone number.
+    const lead = sel.leadId
+      ? (leadsPool.find(l => digits(l.id) === digits(sel.leadId)) ?? undefined)
+      : undefined;
+    const leadByPhone = !lead && phoneKey(sel.phone).length >= 10
+      ? leadsPool.find(l => phoneKey(l.phone) === phoneKey(sel.phone))
+      : undefined;
+    const customer = sel.customerId
+      ? custsPool.find(c => digits(c.id) === digits(sel.customerId))
+      : (!lead && !leadByPhone && phoneKey(sel.phone).length >= 10
+        ? custsPool.find(c => phoneKey(c.phone) === phoneKey(sel.phone))
+        : undefined);
+    const foundLead = lead ?? leadByPhone;
+
+    if (customer) {
       setBookingSourceType('customer');
-      setSelectedBookingCustomerId(String(sel.customerId));
+      setSelectedBookingCustomerId(String(customer.id));
       setSelectedBookingLeadId('');
+      setBookingCustomerName(customer.name || sel.name || '');
+      setBookingCustomerPhone(customer.phone || sel.phone || '');
+    } else if (foundLead) {
+      setBookingSourceType('lead');
+      setSelectedBookingLeadId(String(foundLead.id));
+      setSelectedBookingCustomerId('');
+      setBookingCustomerName(foundLead.name || sel.name || '');
+      setBookingCustomerPhone(foundLead.phone || sel.phone || '');
     } else {
+      // No matching record: book as a typed-in buyer instead of an empty "choose a lead" dropdown.
       setBookingSourceType('custom');
+      setSelectedBookingLeadId('');
+      setSelectedBookingCustomerId('');
+      setBookingCustomerName(sel.name || '');
+      setBookingCustomerPhone(sel.phone || '');
     }
-    setBookingCustomerName(sel.name || '');
-    setBookingCustomerPhone(sel.phone || '');
   };
 
   /** After a booking is saved, open the form for the next plot waiting in the queue. */
@@ -662,7 +689,7 @@ export const PlotsPage: React.FC = () => {
         plotId: selectedPlot.id,
         projectId: selectedPlot.projectId,
         customerId: bookingSourceType === 'customer' && selectedBookingCustomerId ? parseInt(selectedBookingCustomerId, 10) : (selectedPlot?.heldByCustomerId ? parseInt(String(selectedPlot.heldByCustomerId), 10) : undefined),
-        leadId: bookingSourceType === 'lead' && selectedBookingLeadId ? parseInt(selectedBookingLeadId, 10) : undefined,
+        leadId: bookingSourceType === 'lead' && selectedBookingLeadId ? (parseInt(selectedBookingLeadId.replace(/\D/g, ''), 10) || undefined) : undefined,
         customerName: bookingCustomerName.trim(),
         customerPhone: bookingCustomerPhone.trim(),
         totalPlotPrice: price,
@@ -1708,6 +1735,11 @@ export const PlotsPage: React.FC = () => {
                       {l.name} {l.phone ? `(${l.phone})` : ''}
                     </option>
                   ))}
+                  {selectedBookingLeadId && !availableLeadsList.some(l => String(l.id) === String(selectedBookingLeadId)) && (
+                    <option value={selectedBookingLeadId}>
+                      {bookingCustomerName} {bookingCustomerPhone ? `(${bookingCustomerPhone})` : ''}
+                    </option>
+                  )}
                 </select>
               </div>
               {bookingCustomerName && (
