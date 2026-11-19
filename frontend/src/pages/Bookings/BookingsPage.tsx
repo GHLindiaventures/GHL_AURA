@@ -49,7 +49,7 @@ export const BookingsPage: React.FC = () => {
 
   // Role checking for financial actions
   const roleCode = String(user?.role?.code || user?.role?.name || '').trim().toLowerCase().replace(/[\s-]+/g, '_');
-  const canVerifyPayment = ['company_admin', 'super_admin', 'sales_manager', 'admin', 'manager'].includes(roleCode);
+  const canVerifyPayment = ['company_admin', 'super_admin', 'sales_manager', 'admin', 'manager', 'sales_executive'].includes(roleCode);
 
   // Verification Modal State
   const [isVerifyModalOpen, setIsVerifyModalOpen] = useState(false);

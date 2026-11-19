@@ -269,7 +269,7 @@ public class JaminBookingsController : JaminTenantControllerBase
     /// Upon verified token receipt, converts Lead into an Active Customer with linked history.
     /// </summary>
     [HttpPost("{id:int}/verify-payment")]
-    [Authorize(Roles = "company_admin,super_admin,sales_manager,admin")]
+    [Authorize(Roles = "company_admin,super_admin,sales_manager,admin,sales_executive")]
     public async Task<IActionResult> VerifyPayment(int id, [FromBody] VerifyBookingPaymentRequestDto dto, CancellationToken ct)
     {
         var companyId = JaminCompanyId;
@@ -287,6 +287,9 @@ public class JaminBookingsController : JaminTenantControllerBase
                 .FirstOrDefaultAsync(b => b.Id == id && b.CompanyId == companyId, ct);
 
             if (booking == null) return NotFound(ApiResponse<JaminBookingResponseDto>.FailureResult("Booking not found."));
+            // A sales executive may verify payments only on bookings they are responsible for.
+            if (User.IsInRole("sales_executive") && !User.IsInRole("company_admin") && !User.IsInRole("super_admin") && booking.AssignedAgentId != currentUserId)
+                return StatusCode(403, ApiResponse<JaminBookingResponseDto>.FailureResult("You can verify payments only on your own bookings."));
             if (booking.Status is "Cancelled" or "Voided")
                 return Conflict(ApiResponse<JaminBookingResponseDto>.FailureResult("Cannot verify payment on a cancelled booking."));
 
