@@ -274,6 +274,42 @@ public class JaminSiteVisitService : IJaminSiteVisitService
         string.Equals(_currentUser.Role, "company_admin", StringComparison.OrdinalIgnoreCase) ||
         string.Equals(_currentUser.Role, "admin", StringComparison.OrdinalIgnoreCase);
 
+    /// <summary>Only the assigned agent or an admin may change a visit's status, remarks or attendance.</summary>
+    private bool CanChangeStatus(SiteVisit v) =>
+        CanManageAllSiteVisits || (_currentUser.UserId.HasValue && v.AssignedAgentId == _currentUser.UserId.Value);
+
+    private const string StatusForbiddenMessage =
+        "Only the agent assigned to this site visit (or an admin) can update its status, remarks or attendance.";
+
+    private void AddHistory(SiteVisit v, string type, string description,
+        int? fromAgentId = null, string? fromAgentName = null, int? toAgentId = null, string? toAgentName = null,
+        string? fromStatus = null, string? toStatus = null)
+    {
+        var text = description.Length > 480 ? description[..480] : description;
+        v.History.Add(new SiteVisitHistory
+        {
+            EventType = type, Description = text,
+            FromAgentId = fromAgentId, FromAgentName = fromAgentName, ToAgentId = toAgentId, ToAgentName = toAgentName,
+            FromStatus = fromStatus, ToStatus = toStatus,
+            ActorId = _currentUser.UserId, ActorName = _currentUser.Name,
+            CreatedAt = DateTime.UtcNow
+        });
+    }
+
+    public async Task<ApiResponse<List<SiteVisitHistoryDto>>> GetSiteVisitHistoryAsync(int id, CancellationToken ct = default)
+    {
+        var visible = await GetScopedSiteVisits().AnyAsync(s => s.Id == id, ct);
+        if (!visible) return ApiResponse<List<SiteVisitHistoryDto>>.FailureResult("Site visit not found.");
+        var rows = await _context.SiteVisitHistory.AsNoTracking()
+            .Where(h => h.SiteVisitId == id).OrderBy(h => h.CreatedAt).ThenBy(h => h.Id).ToListAsync(ct);
+        return ApiResponse<List<SiteVisitHistoryDto>>.SuccessResult(rows.Select(h => new SiteVisitHistoryDto
+        {
+            Id = h.Id, SiteVisitId = h.SiteVisitId, EventType = h.EventType, Description = h.Description,
+            FromAgentId = h.FromAgentId, FromAgentName = h.FromAgentName, ToAgentId = h.ToAgentId, ToAgentName = h.ToAgentName,
+            FromStatus = h.FromStatus, ToStatus = h.ToStatus, ActorId = h.ActorId, ActorName = h.ActorName, CreatedAt = h.CreatedAt
+        }).ToList());
+    }
+
     public async Task<ApiResponse<List<JaminSiteVisitDto>>> GetSiteVisitsAsync(int? agentId = null, string? status = null, int? leadId = null, int? customerId = null, CancellationToken ct = default)
     {
         var query = GetScopedSiteVisits();
@@ -454,6 +490,15 @@ public class JaminSiteVisitService : IJaminSiteVisitService
             CreatedAt = DateTime.UtcNow
         };
 
+        AddHistory(siteVisit, "Created", $"Site visit scheduled by {_currentUser.Name}.", toStatus: "Pending");
+        if (scheduledAgentId.HasValue)
+        {
+            var selfAssigned = scheduledAgentId == _currentUser.UserId;
+            AddHistory(siteVisit, "Assigned",
+                selfAssigned ? $"{siteVisit.AssignedAgentName} took this visit." : $"Assigned to {siteVisit.AssignedAgentName} by {_currentUser.Name}.",
+                toAgentId: scheduledAgentId, toAgentName: siteVisit.AssignedAgentName);
+        }
+
         _context.SiteVisits.Add(siteVisit);
 
         // Automatically update lead status to Site Visit Scheduled strictly by LeadId
@@ -501,12 +546,15 @@ public class JaminSiteVisitService : IJaminSiteVisitService
         {
             return ApiResponse<JaminSiteVisitDto>.FailureResult("Site visit not found.");
         }
+        if (!CanChangeStatus(visit)) return ApiResponse<JaminSiteVisitDto>.FailureResult(StatusForbiddenMessage);
         if (visit.Status is "Completed" or "Cancelled" or "No-show")
         {
             return ApiResponse<JaminSiteVisitDto>.FailureResult("Completed, cancelled, or no-show visits cannot be confirmed.");
         }
 
+        AddHistory(visit, "StatusChanged", $"Status changed from {visit.Status} to Scheduled.", fromStatus: visit.Status, toStatus: "Scheduled");
         visit.Status = "Scheduled";
+        visit.StatusUpdatedById = _currentUser.UserId; visit.StatusUpdatedByName = _currentUser.Name; visit.StatusUpdatedAt = DateTime.UtcNow;
         visit.UpdatedAt = DateTime.UtcNow;
 
         Lead? confirmLead = null;
@@ -532,6 +580,7 @@ public class JaminSiteVisitService : IJaminSiteVisitService
         {
             return ApiResponse<JaminSiteVisitDto>.FailureResult("Site visit not found.");
         }
+        if (!CanChangeStatus(visit)) return ApiResponse<JaminSiteVisitDto>.FailureResult(StatusForbiddenMessage);
         if (visit.Status is "Completed" or "Cancelled" or "No-show")
         {
             return ApiResponse<JaminSiteVisitDto>.FailureResult("This site visit is already closed.");
@@ -542,12 +591,15 @@ public class JaminSiteVisitService : IJaminSiteVisitService
             return ApiResponse<JaminSiteVisitDto>.FailureResult("A completed visit must be marked Completed or No-show.");
         }
 
+        AddHistory(visit, "StatusChanged", $"Status changed from {visit.Status} to {outcomeStatus}.", fromStatus: visit.Status, toStatus: outcomeStatus);
         visit.Status = outcomeStatus;
         if (!string.IsNullOrEmpty(dto.OutcomeNotes))
         {
             visit.OutcomeNotes = dto.OutcomeNotes;
         }
         visit.UpdatedAt = DateTime.UtcNow;
+        visit.StatusUpdatedById = _currentUser.UserId; visit.StatusUpdatedByName = _currentUser.Name; visit.StatusUpdatedAt = DateTime.UtcNow;
+        RecordAttendanceDefault(visit, outcomeStatus);
 
         if (string.Equals(outcomeStatus, "Completed", StringComparison.OrdinalIgnoreCase))
         {
@@ -578,6 +630,15 @@ public class JaminSiteVisitService : IJaminSiteVisitService
 
         var previousStatus = visit.Status;
         var previousRemarks = visit.OutcomeNotes;
+        var previousScheduledAt = visit.ScheduledAt;
+
+        // Status, remarks and attendance belong to the assigned agent (or an admin) - enforced here, not just in the UI.
+        var changesStatus = !string.IsNullOrWhiteSpace(dto.Status)
+            && !string.Equals(dto.Status.Trim(), visit.Status, StringComparison.OrdinalIgnoreCase);
+        var changesRemarks = dto.OutcomeNotes != null
+            && !string.Equals(dto.OutcomeNotes.Trim(), (visit.OutcomeNotes ?? string.Empty).Trim(), StringComparison.Ordinal);
+        if ((changesStatus || changesRemarks || dto.AttendedById.HasValue) && !CanChangeStatus(visit))
+            return ApiResponse<JaminSiteVisitDto>.FailureResult(StatusForbiddenMessage);
 
         if (!string.IsNullOrWhiteSpace(dto.Status))
         {
@@ -592,6 +653,8 @@ public class JaminSiteVisitService : IJaminSiteVisitService
         }
 
         if (!string.IsNullOrWhiteSpace(dto.ScheduledAt)) visit.ScheduledAt = dto.ScheduledAt.Trim();
+        if (!string.Equals(previousScheduledAt, visit.ScheduledAt, StringComparison.Ordinal))
+            AddHistory(visit, "Rescheduled", $"Rescheduled from {previousScheduledAt} to {visit.ScheduledAt}.");
         if (dto.ProjectId.HasValue && !await _context.JaminProjects.AnyAsync(
                 p => p.Id == dto.ProjectId.Value && p.CompanyId == JaminTenantId, ct))
             return ApiResponse<JaminSiteVisitDto>.FailureResult("Selected project was not found in Jamin.");
@@ -634,6 +697,8 @@ public class JaminSiteVisitService : IJaminSiteVisitService
             reassignedTo = await FindAssignableAgentAsync(dto.AssignedAgentId.Value, ct);
             if (reassignedTo == null)
                 return ApiResponse<JaminSiteVisitDto>.FailureResult("Selected follow-up agent was not found in Jamin.");
+            AddHistory(visit, "Reassigned", $"Reassigned from {visit.AssignedAgentName ?? "no one"} to {reassignedTo.Name} by {_currentUser.Name}.",
+                fromAgentId: visit.AssignedAgentId, fromAgentName: visit.AssignedAgentName, toAgentId: reassignedTo.Id, toAgentName: reassignedTo.Name);
             visit.AssignedAgentId = reassignedTo.Id;
             visit.AssignedAgentName = reassignedTo.Name;
             visit.AssignedById = _currentUser.UserId;
@@ -680,6 +745,21 @@ public class JaminSiteVisitService : IJaminSiteVisitService
         // Record who set the status / remarks, so the agent who assigned the follow-up can see it.
         var statusChanged = !string.Equals(previousStatus, visit.Status, StringComparison.Ordinal);
         var remarksChanged = !string.Equals(previousRemarks ?? string.Empty, visit.OutcomeNotes ?? string.Empty, StringComparison.Ordinal);
+        if (statusChanged)
+        {
+            AddHistory(visit, "StatusChanged", $"Status changed from {previousStatus} to {visit.Status} by {_currentUser.Name}.", fromStatus: previousStatus, toStatus: visit.Status);
+            RecordAttendanceDefault(visit, visit.Status);
+        }
+        if (dto.AttendedById.HasValue && dto.AttendedById.Value > 0 && dto.AttendedById != visit.AttendedById)
+        {
+            var attendee = await FindAssignableAgentAsync(dto.AttendedById.Value, ct);
+            if (attendee == null) return ApiResponse<JaminSiteVisitDto>.FailureResult("Selected attending agent was not found in Jamin.");
+            AddHistory(visit, "AttendedBy", $"{attendee.Name} recorded as the attending agent by {_currentUser.Name}.",
+                fromAgentId: visit.AttendedById, fromAgentName: visit.AttendedByName, toAgentId: attendee.Id, toAgentName: attendee.Name);
+            visit.AttendedById = attendee.Id;
+            visit.AttendedByName = attendee.Name;
+            visit.AttendedAt = DateTime.UtcNow;
+        }
         if (statusChanged || remarksChanged)
         {
             visit.StatusUpdatedById = _currentUser.UserId;
@@ -835,7 +915,17 @@ public class JaminSiteVisitService : IJaminSiteVisitService
         return rows;
     }
 
-    private static JaminSiteVisitDto MapToDto(SiteVisit s) => new()
+    /// <summary>When a visit is marked Visited / Completed and nobody recorded an attendee, the assigned agent attended.</summary>
+    private void RecordAttendanceDefault(SiteVisit v, string newStatus)
+    {
+        if (newStatus is not ("Visited" or "Completed") || v.AttendedById.HasValue || !v.AssignedAgentId.HasValue) return;
+        v.AttendedById = v.AssignedAgentId;
+        v.AttendedByName = v.AssignedAgentName;
+        v.AttendedAt = DateTime.UtcNow;
+        AddHistory(v, "AttendedBy", $"{v.AssignedAgentName} attended (default: assigned agent).", toAgentId: v.AssignedAgentId, toAgentName: v.AssignedAgentName);
+    }
+
+    private JaminSiteVisitDto MapToDto(SiteVisit s) => new()
     {
         Id = s.Id,
         TenantId = s.TenantId,
@@ -861,6 +951,11 @@ public class JaminSiteVisitService : IJaminSiteVisitService
         StatusUpdatedById = s.StatusUpdatedById,
         StatusUpdatedByName = s.StatusUpdatedByName,
         StatusUpdatedAt = s.StatusUpdatedAt,
+        AttendedById = s.AttendedById ?? s.AssignedAgentId,
+        AttendedByName = s.AttendedById.HasValue ? s.AttendedByName : s.AssignedAgentName,
+        AttendedAt = s.AttendedAt,
+        AttendedByRecorded = s.AttendedById.HasValue,
+        CanUpdateStatus = CanChangeStatus(s),
         CreatedAt = s.CreatedAt
     };
 }

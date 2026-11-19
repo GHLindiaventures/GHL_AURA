@@ -78,13 +78,8 @@ public class JaminHoldExpiryBackgroundService : BackgroundService
                 Status = "success"
             });
 
-            p.Status = "Available";
-            p.HeldByCustomerId = null;
-            p.HeldByCustomerName = null;
-            p.HeldByCustomerPhone = null;
-            p.HoldByAgent = null;
-            p.HoldExpiresAt = null;
-            p.UpdatedAt = now;
+            // Closes the hold row (history) and returns the plot to Available - and only this plot, which is still on Hold.
+            await backend.Services.Implementations.Jamin.JaminHoldLedger.ExpireIfDueAsync(db, p, now, ct);
         }
 
         var expiredBookings = await db.JaminBookings

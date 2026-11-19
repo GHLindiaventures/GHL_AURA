@@ -2,7 +2,7 @@
 
 import { apiClient } from './apiClient';
 import { storageService } from './storageService';
-import type { Lead, SiteVisit, Followup, Customer } from '../types';
+import type { Lead, SiteVisit, Followup, Customer, SiteVisitHistoryEntry, PlotHold, PlaceHoldPayload } from '../types';
 
 export interface LeadPlotSelection {
   plotId: number;
@@ -390,6 +390,10 @@ export const jaminApiService = {
           statusUpdatedById: sv.statusUpdatedById ? String(sv.statusUpdatedById) : undefined,
           statusUpdatedByName: sv.statusUpdatedByName || undefined,
           statusUpdatedAt: sv.statusUpdatedAt || undefined,
+          attendedById: sv.attendedById ? String(sv.attendedById) : undefined,
+          attendedByName: sv.attendedByName || undefined,
+          attendedByRecorded: Boolean(sv.attendedByRecorded),
+          canUpdateStatus: sv.canUpdateStatus !== false,
           status: sv.status,
           contactType: sv.contactType || 'lead',
           visitorNote: sv.visitorNote,
@@ -500,6 +504,18 @@ export const jaminApiService = {
       console.error(`Failed to update site visit #${id}`, err);
       return { success: false, message: err instanceof Error ? err.message : undefined };
     }
+  },
+
+  /** The visit's timeline: who assigned / reassigned it, status changes and who attended. */
+  async getSiteVisitHistory(id: string | number): Promise<SiteVisitHistoryEntry[]> {
+    try {
+      const cleanId = String(id).replace(/\D/g, '') || String(id);
+      const res = await apiClient.get<any>(`/jamin/site-visits/${cleanId}/history`);
+      if (res && res.success && Array.isArray(res.data)) return res.data as SiteVisitHistoryEntry[];
+    } catch (err) {
+      console.error(`Failed to load history of site visit #${id}`, err);
+    }
+    return [];
   },
 
   /** Open site visits per plot (id -> visits), used to warn that a plot is already planned for someone else. */
@@ -848,6 +864,62 @@ export const jaminApiService = {
     } catch (err) {
       console.error(`Failed to place plot #${plotId} on hold`, err);
       return false;
+    }
+  },
+
+  /** Places a hold with the full details (expiry, payment, reason). Returns the server's message on failure. */
+  async placeHold(plotId: string | number, payload: PlaceHoldPayload): Promise<{ success: boolean; message?: string }> {
+    try {
+      const res = await apiClient.post<any>(`/jamin/plots/${plotId}/hold`, {
+        ...payload,
+        heldByLeadId: payload.heldByLeadId ? Number(payload.heldByLeadId) : undefined,
+        heldByCustomerId: payload.heldByCustomerId ? Number(payload.heldByCustomerId) : undefined,
+        holdByAgentId: payload.holdByAgentId ? Number(payload.holdByAgentId) : undefined,
+      });
+      return { success: Boolean(res && res.success), message: res?.message };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Could not place the hold.' };
+    }
+  },
+
+  /** Extend or change a hold's expiry (responsible agent or admin). */
+  async extendHold(plotId: string | number, data: { newExpiresAt?: string; addDays?: number; reason?: string }): Promise<{ success: boolean; message?: string }> {
+    try {
+      const res = await apiClient.post<any>(`/jamin/plots/${plotId}/hold/extend`, data);
+      return { success: Boolean(res && res.success), message: res?.message };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Could not update the hold.' };
+    }
+  },
+
+  /** Finance / admin: approve or reject the hold payment. */
+  async verifyHoldPayment(plotId: string | number, approve: boolean, notes?: string): Promise<{ success: boolean; message?: string }> {
+    try {
+      const res = await apiClient.post<any>(`/jamin/plots/${plotId}/hold/verify-payment`, { approve, notes });
+      return { success: Boolean(res && res.success), message: res?.message };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Could not verify the hold payment.' };
+    }
+  },
+
+  /** Every hold the plot has had, newest first, with payments and timelines. */
+  async getHoldHistory(plotId: string | number): Promise<PlotHold[]> {
+    try {
+      const res = await apiClient.get<any>(`/jamin/plots/${plotId}/hold-history`);
+      if (res && res.success && Array.isArray(res.data)) return res.data as PlotHold[];
+    } catch (err) {
+      console.error(`Failed to load hold history of plot #${plotId}`, err);
+    }
+    return [];
+  },
+
+  /** Release a hold, returning the server's reason when it is refused. */
+  async releaseHold(plotId: string | number): Promise<{ success: boolean; message?: string }> {
+    try {
+      const res = await apiClient.post<any>(`/jamin/plots/${plotId}/release`, {});
+      return { success: Boolean(res && res.success), message: res?.message };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Could not release the hold.' };
     }
   },
 

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { Calendar, Plus, CheckCircle2, Phone, RefreshCw, Lock, Edit, Trash2 } from 'lucide-react';
-import { SiteVisit, Lead, Customer } from '../../types';
+import { SiteVisit, SiteVisitHistoryEntry, Lead, Customer } from '../../types';
 import { useAuth } from '../../context/AuthContext';
 import { useCall } from '../../context/CallContext';
 import { DataTable, Column, RowAction } from '../../components/common/DataTable';
@@ -662,6 +662,29 @@ export const SiteVisitsPage: React.FC = () => {
   const [detailStatus, setDetailStatus] = useState<string>('Pending');
   const [detailRemarks, setDetailRemarks] = useState('');
   const [isSavingDetail, setIsSavingDetail] = useState(false);
+  const [detailAttendedById, setDetailAttendedById] = useState<string>('');
+  const [history, setHistory] = useState<SiteVisitHistoryEntry[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const detailVisitId = detailVisit?.id;
+
+  const loadHistory = useCallback(async (id: string | number) => {
+    setHistoryLoading(true);
+    try {
+      setHistory(await jaminApiService.getSiteVisitHistory(id));
+    } finally {
+      setHistoryLoading(false);
+    }
+  }, []);
+
+  // Load the timeline whenever a visit's detail drawer opens.
+  useEffect(() => {
+    setHistory([]);
+    if (detailVisitId === undefined) return;
+    void loadHistory(detailVisitId);
+  }, [detailVisitId, loadHistory]);
+
+  // The server refuses status changes from anyone but the assigned agent or an admin.
+  const canChangeStatus = (sv: SiteVisit) => sv.canUpdateStatus !== false;
   // ── Remove a site visit (asks first) ──────────────────────────────────────
   const [visitToRemove, setVisitToRemove] = useState<SiteVisit | null>(null);
   const [isRemoving, setIsRemoving] = useState(false);
@@ -694,6 +717,7 @@ export const SiteVisitsPage: React.FC = () => {
     setDetailVisit(sv);
     setDetailStatus(sv.status || 'Pending');
     setDetailRemarks(sv.outcomeNotes || '');
+    setDetailAttendedById(sv.attendedById || sv.assignedAgentId || '');
   };
 
   const [isReassigning, setIsReassigning] = useState(false);
@@ -721,6 +745,7 @@ export const SiteVisitsPage: React.FC = () => {
         assignedByName: user?.name || prev.assignedByName,
       } : prev);
       toast.success(mine ? 'Assigned to you.' : `Assigned to ${agent.name}. They have been notified.`);
+      void loadHistory(detailVisit.id);
       void loadAll();
     } catch (err) {
       toast.error(err instanceof Error && err.message ? `Could not assign: ${err.message}` : 'Could not assign the follow-up agent. Please try again.');
@@ -738,9 +763,15 @@ export const SiteVisitsPage: React.FC = () => {
     }
     setIsSavingDetail(true);
     try {
-      const result = await jaminApiService.updateSiteVisitDetailed(detailVisit.id, { status: detailStatus, outcomeNotes: remarks });
+      const data: Record<string, unknown> = { status: detailStatus, outcomeNotes: remarks };
+      const originalAttended = detailVisit.attendedById || detailVisit.assignedAgentId || '';
+      if (detailAttendedById && detailAttendedById !== originalAttended) {
+        data.attendedById = Number(detailAttendedById);
+      }
+      const result = await jaminApiService.updateSiteVisitDetailed(detailVisit.id, data);
       if (!result.success) throw new Error(result.message || 'save failed');
       toast.success(`Site visit saved as ${detailStatus}.`);
+      void loadHistory(detailVisit.id);
       setDetailVisit(null);
       await loadAll();
     } catch (err) {
@@ -762,7 +793,7 @@ export const SiteVisitsPage: React.FC = () => {
     },
     {
       key: 'customerName',
-      header: 'Client Details',
+      header: 'Lead Details',
       sortable: true,
       render: sv => (
         <div>
@@ -902,7 +933,7 @@ export const SiteVisitsPage: React.FC = () => {
     {
       label: 'Confirm Visit',
       icon: <CheckCircle2 size={14} color="#059669" style={{ marginRight: 6 }} />,
-      hidden: sv => sv.status !== 'Requested',
+      hidden: sv => sv.status !== 'Requested' || !canChangeStatus(sv),
       onClick: sv => handleConfirmVisit(sv),
     },
     {
@@ -914,6 +945,7 @@ export const SiteVisitsPage: React.FC = () => {
     {
       label: 'Update Status / Reschedule',
       icon: <Edit size={14} color="#4f46e5" style={{ marginRight: 6 }} />,
+      hidden: sv => !canChangeStatus(sv),
       onClick: sv => handleOpenManageModal(sv),
     },
     {
@@ -948,7 +980,7 @@ export const SiteVisitsPage: React.FC = () => {
             <Calendar size={24} color="#dc2626" /> Site Visits Log & Scheduling
           </h1>
           <p className="page-subtitle">
-            Coordinate customer site walkthroughs — linked to real Projects and Plots for live count tracking.
+            Coordinate lead site walkthroughs — linked to real Projects and Plots for live count tracking.
           </p>
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
@@ -996,7 +1028,7 @@ export const SiteVisitsPage: React.FC = () => {
         keyExtractor={sv => sv.id}
         rowActions={rowActions}
         onRowClick={openVisitDetail}
-        searchPlaceholder="Search visits by customer, project, or plot..."
+        searchPlaceholder="Search visits by lead, project, or plot..."
         filtersNode={
           <FilterBar
             filters={[
@@ -1037,7 +1069,7 @@ export const SiteVisitsPage: React.FC = () => {
         }
       />
 
-      {/* ── Visit detail card (customer, follow-up agent, status & remarks) ─── */}
+      {/* ── Visit detail card (lead, follow-up agent, status & remarks) ─── */}
       <Drawer
         isOpen={!!detailVisit}
         onClose={() => setDetailVisit(null)}
@@ -1073,9 +1105,11 @@ export const SiteVisitsPage: React.FC = () => {
                   Reschedule / edit plots
                 </button>
               )}
-              <button type="button" className="btn btn-primary" onClick={handleSaveDetail} disabled={isSavingDetail}>
-                {isSavingDetail ? 'Saving…' : 'Save status & remarks'}
-              </button>
+              {canChangeStatus(detailVisit) && (
+                <button type="button" className="btn btn-primary" onClick={handleSaveDetail} disabled={isSavingDetail}>
+                  {isSavingDetail ? 'Saving…' : 'Save status & remarks'}
+                </button>
+              )}
             </>
           ) : (
             <button type="button" className="btn btn-secondary" onClick={() => setDetailVisit(null)}>Close</button>
@@ -1087,10 +1121,16 @@ export const SiteVisitsPage: React.FC = () => {
           const selfTaken = !!sv.assignedById && sv.assignedById === sv.assignedAgentId;
           const label: React.CSSProperties = { fontSize: 11, fontWeight: 700, letterSpacing: '0.04em', textTransform: 'uppercase', color: 'var(--text-secondary, #64748b)', marginBottom: 2 };
           const card: React.CSSProperties = { border: '1px solid var(--border-base, #e2e8f0)', borderRadius: 10, padding: 14, marginBottom: 14 };
+          const isCustomer = sv.contactType === 'customer';
+          const fmtWhen = (iso?: string) => {
+            if (!iso) return '';
+            const d = new Date(iso);
+            return Number.isNaN(d.getTime()) ? iso : d.toLocaleString(undefined, { day: 'numeric', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit' });
+          };
           const statusOptions = VISIT_STATUS_CHOICES.includes(sv.status) ? VISIT_STATUS_CHOICES : [sv.status, ...VISIT_STATUS_CHOICES];
           return (
             <div>
-              {/* Customer card */}
+              {/* Lead / customer card */}
               <div style={card}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 6 }}>
                   <strong style={{ fontSize: 16 }}>{sv.customerName}</strong>
@@ -1185,7 +1225,7 @@ export const SiteVisitsPage: React.FC = () => {
 
               {/* Follow-up agent: pick a colleague to hand it to; they are notified straight away */}
               <div style={card}>
-                <label htmlFor="sitevisit-detail-agent" style={{ ...label, display: 'block' }}>Follow-up agent</label>
+                <label htmlFor="sitevisit-detail-agent" style={{ ...label, display: 'block' }}>Assigned to</label>
                 {canUpdateVisit(sv) ? (
                   <>
                     <select
@@ -1207,7 +1247,7 @@ export const SiteVisitsPage: React.FC = () => {
                       ))}
                     </select>
                     <div style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)', marginTop: 6 }}>
-                      {isReassigning ? 'Assigning…' : 'Choosing another agent assigns it to them and notifies them with the customer details.'}
+                      {isReassigning ? 'Assigning…' : `Choosing another agent assigns it to them and notifies them with the ${isCustomer ? 'customer' : 'lead'} details.`}
                     </div>
                   </>
                 ) : (
@@ -1216,6 +1256,33 @@ export const SiteVisitsPage: React.FC = () => {
                 <div style={{ fontSize: 12.5, color: 'var(--text-secondary, #64748b)', marginTop: 4 }}>
                   {selfTaken ? 'Self-assigned' : sv.assignedByName ? `Assigned by ${sv.assignedByName}` : ''}
                 </div>
+
+                <div style={{ ...label, marginTop: 14 }}>Attended by</div>
+                <div>
+                  {sv.attendedByName
+                    ? (sv.attendedByRecorded ? sv.attendedByName : `${sv.attendedByName} (default: assigned agent)`)
+                    : '—'}
+                </div>
+                {canChangeStatus(sv) ? (
+                  <div className="form-group" style={{ marginTop: 8, marginBottom: 0 }}>
+                    <label htmlFor="sitevisit-detail-attended" className="form-label">Record who attended</label>
+                    <select
+                      id="sitevisit-detail-attended"
+                      className="form-select"
+                      value={detailAttendedById}
+                      onChange={e => setDetailAttendedById(e.target.value)}
+                    >
+                      {detailAttendedById && !agents.some(a => String(a.id) === detailAttendedById) ? (
+                        <option value={detailAttendedById}>{sv.attendedByName || sv.assignedAgentName || 'Current'}</option>
+                      ) : null}
+                      {agents.map(ag => (
+                        <option key={ag.id} value={String(ag.id)}>
+                          {String(ag.id) === String(user?.id) ? `${ag.name} (me)` : `${ag.name} (${ag.email})`}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                ) : null}
               </div>
 
               {/* Status & remarks */}
@@ -1231,7 +1298,7 @@ export const SiteVisitsPage: React.FC = () => {
                   </div>
                 ) : null}
 
-                {canUpdateVisit(sv) ? (
+                {canChangeStatus(sv) ? (
                   <>
                     <div className="form-group">
                       <label htmlFor="sitevisit-detail-status" className="form-label">Status</label>
@@ -1261,7 +1328,42 @@ export const SiteVisitsPage: React.FC = () => {
                     </div>
                   </>
                 ) : (
-                  <div>{sv.outcomeNotes ? `"${sv.outcomeNotes}"` : 'No remarks yet'}</div>
+                  <>
+                    <div style={{ fontStyle: sv.outcomeNotes ? 'normal' : 'italic' }}>{sv.outcomeNotes ? `"${sv.outcomeNotes}"` : 'No remarks yet'}</div>
+                    <div style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)', marginTop: 8 }}>
+                      Only {sv.assignedAgentName || 'the assigned agent'} (the assigned agent) or an admin can update the status.
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Visit history timeline */}
+              <div style={card}>
+                <div style={{ ...label, marginBottom: 10 }}>Visit history</div>
+                {historyLoading && history.length === 0 ? (
+                  <div style={{ fontSize: 13, color: 'var(--text-secondary, #64748b)' }}>Loading history…</div>
+                ) : history.length === 0 ? (
+                  <div style={{ fontSize: 13, color: 'var(--text-secondary, #64748b)' }}>No history yet</div>
+                ) : (
+                  <ol style={{ listStyle: 'none', margin: 0, padding: 0 }}>
+                    {history.map((h, i) => (
+                      <li key={h.id} style={{ display: 'flex', gap: 10, paddingBottom: i === history.length - 1 ? 0 : 12 }}>
+                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0 }}>
+                          <span style={{ width: 9, height: 9, borderRadius: '50%', background: '#4f46e5', marginTop: 5 }} />
+                          {i < history.length - 1 ? <span style={{ flex: 1, width: 2, background: 'var(--border-base, #e2e8f0)', marginTop: 2 }} /> : null}
+                        </div>
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <span style={{ fontSize: 10, fontWeight: 700, padding: '1px 7px', borderRadius: 10, background: 'rgba(79, 70, 229, 0.10)', color: '#4338ca', textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                            {h.eventType === 'StatusChanged' ? 'Status' : h.eventType === 'AttendedBy' ? 'Attended by' : h.eventType}
+                          </span>
+                          <div style={{ fontSize: 13.5, marginTop: 3, overflowWrap: 'anywhere' }}>{h.description}</div>
+                          <div style={{ fontSize: 11.5, color: 'var(--text-secondary, #64748b)', marginTop: 2 }}>
+                            {[h.actorName ? `by ${h.actorName}` : '', fmtWhen(h.createdAt)].filter(Boolean).join(' · ')}
+                          </div>
+                        </div>
+                      </li>
+                    ))}
+                  </ol>
                 )}
               </div>
             </div>
@@ -1273,7 +1375,7 @@ export const SiteVisitsPage: React.FC = () => {
       <Modal
         isOpen={isScheduleModalOpen}
         onClose={() => setIsScheduleModalOpen(false)}
-        title="Schedule Prospective Buyer Site Visit"
+        title="Schedule Lead Site Visit"
         subtitle="Book layout walkthrough — linked to Lead or Customer, Project & Plot"
       >
         <form onSubmit={handleScheduleVisit} className="sitevisit-form">
@@ -1329,7 +1431,7 @@ export const SiteVisitsPage: React.FC = () => {
                 {existingOpenVisit.assignedAgentName ? ` · follow-up: ${existingOpenVisit.assignedAgentName}` : ''}
               </div>
               <div style={{ fontSize: 12.5, marginTop: 4 }}>
-                A customer can have only one open visit. Reschedule it (change the time or the plots) instead of adding another.
+                A lead can have only one open visit. Reschedule it (change the time or the plots) instead of adding another.
               </div>
               <button
                 type="button"
@@ -1412,7 +1514,7 @@ export const SiteVisitsPage: React.FC = () => {
               <label className="form-label">
                 Plots{' '}
                 <span style={{ fontSize: 11, color: 'var(--text-secondary)' }}>
-                  (optional — pick as many as fit the customer's requirement)
+                  (optional — pick as many as fit the lead's requirement)
                 </span>
               </label>
               {(() => {
@@ -1519,7 +1621,7 @@ export const SiteVisitsPage: React.FC = () => {
               ))}
             </select>
             <div style={{ fontSize: 12, color: 'var(--text-secondary, #64748b)', marginTop: 4 }}>
-              Follow it up yourself, or pick a colleague. They are notified with the customer details and that you assigned it.
+              Follow it up yourself, or pick a colleague. They are notified with the lead details and that you assigned it.
             </div>
           </div>
 

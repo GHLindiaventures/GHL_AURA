@@ -163,6 +163,13 @@ public sealed class CallService(ApplicationDbContext context, ICurrentUserServic
                 if (request.Disposition is "Interested" or "Not Interested" or "Wrong Number")
                 {
                     lead.Status = request.Disposition == "Wrong Number" ? "Junk" : request.Disposition;
+                    // Jamin keeps one clean status: Not Interested becomes Junk with that reason.
+                    var jaminNotInterested = backend.Services.Implementations.Jamin.JaminLeadRules.IsJamin(lead.CompanyId) && request.Disposition == "Not Interested";
+                    if (jaminNotInterested)
+                    {
+                        lead.Status = backend.Services.Implementations.Jamin.JaminLeadRules.JunkStatus;
+                        backend.Services.Implementations.Jamin.JaminLeadRules.SetJunkReason(lead, backend.Services.Implementations.Jamin.JaminLeadRules.NotInterestedReason);
+                    }
                     lead.UpdatedAt = DateTime.UtcNow;
 
                     if (request.Disposition is "Not Interested" or "Wrong Number" or "Junk")

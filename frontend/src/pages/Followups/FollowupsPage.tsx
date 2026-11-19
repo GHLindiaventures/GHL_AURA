@@ -2204,7 +2204,7 @@ export const FollowupsPage: React.FC = () => {
                   {canBookFromFollowup && (
                     <button
                       className="btn btn-primary btn-sm"
-                      title="Book a plot for this customer"
+                      title="Book a plot for this lead"
                       onClick={e => {
                         e.stopPropagation();
                         setBookingFollowup(f);

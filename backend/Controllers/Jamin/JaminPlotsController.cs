@@ -3,6 +3,7 @@ using backend.DTOs.Common;
 using backend.DTOs.Jamin;
 using backend.Extensions;
 using backend.Models.Entities;
+using backend.Services.Implementations.Jamin;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -188,7 +189,12 @@ public class JaminPlotsController : JaminTenantControllerBase
         if (dto.Notes != null) plot.Notes = dto.Notes.Trim();
         if (dto.Status != null && dto.Status != plot.Status)
         {
-            plot.Status = dto.Status;
+            if (dto.Status == "Available" && plot.Status == "Hold")
+            {
+                await JaminHoldLedger.CloseActiveAsync(_db, plot.Id, "Released", Actor(), DateTime.UtcNow, "Set to Available by an admin.", ct);
+                JaminHoldLedger.ReleasePlot(plot, DateTime.UtcNow);
+            }
+            else plot.Status = dto.Status;
             var project = await _db.JaminProjects.FirstOrDefaultAsync(p => p.Id == plot.ProjectId && p.CompanyId == plot.CompanyId, ct);
             if (project != null) await RecalculateInventoryAsync(project, ct);
         }
@@ -201,32 +207,76 @@ public class JaminPlotsController : JaminTenantControllerBase
         return Ok(ApiResponse<JaminPlotResponseDto>.SuccessResult(ToDto(plot), "Plot updated."));
     }
 
+    private bool IsAdminUser => User.IsInRole("company_admin") || User.IsInRole("super_admin") || User.IsInRole("admin") || User.IsInRole("sales_manager");
+
+    private HoldActor Actor()
+    {
+        var name = User.GetUserName();
+        return new HoldActor(User.GetUserId(), string.IsNullOrWhiteSpace(name) ? "Staff" : name, IsAdminUser);
+    }
+
     [HttpPost("{id:int}/hold")]
     public async Task<IActionResult> HoldPlot(int id, [FromBody] HoldPlotRequestDto dto, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(dto.CustomerName) || string.IsNullOrWhiteSpace(dto.CustomerPhone) || dto.HoldDays is < 1 or > 30)
-            return BadRequest(ApiResponse<JaminPlotResponseDto>.FailureResult("Customer name, phone, and a hold period between 1 and 30 days are required."));
         var plot = await _db.JaminPlots.FirstOrDefaultAsync(p => p.Id == id && p.CompanyId == JaminCompanyId, ct);
         if (plot == null) return NotFound(ApiResponse<JaminPlotResponseDto>.FailureResult("Plot not found."));
-        if (plot.Status == "Hold" && plot.HoldExpiresAt <= DateTime.UtcNow)
-        {
-            plot.Status = "Available"; plot.HeldByLeadId = null; plot.HeldByCustomerId = null; plot.HeldByCustomerName = null; plot.HeldByCustomerPhone = null; plot.HoldByAgent = null; plot.HoldExpiresAt = null;
-        }
-        if (plot.Status != "Available") return Conflict(ApiResponse<JaminPlotResponseDto>.FailureResult("Only available plots can be placed on hold."));
-        int? heldByLeadId = null;
-        if (dto.HeldByLeadId.HasValue)
-        {
-            var leadOk = await _db.Leads.AsNoTracking().AnyAsync(l => l.Id == dto.HeldByLeadId.Value && l.CompanyId == JaminCompanyId, ct);
-            if (!leadOk) return BadRequest(ApiResponse<JaminPlotResponseDto>.FailureResult("Lead not found."));
-            heldByLeadId = dto.HeldByLeadId;
-        }
-        plot.HeldByLeadId = heldByLeadId;
-        plot.Status = "Hold"; plot.HeldByCustomerId = dto.HeldByCustomerId; plot.HeldByCustomerName = dto.CustomerName.Trim(); plot.HeldByCustomerPhone = dto.CustomerPhone.Trim(); plot.HoldByAgent = dto.HoldByAgent?.Trim();
-        plot.HoldExpiresAt = DateTime.UtcNow.AddDays(dto.HoldDays); plot.UpdatedAt = DateTime.UtcNow;
+        var now = DateTime.UtcNow;
+        // An overdue hold is released first, so the plot can be held again.
+        if (await JaminHoldLedger.ExpireIfDueAsync(_db, plot, now, ct)) await _db.SaveChangesAsync(ct);
+
+        var (error, _) = await JaminHoldLedger.PlaceAsync(_db, plot, dto, Actor(), now, ct);
+        if (error != null)
+            return error.StartsWith("Only available") ? Conflict(ApiResponse<JaminPlotResponseDto>.FailureResult(error))
+                : error.StartsWith("You can hold") ? StatusCode(403, ApiResponse<JaminPlotResponseDto>.FailureResult(error))
+                : BadRequest(ApiResponse<JaminPlotResponseDto>.FailureResult(error));
+
         var holdProject = await _db.JaminProjects.FirstOrDefaultAsync(p => p.Id == plot.ProjectId && p.CompanyId == plot.CompanyId, ct);
         if (holdProject != null) await RecalculateInventoryAsync(holdProject, ct);
         await _db.SaveChangesAsync(ct);
         return Ok(ApiResponse<JaminPlotResponseDto>.SuccessResult(ToDto(plot), "Plot placed on hold."));
+    }
+
+    /// <summary>Extend or change a hold's expiry (responsible agent or admin).</summary>
+    [HttpPost("{id:int}/hold/extend")]
+    public async Task<IActionResult> ExtendHold(int id, [FromBody] ExtendHoldRequestDto dto, CancellationToken ct)
+    {
+        var plot = await _db.JaminPlots.FirstOrDefaultAsync(p => p.Id == id && p.CompanyId == JaminCompanyId, ct);
+        if (plot == null) return NotFound(ApiResponse<JaminPlotResponseDto>.FailureResult("Plot not found."));
+        var now = DateTime.UtcNow;
+        if (await JaminHoldLedger.ExpireIfDueAsync(_db, plot, now, ct))
+        {
+            await _db.SaveChangesAsync(ct);
+            return Conflict(ApiResponse<JaminPlotResponseDto>.FailureResult("This hold has already expired."));
+        }
+        var error = await JaminHoldLedger.ExtendAsync(_db, plot, dto, Actor(), now, ct);
+        if (error != null)
+            return error.StartsWith("Only the agent") ? StatusCode(403, ApiResponse<JaminPlotResponseDto>.FailureResult(error))
+                : BadRequest(ApiResponse<JaminPlotResponseDto>.FailureResult(error));
+        await _db.SaveChangesAsync(ct);
+        return Ok(ApiResponse<JaminPlotResponseDto>.SuccessResult(ToDto(plot), "Hold updated."));
+    }
+
+    /// <summary>Finance / admin verifies or rejects the hold payment.</summary>
+    [HttpPost("{id:int}/hold/verify-payment")]
+    public async Task<IActionResult> VerifyHoldPayment(int id, [FromBody] VerifyHoldPaymentRequestDto dto, CancellationToken ct)
+    {
+        var plot = await _db.JaminPlots.FirstOrDefaultAsync(p => p.Id == id && p.CompanyId == JaminCompanyId, ct);
+        if (plot == null) return NotFound(ApiResponse<JaminPlotResponseDto>.FailureResult("Plot not found."));
+        var error = await JaminHoldLedger.VerifyPaymentAsync(_db, plot, dto.Approve, dto.Notes, Actor(), DateTime.UtcNow, ct);
+        if (error != null)
+            return error.StartsWith("Only finance") ? StatusCode(403, ApiResponse<JaminPlotResponseDto>.FailureResult(error))
+                : BadRequest(ApiResponse<JaminPlotResponseDto>.FailureResult(error));
+        await _db.SaveChangesAsync(ct);
+        return Ok(ApiResponse<JaminPlotResponseDto>.SuccessResult(ToDto(plot), dto.Approve ? "Hold payment verified." : "Hold payment rejected."));
+    }
+
+    /// <summary>Every hold this plot has had, with payment details and a timeline of each.</summary>
+    [HttpGet("{id:int}/hold-history")]
+    public async Task<IActionResult> GetHoldHistory(int id, CancellationToken ct)
+    {
+        if (!await _db.JaminPlots.AnyAsync(p => p.Id == id && p.CompanyId == JaminCompanyId, ct))
+            return NotFound(ApiResponse<List<PlotHoldDto>>.FailureResult("Plot not found."));
+        return Ok(ApiResponse<List<PlotHoldDto>>.SuccessResult(await JaminHoldLedger.HistoryAsync(_db, id, JaminCompanyId, ct)));
     }
 
     [HttpPost("{id:int}/release")]
@@ -245,14 +295,12 @@ public class JaminPlotsController : JaminTenantControllerBase
             if (plot == null) return NotFound(ApiResponse<JaminPlotResponseDto>.FailureResult("Plot not found."));
             if (plot.Status != "Hold") return Conflict(ApiResponse<JaminPlotResponseDto>.FailureResult("Plot is not on hold."));
 
-            plot.Status = "Available";
-            plot.HeldByCustomerId = null;
-            plot.HeldByLeadId = null;
-            plot.HeldByCustomerName = null;
-            plot.HeldByCustomerPhone = null;
-            plot.HoldByAgent = null;
-            plot.HoldExpiresAt = null;
-            plot.UpdatedAt = DateTime.UtcNow;
+            var activeHold = await JaminHoldLedger.GetActiveAsync(_db, plot.Id, ct);
+            if (!JaminHoldLedger.CanManage(activeHold, Actor()))
+                return StatusCode(403, ApiResponse<JaminPlotResponseDto>.FailureResult("Only the agent responsible for this hold (or an admin) can release it."));
+
+            await JaminHoldLedger.CloseActiveAsync(_db, plot.Id, "Released", Actor(), DateTime.UtcNow, null, ct);
+            JaminHoldLedger.ReleasePlot(plot, DateTime.UtcNow);
 
             var activeHoldBookings = await _db.JaminBookings
                 .Where(b => b.CompanyId == companyId && b.PlotId == plot.Id && b.Status == "Hold")
@@ -307,7 +355,7 @@ public class JaminPlotsController : JaminTenantControllerBase
         Id = p.Id, CompanyId = p.CompanyId, ProjectId = p.ProjectId, PlotNumber = p.PlotNumber,
         Dimensions = p.Dimensions, AreaSqFt = p.AreaSqFt, AreaSqM = p.AreaSqM, LayoutX = p.LayoutX, LayoutY = p.LayoutY, LayoutW = p.LayoutW, LayoutH = p.LayoutH, Facing = p.Facing, Status = p.Status,
         Price = p.Price, PricePerSqft = p.PricePerSqft, HeldByCustomerId = p.HeldByCustomerId, HeldByCustomerName = p.HeldByCustomerName, HeldByCustomerPhone = p.HeldByCustomerPhone, HeldByLeadId = p.HeldByLeadId, HoldByAgent = p.HoldByAgent,
-        HoldExpiresAt = p.HoldExpiresAt, Notes = p.Notes, CreatedAt = p.CreatedAt, UpdatedAt = p.UpdatedAt
+        HoldExpiresAt = p.HoldExpiresAt, HoldAgentId = p.HoldAgentId, HoldAmount = p.HoldAmount, HoldPaymentStatus = p.HoldPaymentStatus, HoldConfirmed = p.HoldPaymentStatus == "Verified", Notes = p.Notes, CreatedAt = p.CreatedAt, UpdatedAt = p.UpdatedAt
     };
 
     private static bool IsBooked(string status) => status is "Booked" or "Registered" or "Sold";
@@ -331,16 +379,7 @@ public class JaminPlotsController : JaminTenantControllerBase
         {
             var projectIds = expiredPlots.Select(p => p.ProjectId).Distinct().ToList();
             foreach (var p in expiredPlots)
-            {
-                p.Status = "Available";
-                p.HeldByCustomerId = null;
-                p.HeldByLeadId = null;
-                p.HeldByCustomerName = null;
-                p.HeldByCustomerPhone = null;
-                p.HoldByAgent = null;
-                p.HoldExpiresAt = null;
-                p.UpdatedAt = now;
-            }
+                await JaminHoldLedger.ExpireIfDueAsync(_db, p, now, ct);
 
             // Also expire any corresponding JaminBookings that were on temporary Hold
             var plotIds = expiredPlots.Select(p => p.Id).ToList();

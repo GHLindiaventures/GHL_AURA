@@ -108,6 +108,8 @@ export const BookingsPage: React.FC = () => {
   const [totalPlotPrice, setTotalPlotPrice] = useState<number>();
   const [paymentMode, setPaymentMode] = useState('');
   const [paymentModeOther, setPaymentModeOther] = useState('');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [bookingFormErrors, setBookingFormErrors] = useState<string[]>([]);
   const [paymentTerms, setPaymentTerms] = useState('');
   const [notes, setNotes] = useState('');
 
@@ -281,7 +283,7 @@ export const BookingsPage: React.FC = () => {
         JSON.stringify({
           savedAt: Date.now(),
           buyerSourceType, selectedProjectId, selectedPlotId, selectedCustomerId, selectedLeadId, customerName, customerPhone,
-          tokenAmountPaid, totalPlotPrice, paymentMode, paymentModeOther, paymentTerms, notes,
+          tokenAmountPaid, totalPlotPrice, paymentMode, paymentModeOther, paymentReference, paymentTerms, notes,
         }),
       );
       sessionStorage.setItem(
@@ -325,6 +327,7 @@ export const BookingsPage: React.FC = () => {
       setTotalPlotPrice(d.totalPlotPrice);
       setPaymentMode(d.paymentMode || '');
       setPaymentModeOther(d.paymentModeOther || '');
+      setPaymentReference(d.paymentReference || '');
       setPaymentTerms(d.paymentTerms || '');
       setNotes(d.notes || '');
 
@@ -356,13 +359,26 @@ export const BookingsPage: React.FC = () => {
       alert('Please choose the plot to book from Plot Inventory.');
       return;
     }
-    if (!customerName || !customerPhone) {
-      alert('Buyer Name and Phone are required.');
-      return;
-    }
-
     const selectedProj = projects.find(p => String(p.id) === String(selectedProjectId));
     const selectedPlt = plots.find(p => String(p.id) === String(selectedPlotId));
+
+    // Every mandatory detail must be present before a booking can be confirmed; say exactly which are missing.
+    const effectiveMode = paymentMode === 'Other' ? paymentModeOther.trim() : paymentMode;
+    const agreement = totalPlotPrice || selectedPlt?.price || 0;
+    const missing: string[] = [];
+    if (!customerName.trim()) missing.push('Buyer name');
+    if (customerPhone.replace(/\D/g, '').length < 10) missing.push('Buyer phone (10 digits)');
+    if (!selectedProjectId) missing.push('Project');
+    if (agreement <= 0) missing.push('Total agreement value');
+    if (!tokenAmountPaid || tokenAmountPaid <= 0) missing.push('Token advance amount');
+    else if (tokenAmountPaid > agreement) missing.push('Token advance cannot exceed the agreement value');
+    if (!effectiveMode) missing.push('Payment mode');
+    else if (!/cash/i.test(effectiveMode) && !paymentReference.trim()) missing.push('Payment reference / transaction id');
+    if (missing.length > 0) {
+      setBookingFormErrors(missing);
+      return;
+    }
+    setBookingFormErrors([]);
 
     setSubmitting(true);
     try {
@@ -377,7 +393,8 @@ export const BookingsPage: React.FC = () => {
         customerPhone: customerPhone.trim(),
         totalPlotPrice: totalPlotPrice || selectedPlt?.price || 0,
         tokenAmountPaid: tokenAmountPaid || 0,
-        paymentMode: paymentMode === 'Other' ? paymentModeOther.trim() : paymentMode,
+        paymentMode: effectiveMode,
+        transactionReference: paymentReference.trim() || undefined,
         paymentTerms: paymentTerms.trim(),
         notes,
       };
@@ -415,12 +432,14 @@ export const BookingsPage: React.FC = () => {
         setTotalPlotPrice(undefined);
         setPaymentMode('');
         setPaymentModeOther('');
+        setPaymentReference('');
+        setBookingFormErrors([]);
         setPaymentTerms('');
         setNotes('');
         window.dispatchEvent(new Event('nexus_storage_updated'));
         await loadData();
       } else {
-        alert(res.message || 'Unable to create the booking. The plot may already be held or booked by another transaction.');
+        setBookingFormErrors([res.message || 'Unable to create the booking. The plot may already be held or booked by another transaction.']);
       }
     } catch (err: any) {
       console.error('Booking submission error', err);
@@ -1662,7 +1681,7 @@ export const BookingsPage: React.FC = () => {
 
           <div className="booking-form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
             <div className="form-group">
-              <label className="form-label">Token Advance (₹)</label>
+              <label className="form-label">Token Advance (₹) *</label>
               <input
                 type="number"
                 className="form-input"
@@ -1688,7 +1707,7 @@ export const BookingsPage: React.FC = () => {
           </div>
 
           <div className="form-group">
-            <label htmlFor="booking-payment-mode" className="form-label">Payment Mode</label>
+            <label htmlFor="booking-payment-mode" className="form-label">Payment Mode *</label>
             <select
               id="booking-payment-mode"
               name="paymentMode"
@@ -1713,6 +1732,28 @@ export const BookingsPage: React.FC = () => {
               />
             )}
           </div>
+
+          {paymentMode && !/cash/i.test(paymentMode === 'Other' ? paymentModeOther : paymentMode) && (
+            <div className="form-group">
+              <label htmlFor="booking-payment-reference" className="form-label">Payment Reference / Transaction ID *</label>
+              <input
+                id="booking-payment-reference"
+                className="form-input"
+                value={paymentReference}
+                onChange={e => setPaymentReference(e.target.value)}
+                placeholder="UTR / cheque number / UPI reference"
+              />
+            </div>
+          )}
+
+          {bookingFormErrors.length > 0 && (
+            <div role="alert" style={{ padding: '10px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)', color: '#b91c1c', fontSize: 13 }}>
+              <strong>The booking cannot be confirmed yet.</strong> Please complete:
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                {bookingFormErrors.map(e => <li key={e}>{e}</li>)}
+              </ul>
+            </div>
+          )}
 
           <div className="form-group">
             <label htmlFor="booking-payment-terms" className="form-label">Payment Terms & Milestones</label>

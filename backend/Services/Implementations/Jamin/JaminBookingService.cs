@@ -207,36 +207,8 @@ public class JaminBookingService : IJaminBookingService
         return ApiResponse<JaminBookingResponseDto>.SuccessResult(MapToDto(booking), "Plot booked successfully with Token Paid.");
     }
 
-    private static string PhoneKey(string? phone)
-    {
-        var digits = new string((phone ?? string.Empty).Where(char.IsDigit).ToArray());
-        return digits.Length > 10 ? digits[^10..] : digits;
-    }
-
-    /// <summary>Marks every pending follow-up of this buyer (by lead, customer or phone) as completed.</summary>
-    private async Task CompleteFollowupsForBuyerAsync(int? leadId, int? customerId, string? phone, string plotNumber, string projectName, CancellationToken ct)
-    {
-        var phoneKey = PhoneKey(phone);
-        var pending = await _context.Followups
-            .Where(f => f.CompanyId == JaminTenantId && f.Status == FollowupStatus.Pending)
-            .ToListAsync(ct);
-
-        var now = DateTime.UtcNow;
-        foreach (var f in pending)
-        {
-            var matches = (leadId.HasValue && f.LeadId == leadId)
-                || (customerId.HasValue && f.CustomerId == customerId)
-                || (phoneKey.Length >= 10 && PhoneKey(f.ContactPhone) == phoneKey);
-            if (!matches) continue;
-
-            f.Status = FollowupStatus.Completed;
-            f.CompletedAt = now;
-            f.UpdatedAt = now;
-            f.OutcomeNotes = string.IsNullOrWhiteSpace(f.OutcomeNotes)
-                ? $"Plot {plotNumber} booked ({projectName})."
-                : $"{f.OutcomeNotes} | Plot {plotNumber} booked ({projectName}).";
-        }
-    }
+    private Task<int> CompleteFollowupsForBuyerAsync(int? leadId, int? customerId, string? phone, string plotNumber, string projectName, CancellationToken ct)
+        => JaminBookingRules.CompleteFollowupsForBuyerAsync(_context, JaminTenantId, leadId, customerId, phone, plotNumber, projectName, ct);
 
     public async Task<ApiResponse<JaminBookingResponseDto>> UpdateBookingStatusAsync(int id, UpdateJaminBookingStatusDto dto, CancellationToken ct = default)
     {

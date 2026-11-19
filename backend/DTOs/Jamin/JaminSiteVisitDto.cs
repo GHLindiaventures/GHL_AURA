@@ -29,6 +29,31 @@ public class JaminSiteVisitDto
     public int? StatusUpdatedById { get; set; }
     public string? StatusUpdatedByName { get; set; }
     public DateTime? StatusUpdatedAt { get; set; }
+    /// <summary>The agent who attended (defaults to the assigned agent until someone records a different one).</summary>
+    public int? AttendedById { get; set; }
+    public string? AttendedByName { get; set; }
+    public DateTime? AttendedAt { get; set; }
+    /// <summary>True once an attending agent has been recorded (otherwise the values above are the assigned agent).</summary>
+    public bool AttendedByRecorded { get; set; }
+    /// <summary>Whether the caller may change this visit's status, remarks and attendance.</summary>
+    public bool CanUpdateStatus { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class SiteVisitHistoryDto
+{
+    public int Id { get; set; }
+    public int SiteVisitId { get; set; }
+    public string EventType { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public int? FromAgentId { get; set; }
+    public string? FromAgentName { get; set; }
+    public int? ToAgentId { get; set; }
+    public string? ToAgentName { get; set; }
+    public string? FromStatus { get; set; }
+    public string? ToStatus { get; set; }
+    public int? ActorId { get; set; }
+    public string? ActorName { get; set; }
     public DateTime CreatedAt { get; set; }
 }
 
@@ -75,6 +100,8 @@ public class UpdateSiteVisitDto
     public string? Status { get; set; }
     public string? VisitorNote { get; set; }
     public string? OutcomeNotes { get; set; }
+    /// <summary>Records which agent actually attended (assigned agent or admin only).</summary>
+    public int? AttendedById { get; set; }
 }
 
 

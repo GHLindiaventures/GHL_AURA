@@ -475,6 +475,12 @@ export interface SiteVisit {
   statusUpdatedById?: string;
   statusUpdatedByName?: string;
   statusUpdatedAt?: string;
+  /** The agent who attended the visit (defaults to the assigned agent until a different one is recorded). */
+  attendedById?: string;
+  attendedByName?: string;
+  attendedByRecorded?: boolean;
+  /** Whether the signed-in user may change this visit's status, remarks and attendance (assigned agent or admin). */
+  canUpdateStatus?: boolean;
   status: 'Requested' | 'Pending' | 'Scheduled' | 'Confirmed' | 'Completed' | 'Rescheduled' | 'Cancelled' | 'No-show' | string;
   outcomeNotes?: string;
   visitorNote?: string;
@@ -484,6 +490,76 @@ export interface SiteVisit {
   leadPhone?: string;
   notes?: string;
   createdAt?: string;
+}
+
+/** One entry of a site visit's timeline (assignment, reassignment, status change, attendance, reschedule). */
+export interface SiteVisitHistoryEntry {
+  id: number;
+  siteVisitId: number;
+  eventType: 'Created' | 'Assigned' | 'Reassigned' | 'StatusChanged' | 'AttendedBy' | 'Rescheduled' | string;
+  description: string;
+  fromAgentName?: string;
+  toAgentName?: string;
+  fromStatus?: string;
+  toStatus?: string;
+  actorName?: string;
+  createdAt: string;
+}
+
+export interface PlotHoldEvent {
+  id: number;
+  eventType: string;
+  description: string;
+  oldExpiresAt?: string;
+  newExpiresAt?: string;
+  actorName?: string;
+  createdAt: string;
+}
+
+/** One hold a plot has had, with its payment and timeline. */
+export interface PlotHold {
+  id: number;
+  plotId: number;
+  leadId?: number;
+  customerId?: number;
+  customerName: string;
+  customerPhone: string;
+  agentId?: number;
+  agentName?: string;
+  holdStartAt: string;
+  expiresAt: string;
+  extensionCount: number;
+  reason?: string;
+  amount: number;
+  paymentMode?: string;
+  paymentReference?: string;
+  paymentDate?: string;
+  paymentProofUrl?: string;
+  paymentStatus: 'None' | 'Pending Verification' | 'Verified' | 'Rejected' | string;
+  confirmed: boolean;
+  verifiedByName?: string;
+  verifiedAt?: string;
+  verificationNotes?: string;
+  status: 'Active' | 'Released' | 'Expired' | 'Converted' | string;
+  closedAt?: string;
+  closedByName?: string;
+  events: PlotHoldEvent[];
+}
+
+export interface PlaceHoldPayload {
+  customerName: string;
+  customerPhone: string;
+  heldByLeadId?: number | string;
+  heldByCustomerId?: number | string;
+  /** Exact expiry (ISO, UTC). */
+  expiresAt: string;
+  amountPaid?: number;
+  paymentMode?: string;
+  paymentReference?: string;
+  paymentDate?: string;
+  notes?: string;
+  /** Admin only: the agent responsible for the hold. */
+  holdByAgentId?: number | string;
 }
 
 export interface Booking {

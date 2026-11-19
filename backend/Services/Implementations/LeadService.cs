@@ -130,7 +130,11 @@ public class LeadService : ILeadService
         }
         else if (role == "sales_executive" && agentId.HasValue)
         {
-            query = query.Where(l => l.AssignedAgentId == agentId.Value || l.AssignedById == agentId.Value);
+            // Jamin: an agent sees only the leads the admin (or they themselves) assigned to them.
+            if (backend.Services.Implementations.Jamin.JaminLeadRules.IsJamin(effectiveCompanyId))
+                query = query.Where(l => l.AssignedAgentId == agentId.Value);
+            else
+                query = query.Where(l => l.AssignedAgentId == agentId.Value || l.AssignedById == agentId.Value);
         }
 
         return query;
@@ -158,7 +162,10 @@ public class LeadService : ILeadService
         // IRMs and admins can access and update leads within their company.
         if (role == "sales_executive" && agentId.HasValue)
         {
-            query = query.Where(l => l.AssignedAgentId == agentId.Value || l.AssignedById == agentId.Value);
+            if (backend.Services.Implementations.Jamin.JaminLeadRules.IsJamin(companyId))
+                query = query.Where(l => l.AssignedAgentId == agentId.Value);
+            else
+                query = query.Where(l => l.AssignedAgentId == agentId.Value || l.AssignedById == agentId.Value);
         }
 
         return await query.FirstOrDefaultAsync(ct);
@@ -964,6 +971,10 @@ public class LeadService : ILeadService
         if (dto.Location != null) lead.Location = dto.Location.Trim();
         if (dto.Source != null) lead.Source = dto.Source.Trim();
         if (dto.Status != null) lead.Status = dto.Status.Trim();
+        // Jamin: "Not Interested" is stored as Junk with the reason "Not Interested".
+        var jaminNotInterested = backend.Services.Implementations.Jamin.JaminLeadRules.IsJamin(lead.CompanyId)
+            && backend.Services.Implementations.Jamin.JaminLeadRules.IsNotInterested(lead.Status);
+        if (jaminNotInterested) lead.Status = backend.Services.Implementations.Jamin.JaminLeadRules.JunkStatus;
         bool isNewCustomer = false;
         Customer? newCustomer = null;
 
@@ -1086,6 +1097,7 @@ public class LeadService : ILeadService
                 customFields[kvp.Key] = kvp.Value;
         }
 
+        if (jaminNotInterested) customFields[backend.Services.Implementations.Jamin.JaminLeadRules.JunkReasonKey] = backend.Services.Implementations.Jamin.JaminLeadRules.NotInterestedReason;
         lead.CustomFieldsJson = customFields.Count > 0 ? JsonSerializer.Serialize(customFields) : null;
         lead.UpdatedAt = DateTime.UtcNow;
 

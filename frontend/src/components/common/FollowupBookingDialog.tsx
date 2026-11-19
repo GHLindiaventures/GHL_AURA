@@ -174,7 +174,7 @@ export const FollowupBookingDialog: React.FC<FollowupBookingDialogProps> = ({ is
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={`Book a plot for ${contact?.name || 'this customer'}`}
+      title={`Book a plot for ${contact?.name || 'this lead'}`}
       subtitle={contact?.phone}
       maxWidth={640}
       footer={
@@ -187,7 +187,7 @@ export const FollowupBookingDialog: React.FC<FollowupBookingDialogProps> = ({ is
       }
     >
       {loading ? (
-        <div style={{ padding: 16, color: 'var(--text-secondary, #64748b)' }}>Checking this customer's site visits…</div>
+        <div style={{ padding: 16, color: 'var(--text-secondary, #64748b)' }}>Checking this lead's site visits…</div>
       ) : showVisited ? (
         <div>
           <p style={{ marginTop: 0 }}>

@@ -55,6 +55,10 @@ public class JaminPlot
     public int? HeldByLeadId { get; set; }
     public string? HoldByAgent { get; set; }
     public DateTime? HoldExpiresAt { get; set; }
+    /// <summary>Responsible agent, hold amount and payment status of the active hold (full detail is in jamin_plot_holds).</summary>
+    public int? HoldAgentId { get; set; }
+    public decimal? HoldAmount { get; set; }
+    public string? HoldPaymentStatus { get; set; }
 
     public string? Notes { get; set; }
 

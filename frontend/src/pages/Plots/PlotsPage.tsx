@@ -11,6 +11,9 @@ import { jaminApiService } from '../../services/jaminApiService';
 import { getCustomers, getLeads } from '../../services/ghlApiService';
 import { storageService } from '../../services/storageService';
 import { toast } from '../../context/ToastContext';
+import {
+  ExtendHoldModal, VerifyHoldPaymentModal, HoldHistoryModal, PaymentBadge, toLocalInput, fmtDateTime,
+} from '../../components/common/PlotHoldDialogs';
 import './PlotsPage.css';
 
 
@@ -32,6 +35,10 @@ export const PlotsPage: React.FC = () => {
   const [priceMinLakh, setPriceMinLakh] = useState('');
   const [priceMaxLakh, setPriceMaxLakh] = useState('');
   const canManagePlots = user?.role?.code === 'company_admin' || user?.role?.code === 'super_admin';
+  const isFinanceOrAdmin = canManagePlots || ['admin', 'sales_manager'].includes(String(user?.role?.code));
+  /** Only the agent responsible for a hold (or an admin) may extend or release it. */
+  const canManageHold = (plot: any) =>
+    isFinanceOrAdmin || !plot?.holdAgentId || String(plot.holdAgentId) === String(user?.id);
 
   // Hold action state
   const [isHoldModalOpen, setIsHoldModalOpen] = useState(false);
@@ -68,7 +75,16 @@ export const PlotsPage: React.FC = () => {
   const [selectedLeadId, setSelectedLeadId] = useState('');
   const [holdCustomer, setHoldCustomer] = useState('');
   const [holdPhone, setHoldPhone] = useState('');
-  const [holdDays, setHoldDays] = useState('7');
+  // Hold details: exact expiry, optional hold payment, reason.
+  const [holdExpiry, setHoldExpiry] = useState('');
+  const [holdAmount, setHoldAmount] = useState<number | undefined>(undefined);
+  const [holdPaymentMode, setHoldPaymentMode] = useState('');
+  const [holdPaymentRef, setHoldPaymentRef] = useState('');
+  const [holdNotes, setHoldNotes] = useState('');
+  const [holdError, setHoldError] = useState('');
+  const [isExtendOpen, setIsExtendOpen] = useState(false);
+  const [isVerifyOpen, setIsVerifyOpen] = useState(false);
+  const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [submittingHold, setSubmittingHold] = useState(false);
 
   // Booking action state
@@ -81,6 +97,8 @@ export const PlotsPage: React.FC = () => {
   const [bookingTokenAmount, setBookingTokenAmount] = useState<number | undefined>(undefined);
   const [bookingTotalAgreementValue, setBookingTotalAgreementValue] = useState<number | undefined>(undefined);
   const [bookingPaymentMode, setBookingPaymentMode] = useState('');
+  const [bookingPaymentRef, setBookingPaymentRef] = useState('');
+  const [bookingErrors, setBookingErrors] = useState<string[]>([]);
   const [bookingPaymentTerms, setBookingPaymentTerms] = useState('');
   const [bookingNotes, setBookingNotes] = useState('');
   const [submittingBooking, setSubmittingBooking] = useState(false);
@@ -407,6 +425,12 @@ export const PlotsPage: React.FC = () => {
     setSelectedLeadId('');
     setHoldCustomer('');
     setHoldPhone('');
+    setHoldExpiry(toLocalInput(new Date(Date.now() + 7 * 24 * 3600 * 1000)));
+    setHoldAmount(undefined);
+    setHoldPaymentMode('');
+    setHoldPaymentRef('');
+    setHoldNotes('');
+    setHoldError('');
     setIsHoldModalOpen(true);
     loadHoldEntities();
   };
@@ -447,54 +471,69 @@ export const PlotsPage: React.FC = () => {
 
   const handleConfirmHold = async () => {
     if (!selectedPlot) return;
-    if (!holdCustomer.trim()) {
-      alert(holdSourceType === 'customer' ? 'Please select a customer.' : holdSourceType === 'lead' ? 'Please select a lead.' : 'Client name is required.');
-      return;
+    const missing: string[] = [];
+    if (!holdCustomer.trim()) missing.push(holdSourceType === 'customer' ? 'customer' : holdSourceType === 'lead' ? 'lead' : 'client name');
+    if (!holdPhone.trim()) missing.push('phone number');
+    const when = new Date(holdExpiry);
+    if (!holdExpiry || Number.isNaN(when.getTime())) missing.push('hold expiry date & time');
+    if ((holdAmount ?? 0) > 0) {
+      if (!holdPaymentMode) missing.push('payment mode');
+      if (!holdPaymentRef.trim()) missing.push('payment reference / transaction id');
     }
-    if (!holdPhone.trim()) {
-      alert('Phone number is required.');
-      return;
-    }
+    if (missing.length > 0) { setHoldError(`Please complete: ${missing.join(', ')}.`); return; }
+    if (when.getTime() <= Date.now() + 60_000) { setHoldError('The hold expiry must be in the future.'); return; }
+    if (when.getTime() > Date.now() + 30 * 24 * 3600 * 1000) { setHoldError('A hold cannot be longer than 30 days.'); return; }
+
     setSubmittingHold(true);
+    setHoldError('');
     try {
-      const success = await jaminApiService.holdPlot(
-        String(selectedPlot.id),
-        holdCustomer.trim(),
-        holdPhone.trim(),
-        parseInt(holdDays, 10),
-        undefined,
-        user?.name || undefined,
-        holdSourceType === 'customer' && selectedCustomerId ? selectedCustomerId : undefined,
-        holdSourceType === 'lead' && selectedLeadId ? selectedLeadId : undefined
-      );
-      if (success) {
+      const result = await jaminApiService.placeHold(String(selectedPlot.id), {
+        customerName: holdCustomer.trim(),
+        customerPhone: holdPhone.trim(),
+        heldByCustomerId: holdSourceType === 'customer' && selectedCustomerId ? selectedCustomerId : undefined,
+        heldByLeadId: holdSourceType === 'lead' && selectedLeadId ? selectedLeadId : undefined,
+        expiresAt: when.toISOString(),
+        amountPaid: (holdAmount ?? 0) > 0 ? holdAmount : undefined,
+        paymentMode: (holdAmount ?? 0) > 0 ? holdPaymentMode : undefined,
+        paymentReference: (holdAmount ?? 0) > 0 ? holdPaymentRef.trim() : undefined,
+        notes: holdNotes.trim() || undefined,
+      });
+      if (result.success) {
         setIsHoldModalOpen(false);
         setSelectedPlot(null);
         await loadData(selectedProject);
+        toast.success(`Plot placed on hold until ${fmtDateTime(when.toISOString())}.`);
       } else {
-        alert('Failed to place plot on hold. Please check plot status.');
+        setHoldError(result.message || 'Failed to place plot on hold.');
       }
     } catch (err) {
       console.error('Hold plot error', err);
-      alert('Error communicating with server.');
+      setHoldError('Error communicating with server.');
     } finally {
       setSubmittingHold(false);
     }
   };
 
   const handleReleaseHold = async (plot: any) => {
-    if (confirm(`Release hold on ${plot.plotNumber} back to Available status?`)) {
-      try {
-        const success = await jaminApiService.releasePlot(String(plot.id));
-        if (success) {
-          setSelectedPlot(null);
-          await loadData(selectedProject);
-        } else {
-          alert('Failed to release plot hold.');
-        }
-      } catch (err) {
-        console.error('Release hold error', err);
-      }
+    if (!confirm(`Release hold on ${plot.plotNumber} back to Available status?`)) return;
+    const result = await jaminApiService.releaseHold(String(plot.id));
+    if (result.success) {
+      setSelectedPlot(null);
+      await loadData(selectedProject);
+      toast.success(`Hold on ${plot.plotNumber} released.`);
+    } else {
+      toast.error(result.message || 'Failed to release plot hold.');
+    }
+  };
+
+  /** Refresh the list and keep the open plot drawer in step with the server. */
+  const refreshAfterHoldChange = async () => {
+    const id = selectedPlot?.id;
+    await loadData(selectedProject);
+    if (id !== undefined) {
+      const fresh = await jaminApiService.getPlots(selectedProject || undefined);
+      const again = (fresh as any[]).find(x => String(x.id) === String(id));
+      setSelectedPlot(again ?? null);
     }
   };
 
@@ -530,6 +569,8 @@ export const PlotsPage: React.FC = () => {
     setBookingTotalAgreementValue(price);
     setBookingTokenAmount(undefined);
     setBookingPaymentMode('');
+    setBookingPaymentRef('');
+    setBookingErrors([]);
     setBookingPaymentTerms('');
     setBookingNotes('');
     setIsBookingModalOpen(true);
@@ -682,6 +723,21 @@ export const PlotsPage: React.FC = () => {
       return;
     }
 
+    // Every mandatory detail must be present before a booking can be confirmed.
+    const missingBooking: string[] = [];
+    const bookingPrice = bookingTotalAgreementValue ?? (selectedPlot.price || selectedPlot.totalPrice || 0);
+    if (bookingPrice <= 0) missingBooking.push('Total agreement value');
+    if (!bookingTokenAmount || bookingTokenAmount <= 0) missingBooking.push('Token advance amount');
+    else if (bookingTokenAmount > bookingPrice) missingBooking.push('Token advance cannot exceed the agreement value');
+    if (!bookingPaymentMode) missingBooking.push('Payment mode');
+    else if (!/cash/i.test(bookingPaymentMode) && !bookingPaymentRef.trim()) missingBooking.push('Payment reference / transaction id');
+    if (bookingCustomerPhone.replace(/\D/g, '').length < 10) missingBooking.push('Buyer phone (10 digits)');
+    if (missingBooking.length > 0) {
+      setBookingErrors(missingBooking);
+      return;
+    }
+    setBookingErrors([]);
+
     setSubmittingBooking(true);
     try {
       const price = bookingTotalAgreementValue ?? (selectedPlot.price || selectedPlot.totalPrice || 0);
@@ -695,6 +751,7 @@ export const PlotsPage: React.FC = () => {
         totalPlotPrice: price,
         tokenAmountPaid: bookingTokenAmount || 0,
         paymentMode: bookingPaymentMode,
+        transactionReference: bookingPaymentRef.trim() || undefined,
         paymentTerms: bookingPaymentTerms.trim(),
         notes: bookingNotes.trim(),
         plotNumber: selectedPlot.plotNumber,
@@ -712,7 +769,7 @@ export const PlotsPage: React.FC = () => {
         }
         alert(`✓ Plot ${selectedPlot.plotNumber} successfully reserved! The token payment of ₹${(bookingTokenAmount || 0).toLocaleString('en-IN')} is awaiting finance verification. The prospect will be officially confirmed in Customer 360 once the payment is verified.`);
       } else {
-        alert(result.message || 'Failed to confirm booking. The plot may already be held or booked by another transaction.');
+        setBookingErrors([result.message || 'Failed to confirm booking. The plot may already be held or booked by another transaction.']);
       }
     } catch (err: any) {
       console.error('Error confirming booking', err);
@@ -1374,12 +1431,27 @@ export const PlotsPage: React.FC = () => {
                 >
                   ✓ Confirm to Book
                 </button>
-                <button
-                  className="btn btn-secondary plot-release-btn"
-                  onClick={() => handleReleaseHold(selectedPlot)}
-                >
-                  Release Hold to Available
+                {canManageHold(selectedPlot) && (
+                  <button className="btn btn-secondary" onClick={() => setIsExtendOpen(true)}>
+                    Extend / Change Hold
+                  </button>
+                )}
+                {isFinanceOrAdmin && selectedPlot.holdPaymentStatus === 'Pending Verification' && (
+                  <button className="btn btn-secondary" onClick={() => setIsVerifyOpen(true)}>
+                    Verify Hold Payment
+                  </button>
+                )}
+                <button className="btn btn-secondary" onClick={() => setIsHistoryOpen(true)}>
+                  Hold History
                 </button>
+                {canManageHold(selectedPlot) && (
+                  <button
+                    className="btn btn-secondary plot-release-btn"
+                    onClick={() => handleReleaseHold(selectedPlot)}
+                  >
+                    Release Hold to Available
+                  </button>
+                )}
               </>
             )}
 
@@ -1464,8 +1536,10 @@ export const PlotsPage: React.FC = () => {
                 </div>
                 <div>Customer: <strong>{selectedPlot.heldByCustomerName || '—'}</strong></div>
                 <div>Phone: <strong>{selectedPlot.heldByCustomerPhone || '—'}</strong></div>
-                {selectedPlot.holdByAgent && <div>Held By Agent: <strong>{selectedPlot.holdByAgent}</strong></div>}
-                <div>Expiry: <strong>{selectedPlot.holdExpiresAt ? new Date(selectedPlot.holdExpiresAt).toLocaleDateString() : '—'}</strong></div>
+                {selectedPlot.holdByAgent && <div>Responsible agent: <strong>{selectedPlot.holdByAgent}</strong></div>}
+                <div>Expires: <strong>{fmtDateTime(selectedPlot.holdExpiresAt)}</strong></div>
+                {selectedPlot.holdAmount > 0 && <div>Hold amount: <strong>₹{Number(selectedPlot.holdAmount).toLocaleString('en-IN')}</strong></div>}
+                <div style={{ marginTop: 4 }}><PaymentBadge status={selectedPlot.holdPaymentStatus} /></div>
               </div>
             )}
           </div>
@@ -1610,21 +1684,75 @@ export const PlotsPage: React.FC = () => {
           )}
 
           <div className="form-group">
-            <label htmlFor="plot-hold-days" className="form-label">Hold Validity Duration</label>
-            <select
-              id="plot-hold-days"
-              name="holdDays"
-              className="form-select"
-              value={holdDays}
-              onChange={e => setHoldDays(e.target.value)}
-            >
-              <option value="3">3 Days (Express Hold)</option>
-              <option value="7">7 Days (Standard Diligence)</option>
-              <option value="14">14 Days (Executive Approval)</option>
-            </select>
+            <label htmlFor="plot-hold-expiry" className="form-label">Hold expires on *</label>
+            <input
+              id="plot-hold-expiry"
+              type="datetime-local"
+              className="form-input"
+              value={holdExpiry}
+              onChange={e => setHoldExpiry(e.target.value)}
+            />
+            <div style={{ display: 'flex', gap: 6, marginTop: 8, flexWrap: 'wrap' }}>
+              {[[3, '3 days (express)'], [7, '7 days (standard)'], [14, '14 days (executive approval)']].map(([d, label]) => (
+                <button key={String(d)} type="button" className="btn btn-secondary btn-sm"
+                  onClick={() => setHoldExpiry(toLocalInput(new Date(Date.now() + Number(d) * 24 * 3600 * 1000)))}>
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
+              The plot returns to Available automatically at this time unless the hold is extended or booked. Maximum 30 days.
+            </div>
           </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+            <div className="form-group">
+              <label htmlFor="plot-hold-amount" className="form-label">Hold / advance amount (₹)</label>
+              <input id="plot-hold-amount" type="number" min={0} className="form-input"
+                value={holdAmount ?? ''} onChange={e => setHoldAmount(e.target.value ? Number(e.target.value) : undefined)}
+                placeholder="Leave empty if no money was taken" />
+            </div>
+            <div className="form-group">
+              <label htmlFor="plot-hold-mode" className="form-label">Payment mode{(holdAmount ?? 0) > 0 ? ' *' : ''}</label>
+              <select id="plot-hold-mode" className="form-select" value={holdPaymentMode} onChange={e => setHoldPaymentMode(e.target.value)} disabled={!(holdAmount && holdAmount > 0)}>
+                <option value="">-- Select --</option>
+                <option value="UPI / Online">UPI / Online</option>
+                <option value="Bank Transfer / NEFT">Bank Transfer / NEFT</option>
+                <option value="Cheque / DD">Cheque / DD</option>
+                <option value="Cash">Cash</option>
+              </select>
+            </div>
+          </div>
+          {(holdAmount ?? 0) > 0 && (
+            <div className="form-group">
+              <label htmlFor="plot-hold-ref" className="form-label">Payment reference / transaction id *</label>
+              <input id="plot-hold-ref" type="text" className="form-input" value={holdPaymentRef} onChange={e => setHoldPaymentRef(e.target.value)} />
+              <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
+                The payment is recorded as <strong>Pending Verification</strong>. The hold becomes <strong>Confirmed</strong> once finance verifies it.
+              </div>
+            </div>
+          )}
+
+          <div className="form-group">
+            <label htmlFor="plot-hold-notes" className="form-label">Reason / notes</label>
+            <input id="plot-hold-notes" type="text" className="form-input" value={holdNotes} onChange={e => setHoldNotes(e.target.value)} placeholder="Why is the plot being held?" />
+          </div>
+
+          <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
+            Responsible agent: <strong>{user?.name || 'you'}</strong> · Project: <strong>{currentProjectObj?.name || '—'}</strong> · Plot: <strong>{selectedPlot?.plotNumber}</strong>
+          </div>
+
+          {holdError && (
+            <div role="alert" style={{ padding: '10px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)', color: '#b91c1c', fontSize: 13 }}>
+              {holdError}
+            </div>
+          )}
         </div>
       </Modal>
+
+      <ExtendHoldModal isOpen={isExtendOpen} onClose={() => setIsExtendOpen(false)} plot={selectedPlot} onDone={refreshAfterHoldChange} />
+      <VerifyHoldPaymentModal isOpen={isVerifyOpen} onClose={() => setIsVerifyOpen(false)} plot={selectedPlot} onDone={refreshAfterHoldChange} />
+      <HoldHistoryModal isOpen={isHistoryOpen} onClose={() => setIsHistoryOpen(false)} plot={selectedPlot} />
 
       {/* Confirm Booking Modal */}
       <Modal
@@ -1785,7 +1913,7 @@ export const PlotsPage: React.FC = () => {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div className="form-group">
-              <label className="form-label">Token Advance (₹) <span style={{ fontSize: '0.8rem', fontWeight: 'normal', color: 'var(--text-muted)' }}></span></label>
+              <label className="form-label">Token Advance (₹) *</label>
               <input
                 type="number"
                 className="form-input"
@@ -1796,7 +1924,7 @@ export const PlotsPage: React.FC = () => {
             </div>
 
             <div className="form-group">
-              <label className="form-label">Total Agreement Value (₹) <span style={{ fontSize: '0.8rem', fontWeight: 'normal', color: 'var(--text-muted)' }}></span></label>
+              <label className="form-label">Total Agreement Value (₹) *</label>
               <input
                 type="number"
                 className="form-input"
@@ -1808,7 +1936,7 @@ export const PlotsPage: React.FC = () => {
           </div>
 
           <div className="form-group">
-            <label className="form-label">Payment Mode</label>
+            <label className="form-label">Payment Mode *</label>
             <select
               className="form-select"
               value={bookingPaymentMode}
@@ -1822,6 +1950,28 @@ export const PlotsPage: React.FC = () => {
               <option value="Cash">Cash</option>
             </select>
           </div>
+
+          {bookingPaymentMode && !/cash/i.test(bookingPaymentMode) && (
+            <div className="form-group">
+              <label className="form-label">Payment Reference / Transaction ID *</label>
+              <input
+                type="text"
+                className="form-input"
+                value={bookingPaymentRef}
+                onChange={e => setBookingPaymentRef(e.target.value)}
+                placeholder="UTR / cheque number / UPI reference"
+              />
+            </div>
+          )}
+
+          {bookingErrors.length > 0 && (
+            <div role="alert" style={{ padding: '10px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)', color: '#b91c1c', fontSize: 13 }}>
+              <strong>The booking cannot be confirmed yet.</strong> Please complete:
+              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
+                {bookingErrors.map(e => <li key={e}>{e}</li>)}
+              </ul>
+            </div>
+          )}
 
           <div className="form-group">
             <label className="form-label">Payment Terms / Milestone Schedule <span style={{ fontSize: '0.8rem', fontWeight: 'normal', color: 'var(--text-muted)' }}></span></label>

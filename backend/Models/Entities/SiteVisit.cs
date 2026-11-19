@@ -49,6 +49,14 @@ public class SiteVisit
     public string? StatusUpdatedByName { get; set; }
     public DateTime? StatusUpdatedAt { get; set; }
 
+    /// <summary>The agent who actually attended. Null until recorded; the assigned agent is the default.</summary>
+    public int? AttendedById { get; set; }
+    public string? AttendedByName { get; set; }
+    public DateTime? AttendedAt { get; set; }
+
+    /// <summary>Timeline of assignments, status changes and attendance.</summary>
+    public ICollection<SiteVisitHistory> History { get; set; } = new List<SiteVisitHistory>();
+
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
     public DateTime? UpdatedAt { get; set; }
 }

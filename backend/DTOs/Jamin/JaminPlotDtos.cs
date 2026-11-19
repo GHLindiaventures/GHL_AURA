@@ -25,6 +25,12 @@ public class JaminPlotResponseDto
     public int? HeldByLeadId { get; set; }
     public string? HoldByAgent { get; set; }
     public DateTime? HoldExpiresAt { get; set; }
+    public int? HoldAgentId { get; set; }
+    public decimal? HoldAmount { get; set; }
+    /// <summary>None | Pending Verification | Verified | Rejected</summary>
+    public string? HoldPaymentStatus { get; set; }
+    /// <summary>True once finance has verified the hold payment.</summary>
+    public bool HoldConfirmed { get; set; }
     public string? Notes { get; set; }
     public DateTime CreatedAt { get; set; }
     public DateTime? UpdatedAt { get; set; }
@@ -51,8 +57,73 @@ public class HoldPlotRequestDto
     public string CustomerName { get; set; } = string.Empty;
     public string CustomerPhone { get; set; } = string.Empty;
     public string? HoldByAgent { get; set; }
+    /// <summary>Admin only: the agent responsible for the hold (defaults to the caller).</summary>
+    public int? HoldByAgentId { get; set; }
     public int HoldDays { get; set; } = 7;
+    /// <summary>Exact hold expiry (UTC). Takes precedence over <see cref="HoldDays"/>.</summary>
+    public DateTime? ExpiresAt { get; set; }
+    /// <summary>Hold / advance amount taken, if any.</summary>
+    public decimal? AmountPaid { get; set; }
+    public string? PaymentMode { get; set; }
+    public string? PaymentReference { get; set; }
+    public DateTime? PaymentDate { get; set; }
+    public string? PaymentProofUrl { get; set; }
+    /// <summary>Reason / additional notes.</summary>
     public string? Notes { get; set; }
+}
+
+public class ExtendHoldRequestDto
+{
+    public DateTime? NewExpiresAt { get; set; }
+    public int? AddDays { get; set; }
+    public string? Reason { get; set; }
+}
+
+public class VerifyHoldPaymentRequestDto
+{
+    public bool Approve { get; set; } = true;
+    public string? Notes { get; set; }
+}
+
+public class PlotHoldEventDto
+{
+    public int Id { get; set; }
+    public string EventType { get; set; } = string.Empty;
+    public string Description { get; set; } = string.Empty;
+    public DateTime? OldExpiresAt { get; set; }
+    public DateTime? NewExpiresAt { get; set; }
+    public string? ActorName { get; set; }
+    public DateTime CreatedAt { get; set; }
+}
+
+public class PlotHoldDto
+{
+    public int Id { get; set; }
+    public int PlotId { get; set; }
+    public int? LeadId { get; set; }
+    public int? CustomerId { get; set; }
+    public string CustomerName { get; set; } = string.Empty;
+    public string CustomerPhone { get; set; } = string.Empty;
+    public int? AgentId { get; set; }
+    public string? AgentName { get; set; }
+    public DateTime HoldStartAt { get; set; }
+    public DateTime ExpiresAt { get; set; }
+    public int ExtensionCount { get; set; }
+    public string? Reason { get; set; }
+    public decimal Amount { get; set; }
+    public string? PaymentMode { get; set; }
+    public string? PaymentReference { get; set; }
+    public DateTime? PaymentDate { get; set; }
+    public string? PaymentProofUrl { get; set; }
+    public string PaymentStatus { get; set; } = "None";
+    public bool Confirmed { get; set; }
+    public string? VerifiedByName { get; set; }
+    public DateTime? VerifiedAt { get; set; }
+    public string? VerificationNotes { get; set; }
+    public string Status { get; set; } = "Active";
+    public DateTime? ClosedAt { get; set; }
+    public string? ClosedByName { get; set; }
+    public List<PlotHoldEventDto> Events { get; set; } = new();
 }
 
 public class UpdateJaminPlotDto

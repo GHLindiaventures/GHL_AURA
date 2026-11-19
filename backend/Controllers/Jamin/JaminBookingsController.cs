@@ -3,6 +3,7 @@ using backend.DTOs.Common;
 using backend.DTOs.Jamin;
 using backend.Extensions;
 using backend.Models.Entities;
+using backend.Services.Implementations.Jamin;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
@@ -105,8 +106,11 @@ public class JaminBookingsController : JaminTenantControllerBase
                 if (hasActiveBooking)
                     return Conflict(ApiResponse<JaminBookingResponseDto>.FailureResult("This plot already has an active reservation or booking."));
 
-                if (plot.Status != "Available" && !(plot.Status == "Hold" && plot.HeldByCustomerPhone == dto.CustomerPhone.Trim()))
-                    return Conflict(ApiResponse<JaminBookingResponseDto>.FailureResult("Plot is not available for this buyer."));
+                var isAdminCaller = User.IsInRole("company_admin") || User.IsInRole("super_admin") || User.IsInRole("admin") || User.IsInRole("sales_manager");
+                if (plot.Status != "Available"
+                    && !(plot.Status == "Hold" && (isAdminCaller || JaminHoldLedger.IsHolder(plot, dto.LeadId, dto.CustomerId, dto.CustomerPhone))))
+                    return Conflict(ApiResponse<JaminBookingResponseDto>.FailureResult(
+                        plot.Status == "Hold" ? "This plot is on hold for another buyer." : "Plot is not available for this buyer."));
 
                 project = await _db.JaminProjects.FirstOrDefaultAsync(p => p.Id == plot.ProjectId && p.CompanyId == companyId, ct);
             }
@@ -129,6 +133,15 @@ public class JaminBookingsController : JaminTenantControllerBase
 
             var agentId = dto.AssignedAgentId ?? matchedLead?.AssignedAgentId ?? User.GetUserId();
             var agent = agentId > 0 ? await _db.Users.FirstOrDefaultAsync(u => u.Id == agentId && u.CompanyId == companyId, ct) : null;
+
+            // Mandatory details: nothing is confirmed until they are all present (holds are validated by the hold workflow).
+            if (!dto.IsHold)
+            {
+                var missing = JaminBookingRules.MissingBookingDetails(dto, totalPrice, agent != null);
+                if (missing.Count > 0)
+                    return BadRequest(ApiResponse<JaminBookingResponseDto>.FailureResult(
+                        $"The booking cannot be confirmed yet. Missing or invalid: {string.Join(", ", missing)}.", missing));
+            }
 
             // 2. Resolve existing Customer if provided (do NOT create new customer yet until token is verified!)
             Customer? customer = null;
@@ -210,6 +223,10 @@ public class JaminBookingsController : JaminTenantControllerBase
                 }
                 else
                 {
+                    // A held plot becomes Booked: the hold is converted (and logged), never left dangling.
+                    if (plot.Status == "Hold")
+                        await JaminHoldLedger.CloseActiveAsync(_db, plot.Id, "Converted", new HoldActor(User.GetUserId(), User.GetUserName(), false), DateTime.UtcNow, $"Booking #{booking.Id}.", ct);
+                    plot.HoldAgentId = null; plot.HoldAmount = null; plot.HoldPaymentStatus = null;
                     plot.Status = "Booked";
                     plot.HeldByCustomerId = customer?.Id;
                     plot.HeldByCustomerName = booking.CustomerName;
@@ -220,6 +237,14 @@ public class JaminBookingsController : JaminTenantControllerBase
                 plot.UpdatedAt = DateTime.UtcNow;
 
                 if (project != null) await RecalculateInventoryAsync(project, ct);
+                await _db.SaveChangesAsync(ct);
+            }
+
+            // The buyer has booked: their pending follow-ups are done and leave the Follow-ups list.
+            if (!isHold)
+            {
+                await JaminBookingRules.CompleteFollowupsForBuyerAsync(_db, companyId, matchedLead?.Id ?? dto.LeadId, customer?.Id ?? dto.CustomerId,
+                    booking.CustomerPhone, booking.PlotNumber, booking.ProjectName, ct);
                 await _db.SaveChangesAsync(ct);
             }
 

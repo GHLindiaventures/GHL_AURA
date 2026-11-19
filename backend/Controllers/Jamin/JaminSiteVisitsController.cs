@@ -64,6 +64,15 @@ public class JaminSiteVisitsController : JaminTenantControllerBase
         return Ok(result);
     }
 
+    /// <summary>The visit's timeline: who assigned / reassigned it, status changes and who attended.</summary>
+    [HttpGet("{id:int}/history")]
+    [Authorize]
+    public async Task<IActionResult> GetHistory(int id, CancellationToken ct)
+    {
+        var result = await _siteVisitService.GetSiteVisitHistoryAsync(id, ct);
+        return result.Success ? Ok(result) : NotFound(result);
+    }
+
     /// <summary>
     /// Confirms a site visit that was in 'Requested' or 'Pending' status -> moves to 'Scheduled'.
     /// </summary>

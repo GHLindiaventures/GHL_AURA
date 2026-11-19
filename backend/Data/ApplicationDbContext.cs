@@ -43,6 +43,9 @@ public class ApplicationDbContext : DbContext
     /// <summary>Site visit requests and confirmations across properties.</summary>
     public DbSet<SiteVisit> SiteVisits => Set<SiteVisit>();
     public DbSet<SiteVisitPlot> SiteVisitPlots => Set<SiteVisitPlot>();
+    public DbSet<SiteVisitHistory> SiteVisitHistory => Set<SiteVisitHistory>();
+    public DbSet<JaminPlotHold> JaminPlotHolds => Set<JaminPlotHold>();
+    public DbSet<JaminPlotHoldEvent> JaminPlotHoldEvents => Set<JaminPlotHoldEvent>();
 
     /// <summary>Jamin land development projects (e.g. Jamin Garden — Shastri Nagar).</summary>
     public DbSet<JaminProject> JaminProjects => Set<JaminProject>();
