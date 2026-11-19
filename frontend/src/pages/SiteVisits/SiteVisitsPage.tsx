@@ -1385,7 +1385,7 @@ export const SiteVisitsPage: React.FC = () => {
             <label htmlFor="sitevisit-visitor-select" className="form-label">
               Visitor *{' '}
               <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                ({leads.length} leads · {customers.length} customers)
+                ({leads.length} leads)
               </span>
             </label>
             <select
@@ -1396,7 +1396,7 @@ export const SiteVisitsPage: React.FC = () => {
               value={visitorSelectValue}
               onChange={e => handleVisitorSelect(e.target.value)}
             >
-              <option value="">-- Choose a lead, customer or new visitor --</option>
+              <option value="">-- Choose a lead or add a new visitor --</option>
               <optgroup label={`Leads (${leads.length})`}>
                 {leads.map(l => (
                   <option key={`lead-${l.id}`} value={`lead:${l.id}`}>
@@ -1404,16 +1404,7 @@ export const SiteVisitsPage: React.FC = () => {
                   </option>
                 ))}
               </optgroup>
-              <optgroup label={`Customers (${customers.length})`}>
-                {customers.map(c => (
-                  <option key={`customer-${c.id}`} value={`customer:${c.id}`}>
-                    {c.name} — {c.phone || 'no phone'}
-                  </option>
-                ))}
-              </optgroup>
-              <optgroup label="Not in the CRM">
-                <option value="new">+ New visitor (enter name and phone)</option>
-              </optgroup>
+              <option value="new">+ New visitor (enter name and phone)</option>
             </select>
           </div>
 
