@@ -1764,11 +1764,11 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
         ) : tenant?.slug === 'jamin' ? (
           <div style={{ display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
             <img
-              src="/jamin-logo.png"
+              src="/jamin-logo.webp"
               alt="Jamin Bazaar"
               style={{
-                height: 38,
-                maxWidth: 175,
+                height: 46,
+                maxWidth: 190,
                 objectFit: 'contain',
                 display: 'block',
               }}
