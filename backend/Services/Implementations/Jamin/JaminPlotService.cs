@@ -138,7 +138,8 @@ public class JaminPlotService : IJaminPlotService
         plot.HeldByCustomerName = dto.CustomerName.Trim();
         plot.HeldByCustomerPhone = dto.CustomerPhone.Trim();
         plot.HoldByAgent = dto.HoldByAgent?.Trim();
-        plot.HoldExpiresAt = DateTime.UtcNow.AddDays(dto.HoldDays > 0 ? dto.HoldDays : 7);
+        var (resolvedExpiry, _) = dto.ResolveHoldExpiry(DateTime.UtcNow);
+        plot.HoldExpiresAt = resolvedExpiry ?? DateTime.UtcNow.AddDays(dto.HoldDays > 0 ? dto.HoldDays : 7);
         plot.UpdatedAt = DateTime.UtcNow;
 
         await _context.SaveChangesAsync(ct);

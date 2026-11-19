@@ -44,6 +44,9 @@ public class ApplicationDbContext : DbContext
     public DbSet<SiteVisit> SiteVisits => Set<SiteVisit>();
     public DbSet<SiteVisitPlot> SiteVisitPlots => Set<SiteVisitPlot>();
 
+    /// <summary>Document packs shared with customers for plot verification during a hold.</summary>
+    public DbSet<PlotDocumentShare> PlotDocumentShares => Set<PlotDocumentShare>();
+
     /// <summary>Jamin land development projects (e.g. Jamin Garden — Shastri Nagar).</summary>
     public DbSet<JaminProject> JaminProjects => Set<JaminProject>();
 

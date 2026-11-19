@@ -204,8 +204,11 @@ public class JaminPlotsController : JaminTenantControllerBase
     [HttpPost("{id:int}/hold")]
     public async Task<IActionResult> HoldPlot(int id, [FromBody] HoldPlotRequestDto dto, CancellationToken ct)
     {
-        if (string.IsNullOrWhiteSpace(dto.CustomerName) || string.IsNullOrWhiteSpace(dto.CustomerPhone) || dto.HoldDays is < 1 or > 30)
-            return BadRequest(ApiResponse<JaminPlotResponseDto>.FailureResult("Customer name, phone, and a hold period between 1 and 30 days are required."));
+        if (string.IsNullOrWhiteSpace(dto.CustomerName) || string.IsNullOrWhiteSpace(dto.CustomerPhone))
+            return BadRequest(ApiResponse<JaminPlotResponseDto>.FailureResult("Customer name and phone are required."));
+        var (holdExpiresAt, holdError) = dto.ResolveHoldExpiry(DateTime.UtcNow);
+        if (holdError != null)
+            return BadRequest(ApiResponse<JaminPlotResponseDto>.FailureResult(holdError));
         var plot = await _db.JaminPlots.FirstOrDefaultAsync(p => p.Id == id && p.CompanyId == JaminCompanyId, ct);
         if (plot == null) return NotFound(ApiResponse<JaminPlotResponseDto>.FailureResult("Plot not found."));
         if (plot.Status == "Hold" && plot.HoldExpiresAt <= DateTime.UtcNow)
@@ -222,7 +225,7 @@ public class JaminPlotsController : JaminTenantControllerBase
         }
         plot.HeldByLeadId = heldByLeadId;
         plot.Status = "Hold"; plot.HeldByCustomerId = dto.HeldByCustomerId; plot.HeldByCustomerName = dto.CustomerName.Trim(); plot.HeldByCustomerPhone = dto.CustomerPhone.Trim(); plot.HoldByAgent = dto.HoldByAgent?.Trim();
-        plot.HoldExpiresAt = DateTime.UtcNow.AddDays(dto.HoldDays); plot.UpdatedAt = DateTime.UtcNow;
+        plot.HoldExpiresAt = holdExpiresAt; plot.UpdatedAt = DateTime.UtcNow;
         var holdProject = await _db.JaminProjects.FirstOrDefaultAsync(p => p.Id == plot.ProjectId && p.CompanyId == plot.CompanyId, ct);
         if (holdProject != null) await RecalculateInventoryAsync(holdProject, ct);
         await _db.SaveChangesAsync(ct);

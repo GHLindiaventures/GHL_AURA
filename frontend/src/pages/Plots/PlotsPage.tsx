@@ -11,8 +11,38 @@ import { jaminApiService } from '../../services/jaminApiService';
 import { getCustomers, getLeads } from '../../services/ghlApiService';
 import { storageService } from '../../services/storageService';
 import { toast } from '../../context/ToastContext';
+import { ShareDocumentsModal, type ShareDocumentsTarget } from '../../components/jamin/ShareDocumentsModal';
+import { PlotDocumentsPanel, VerificationChip } from '../../components/jamin/PlotDocumentsPanel';
+import { documentPackService, latestShareByPlot, type PlotDocumentShare } from '../../services/documentPackService';
 import './PlotsPage.css';
 
+
+// ── Hold expiry helpers ────────────────────────────────────────────────────
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const toLocalDateInput = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const MAX_HOLD_DAYS = 30;
+
+/** e.g. "26 Nov 2026, 6:00 pm" */
+const formatHoldExpiry = (iso?: string | null): string => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+};
+
+/** "2d 4h left" / "3h 10m left" / "Expired" + urgency flag (< 24h) */
+const getHoldRemaining = (iso?: string | null): { label: string; urgent: boolean } => {
+  if (!iso) return { label: '', urgent: false };
+  const ms = new Date(iso).getTime() - Date.now();
+  if (Number.isNaN(ms)) return { label: '', urgent: false };
+  if (ms <= 0) return { label: 'Expired', urgent: true };
+  const mins = Math.floor(ms / 60000);
+  const days = Math.floor(mins / 1440);
+  const hours = Math.floor((mins % 1440) / 60);
+  const m = mins % 60;
+  const label = days > 0 ? `${days}d ${hours}h left` : hours > 0 ? `${hours}h ${m}m left` : `${m}m left`;
+  return { label, urgent: ms < 24 * 3600 * 1000 };
+};
 
 export const PlotsPage: React.FC = () => {
   const { tenant, user } = useAuth();
@@ -37,6 +67,11 @@ export const PlotsPage: React.FC = () => {
   const [isHoldModalOpen, setIsHoldModalOpen] = useState(false);
   const [holdSourceType, setHoldSourceType] = useState<'customer' | 'lead' | 'custom'>('customer');
   const [customersList, setCustomersList] = useState<any[]>([]);
+  // Legal document pack sharing (during hold)
+  const [shareTarget, setShareTarget] = useState<ShareDocumentsTarget | null>(null);
+  const [shareRefreshKey, setShareRefreshKey] = useState(0);
+  const [plotShares, setPlotShares] = useState<Record<string, PlotDocumentShare>>({});
+  const [shareDocsAfterHold, setShareDocsAfterHold] = useState(true);
   const [leadsList, setLeadsList] = useState<any[]>([]);
 
   // Effective customers list: includes all customers from CRM database, PLUS any converted leads who are already customers
@@ -69,6 +104,27 @@ export const PlotsPage: React.FC = () => {
   const [holdCustomer, setHoldCustomer] = useState('');
   const [holdPhone, setHoldPhone] = useState('');
   const [holdDays, setHoldDays] = useState('7');
+  // Custom hold expiry (local date + time)
+  const [holdUntilDate, setHoldUntilDate] = useState('');
+  const [holdUntilTime, setHoldUntilTime] = useState('18:00');
+  const applyHoldPreset = (days: number) => {
+    const d = new Date();
+    d.setDate(d.getDate() + days);
+    setHoldUntilDate(toLocalDateInput(d));
+    setHoldDays(String(days));
+  };
+  const holdUntilDateObj = useMemo(() => {
+    if (!holdUntilDate || !holdUntilTime) return null;
+    const d = new Date(`${holdUntilDate}T${holdUntilTime}:00`);
+    return Number.isNaN(d.getTime()) ? null : d;
+  }, [holdUntilDate, holdUntilTime]);
+  const holdUntilError = useMemo(() => {
+    if (!holdUntilDateObj) return 'Select the hold expiry date and time.';
+    const ms = holdUntilDateObj.getTime() - Date.now();
+    if (ms <= 60 * 1000) return 'Hold expiry must be in the future.';
+    if (ms > MAX_HOLD_DAYS * 24 * 3600 * 1000) return `Hold cannot be longer than ${MAX_HOLD_DAYS} days.`;
+    return null;
+  }, [holdUntilDateObj]);
   const [submittingHold, setSubmittingHold] = useState(false);
 
   // Booking action state
@@ -289,6 +345,37 @@ export const PlotsPage: React.FC = () => {
 
   const currentProjectId = selectedProject || (projects[0]?.id ? String(projects[0].id) : '');
 
+  const loadPlotShares = async (projId: string) => {
+    if (!projId) return;
+    try {
+      const shares = await documentPackService.getShares({ projectId: projId });
+      setPlotShares(latestShareByPlot(shares));
+    } catch {
+      setPlotShares({});
+    }
+  };
+  useEffect(() => {
+    loadPlotShares(currentProjectId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProjectId, shareRefreshKey]);
+
+  const openShareDocs = (plot: any, overrides?: Partial<ShareDocumentsTarget>) => {
+    const lead = plot?.heldByLeadId ? leadsList.find((l: any) => String(l.id) === String(plot.heldByLeadId)) : null;
+    const cust = plot?.heldByCustomerId ? customersList.find((c: any) => String(c.id) === String(plot.heldByCustomerId)) : null;
+    setShareTarget({
+      plotId: plot.id,
+      plotNumber: plot.plotNumber,
+      projectName: projects.find((p: any) => String(p.id) === String(plot.projectId))?.name,
+      holdExpiresAt: plot.status === 'Hold' ? plot.holdExpiresAt : null,
+      recipientName: plot.heldByCustomerName || lead?.name || cust?.name || '',
+      recipientPhone: plot.heldByCustomerPhone || lead?.phone || cust?.phone || '',
+      recipientEmail: lead?.email || cust?.email || '',
+      leadId: plot.heldByLeadId || null,
+      customerId: plot.heldByCustomerId || null,
+      ...overrides,
+    });
+  };
+
   const projectPlots = currentProjectId
     ? plots.filter(p => String(p.projectId) === String(currentProjectId)).sort(comparePlotNumbers)
     : [...plots].sort(comparePlotNumbers);
@@ -407,6 +494,9 @@ export const PlotsPage: React.FC = () => {
     setSelectedLeadId('');
     setHoldCustomer('');
     setHoldPhone('');
+    // Default: 7 days from now at 6:00 PM (fully editable)
+    applyHoldPreset(7);
+    setHoldUntilTime('18:00');
     setIsHoldModalOpen(true);
     loadHoldEntities();
   };
@@ -455,22 +545,41 @@ export const PlotsPage: React.FC = () => {
       alert('Phone number is required.');
       return;
     }
+    if (holdUntilError || !holdUntilDateObj) {
+      alert(holdUntilError || 'Select the hold expiry date and time.');
+      return;
+    }
     setSubmittingHold(true);
     try {
+      const daysApprox = Math.min(MAX_HOLD_DAYS, Math.max(1, Math.ceil((holdUntilDateObj.getTime() - Date.now()) / 86400000)));
       const success = await jaminApiService.holdPlot(
         String(selectedPlot.id),
         holdCustomer.trim(),
         holdPhone.trim(),
-        parseInt(holdDays, 10),
+        daysApprox,
         undefined,
         user?.name || undefined,
         holdSourceType === 'customer' && selectedCustomerId ? selectedCustomerId : undefined,
-        holdSourceType === 'lead' && selectedLeadId ? selectedLeadId : undefined
+        holdSourceType === 'lead' && selectedLeadId ? selectedLeadId : undefined,
+        holdUntilDateObj.toISOString()
       );
       if (success) {
+        const heldPlot = selectedPlot;
+        const holdLead = holdSourceType === 'lead' && selectedLeadId ? leadsList.find((l: any) => String(l.id) === String(selectedLeadId)) : null;
+        const holdCust = holdSourceType === 'customer' && selectedCustomerId ? customersList.find((c: any) => String(c.id) === String(selectedCustomerId)) : null;
         setIsHoldModalOpen(false);
         setSelectedPlot(null);
         await loadData(selectedProject);
+        if (shareDocsAfterHold && heldPlot) {
+          openShareDocs({ ...heldPlot, status: 'Hold' }, {
+            holdExpiresAt: holdUntilDateObj.toISOString(),
+            recipientName: holdCustomer.trim(),
+            recipientPhone: holdPhone.trim(),
+            recipientEmail: holdLead?.email || holdCust?.email || '',
+            leadId: holdSourceType === 'lead' && selectedLeadId ? selectedLeadId : null,
+            customerId: holdSourceType === 'customer' && selectedCustomerId ? selectedCustomerId : null,
+          });
+        }
       } else {
         alert('Failed to place plot on hold. Please check plot status.');
       }
@@ -1231,9 +1340,43 @@ export const PlotsPage: React.FC = () => {
                         Book
                       </button>
                     </div>
-                    {plot.holdExpiresAt && (
-                      <div style={{ marginTop: 2 }}>Expiry: {new Date(plot.holdExpiresAt).toLocaleDateString()}</div>
-                    )}
+                    {plot.holdExpiresAt && (() => {
+                      const rem = getHoldRemaining(plot.holdExpiresAt);
+                      return (
+                        <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, flexWrap: 'wrap' }}>
+                          <span title="Hold expires — the plot is auto-released to Available at this time">
+                            ⏰ Until <strong>{formatHoldExpiry(plot.holdExpiresAt)}</strong>
+                          </span>
+                          {rem.label && (
+                            <span
+                              style={{
+                                fontSize: 10.5, fontWeight: 700, padding: '1px 6px', borderRadius: 4,
+                                background: rem.urgent ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                                color: rem.urgent ? '#dc2626' : '#b45309',
+                              }}
+                            >
+                              {rem.label}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                      {plotShares[String(plot.id)] ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }} title="Legal document verification">
+                          📄 <VerificationChip small status={plotShares[String(plot.id)].isExpired && plotShares[String(plot.id)].status !== 'Verified' ? 'Link expired' : plotShares[String(plot.id)].status} />
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 11, opacity: 0.85 }}>📄 Docs not shared</span>
+                      )}
+                      <button
+                        title="Share legal documents with the customer"
+                        onClick={e => { e.stopPropagation(); openShareDocs(plot); }}
+                        style={{ background: 'transparent', color: 'inherit', border: '1px solid currentColor', borderRadius: 4, padding: '1px 7px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        {plotShares[String(plot.id)] ? 'Resend Docs' : 'Share Docs'}
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -1292,7 +1435,7 @@ export const PlotsPage: React.FC = () => {
 
       {/* Plot Detail Modal */}
       <Modal
-        isOpen={!!selectedPlot && !isHoldModalOpen && !isBookingModalOpen && !isEditPlotModalOpen && !isDeletePlotModalOpen}
+        isOpen={!!selectedPlot && !isHoldModalOpen && !isBookingModalOpen && !isEditPlotModalOpen && !isDeletePlotModalOpen && !shareTarget}
         onClose={() => setSelectedPlot(null)}
         title={`${selectedPlot?.plotNumber} Specifications`}
         maxWidth={760}
@@ -1438,12 +1581,36 @@ export const PlotsPage: React.FC = () => {
                 <div>Customer: <strong>{selectedPlot.heldByCustomerName || '—'}</strong></div>
                 <div>Phone: <strong>{selectedPlot.heldByCustomerPhone || '—'}</strong></div>
                 {selectedPlot.holdByAgent && <div>Held By Agent: <strong>{selectedPlot.holdByAgent}</strong></div>}
-                <div>Expiry: <strong>{selectedPlot.holdExpiresAt ? new Date(selectedPlot.holdExpiresAt).toLocaleDateString() : '—'}</strong></div>
+                <div>
+                  Expiry: <strong>{formatHoldExpiry(selectedPlot.holdExpiresAt)}</strong>
+                  {selectedPlot.holdExpiresAt && getHoldRemaining(selectedPlot.holdExpiresAt).label && (
+                    <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 600, color: getHoldRemaining(selectedPlot.holdExpiresAt).urgent ? '#dc2626' : '#b45309' }}>
+                      ({getHoldRemaining(selectedPlot.holdExpiresAt).label})
+                    </span>
+                  )}
+                </div>
               </div>
             )}
+
+            <PlotDocumentsPanel
+              plotId={selectedPlot.id}
+              plotNumber={selectedPlot.plotNumber}
+              canManage={canManagePlots}
+              refreshKey={shareRefreshKey}
+              onShareClick={() => openShareDocs(selectedPlot)}
+              onSharesChanged={() => setShareRefreshKey(k => k + 1)}
+            />
           </div>
         )}
       </Modal>
+
+      {/* Share legal document pack with the customer */}
+      <ShareDocumentsModal
+        isOpen={!!shareTarget}
+        target={shareTarget}
+        onClose={() => setShareTarget(null)}
+        onShared={() => setShareRefreshKey(k => k + 1)}
+      />
 
       {/* Place on Hold Form Modal */}
       <Modal
@@ -1583,18 +1750,64 @@ export const PlotsPage: React.FC = () => {
           )}
 
           <div className="form-group">
-            <label htmlFor="plot-hold-days" className="form-label">Hold Validity Duration</label>
-            <select
-              id="plot-hold-days"
-              name="holdDays"
-              className="form-select"
-              value={holdDays}
-              onChange={e => setHoldDays(e.target.value)}
-            >
-              <option value="3">3 Days (Express Hold)</option>
-              <option value="7">7 Days (Standard Diligence)</option>
-              <option value="14">14 Days (Executive Approval)</option>
-            </select>
+            <label htmlFor="plot-hold-until-date" className="form-label">Hold Until (Date &amp; Time) *</label>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 8 }}>
+              {[1, 3, 7, 14].map(d => (
+                <button
+                  key={d}
+                  type="button"
+                  className={`btn btn-sm ${holdDays === String(d) ? 'btn-primary' : 'btn-secondary'}`}
+                  style={{ padding: '3px 10px', fontSize: 12 }}
+                  onClick={() => applyHoldPreset(d)}
+                >
+                  +{d} {d === 1 ? 'Day' : 'Days'}
+                </button>
+              ))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+              <input
+                id="plot-hold-until-date"
+                name="holdUntilDate"
+                type="date"
+                className="form-input"
+                aria-label="Hold expiry date"
+                value={holdUntilDate}
+                min={toLocalDateInput(new Date())}
+                max={toLocalDateInput(new Date(Date.now() + MAX_HOLD_DAYS * 86400000))}
+                onChange={e => { setHoldUntilDate(e.target.value); setHoldDays('custom'); }}
+              />
+              <input
+                id="plot-hold-until-time"
+                name="holdUntilTime"
+                type="time"
+                className="form-input"
+                aria-label="Hold expiry time"
+                value={holdUntilTime}
+                onChange={e => { setHoldUntilTime(e.target.value); setHoldDays('custom'); }}
+              />
+            </div>
+            <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, marginTop: 12, fontSize: 13, cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={shareDocsAfterHold}
+                onChange={e => setShareDocsAfterHold(e.target.checked)}
+                style={{ marginTop: 2 }}
+              />
+              <span>
+                <strong>Share legal document pack after hold</strong>
+                <span style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)' }}>
+                  Send the DTCP/RERA approvals, parent deed, EC, patta, plot sketch &amp; cost sheet so the customer's lawyer or bank can verify during the hold.
+                </span>
+              </span>
+            </label>
+            {holdUntilError ? (
+              <div style={{ marginTop: 6, fontSize: 12, color: '#dc2626' }}>{holdUntilError}</div>
+            ) : holdUntilDateObj && (
+              <div style={{ marginTop: 6, fontSize: 12, color: 'var(--text-secondary)' }}>
+                ⏰ Hold expires on <strong>{formatHoldExpiry(holdUntilDateObj.toISOString())}</strong>
+                {' '}({getHoldRemaining(holdUntilDateObj.toISOString()).label}). The plot is released back to Available automatically at this time.
+              </div>
+            )}
           </div>
         </div>
       </Modal>

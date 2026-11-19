@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { MapPin, Grid, RefreshCw, Calendar, CheckCircle2, Plus, Upload, Image as ImageIcon, X, Edit3, Trash2, AlertTriangle, Map as MapLayoutIcon, Maximize2, Minimize2, ZoomIn, ZoomOut, RotateCcw, RotateCw, MoreVertical } from 'lucide-react';
+import { MapPin, Grid, RefreshCw, Calendar, CheckCircle2, Plus, Upload, Image as ImageIcon, X, Edit3, Trash2, AlertTriangle, Map as MapLayoutIcon, Maximize2, Minimize2, ZoomIn, ZoomOut, RotateCcw, RotateCw, MoreVertical, FileText } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { StatusChip } from '../../components/common/StatusChip';
 import { Modal } from '../../components/common/Modal';
@@ -7,6 +7,8 @@ import { BlueprintViewerModal } from '../../components/common/BlueprintViewerMod
 import { comparePlotNumbers } from '../../utils/plotUtils';
 import { jaminApiService } from '../../services/jaminApiService';
 import { storageService } from '../../services/storageService';
+import { LegalDocumentsManager } from '../../components/jamin/LegalDocumentsManager';
+import { PROJECT_DOC_CATEGORIES, PROJECT_DOC_ENTITY, REQUIRED_PROJECT_DOC_CATEGORIES } from '../../services/documentPackService';
 import './ProjectsPage.css';
 
 
@@ -31,6 +33,8 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate }) => {
   const [syncingPlots, setSyncingPlots] = useState(false);
   const [selectedProject, setSelectedProject] = useState<any | null>(null);
   const [activeDropdownId, setActiveDropdownId] = useState<number | string | null>(null);
+  // Project legal documents (DTCP, RERA, parent deed, EC, patta…) shared with buyers during a plot hold
+  const [legalDocsProject, setLegalDocsProject] = useState<any | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
   const editFileInputRef = useRef<HTMLInputElement | null>(null);
 
@@ -541,6 +545,14 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate }) => {
                   </span>
                   <div style={{ display: 'flex', gap: '6px' }}>
                     <button
+                      className="btn btn-secondary btn-sm"
+                      onClick={() => setLegalDocsProject(proj)}
+                      title="Legal documents shared with buyers for verification"
+                      style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
+                    >
+                      <FileText size={14} /> Legal Docs
+                    </button>
+                    <button
                       className="btn btn-primary btn-sm"
                       onClick={() => onNavigate('plots')}
                       style={{ display: 'inline-flex', alignItems: 'center', gap: '5px' }}
@@ -932,6 +944,29 @@ export const ProjectsPage: React.FC<ProjectsPageProps> = ({ onNavigate }) => {
       </Modal>
 
       {/* Master Layout Blueprint Modal */}
+      {/* Project Legal Documents */}
+      <Modal
+        isOpen={!!legalDocsProject}
+        onClose={() => setLegalDocsProject(null)}
+        title={`Legal Documents — ${legalDocsProject?.name || ''}`}
+        subtitle="Layout-level documents buyers, their lawyers and banks verify. Shared with customers from the plot hold."
+        maxWidth={720}
+        footer={<button className="btn btn-primary" onClick={() => setLegalDocsProject(null)}>Done</button>}
+      >
+        {legalDocsProject && (
+          <LegalDocumentsManager
+            entityType={PROJECT_DOC_ENTITY}
+            entityId={legalDocsProject.id}
+            categories={PROJECT_DOC_CATEGORIES}
+            requiredCategories={REQUIRED_PROJECT_DOC_CATEGORIES}
+            canManage={canManageProjects}
+            emptyHint={canManageProjects
+              ? 'Upload the DTCP approval, RERA certificate, parent document, EC and patta so sales can share them with buyers.'
+              : 'No legal documents uploaded yet. Ask your admin to upload them.'}
+          />
+        )}
+      </Modal>
+
       <BlueprintViewerModal
         isOpen={!!viewingBlueprintProject}
         onClose={() => setViewingBlueprintProject(null)}
