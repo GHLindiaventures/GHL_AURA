@@ -422,7 +422,7 @@ describe('Sidebar Badges for Admin Role', () => {
     storageService.set('leads', initialLeads);
 
     // Verify: Only leads where isAssignedToIrm(l) is true produce badge entries for assigned-leads
-    let irmLeads = initialLeads.filter(isAssignedToIrm);
+    let irmLeads: Array<{ id: string }> = initialLeads.filter(isAssignedToIrm);
     let activeIds = irmLeads.map(l => l.id);
     let seenIds = getSeenIds(tenantId, adminUser.id, 'assigned-leads');
     let badgeCount = activeIds.filter(id => !seenIds.has(id)).length;
