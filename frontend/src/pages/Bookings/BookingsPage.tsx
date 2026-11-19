@@ -95,7 +95,7 @@ export const BookingsPage: React.FC = () => {
   const [manageCancelRefundRef, setManageCancelRefundRef] = useState('');
 
   // Form State for New Booking
-  const [buyerSourceType, setBuyerSourceType] = useState<'customer' | 'lead' | 'custom'>('customer');
+  const [buyerSourceType, setBuyerSourceType] = useState<'customer' | 'lead' | 'custom'>('lead');
   const [customersList, setCustomersList] = useState<any[]>([]);
   const [leadsList, setLeadsList] = useState<any[]>([]);
   const [selectedProjectId, setSelectedProjectId] = useState<string>('');
@@ -316,7 +316,7 @@ export const BookingsPage: React.FC = () => {
       const d = JSON.parse(raw);
       // A draft left behind (the rep wandered off from Plot Inventory) is dropped after 20 minutes instead of popping up later.
       if (!d.savedAt || Date.now() - d.savedAt > 20 * 60 * 1000) return;
-      setBuyerSourceType(d.buyerSourceType || 'customer');
+      setBuyerSourceType('lead');
       setSelectedProjectId(d.selectedProjectId || '');
       setSelectedPlotId(d.selectedPlotId || '');
       setSelectedCustomerId(d.selectedCustomerId || '');
@@ -366,6 +366,7 @@ export const BookingsPage: React.FC = () => {
     const effectiveMode = paymentMode === 'Other' ? paymentModeOther.trim() : paymentMode;
     const agreement = totalPlotPrice || selectedPlt?.price || 0;
     const missing: string[] = [];
+    if (!selectedLeadId) missing.push('Lead');
     if (!customerName.trim()) missing.push('Buyer name');
     if (customerPhone.replace(/\D/g, '').length < 10) missing.push('Buyer phone (10 digits)');
     if (!selectedProjectId) missing.push('Project');
@@ -1497,66 +1498,6 @@ export const BookingsPage: React.FC = () => {
         subtitle=""
       >
         <form onSubmit={handleCreateBooking} className="booking-form">
-          {/* Buyer selection tabs: Customer, Lead, Custom */}
-          <div className="form-group">
-            <label className="form-label">Link Buyer To</label>
-            <div className="booking-source-tabs">
-              <button
-                type="button"
-                className={`booking-source-tab ${buyerSourceType === 'customer' ? 'active' : ''}`}
-                onClick={() => handleBuyerSourceChange('customer')}
-              >
-                Customer
-              </button>
-              <button
-                type="button"
-                className={`booking-source-tab ${buyerSourceType === 'lead' ? 'active' : ''}`}
-                onClick={() => handleBuyerSourceChange('lead')}
-              >
-                Lead
-              </button>
-              <button
-                type="button"
-                className={`booking-source-tab ${buyerSourceType === 'custom' ? 'active' : ''}`}
-                onClick={() => handleBuyerSourceChange('custom')}
-              >
-                Custom
-              </button>
-            </div>
-          </div>
-
-          {buyerSourceType === 'customer' && (
-            <>
-              <div className="form-group">
-                <label className="form-label">Select Customer *</label>
-                <select
-                  className="form-select"
-                  value={selectedCustomerId}
-                  onChange={e => handleCustomerSelect(e.target.value)}
-                >
-                  <option value="">-- Choose Existing Customer --</option>
-                  {effectiveCustomersList.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} {c.phone ? `(${c.phone})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {customerName && (
-                <div className="booking-form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-                  <div className="form-group">
-                    <label className="form-label">Customer Name</label>
-                    <input type="text" className="form-input" value={customerName} readOnly />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Customer Phone</label>
-                    <input type="text" className="form-input" value={customerPhone} readOnly />
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
           {buyerSourceType === 'lead' && (
             <>
               <div className="form-group">
@@ -1589,273 +1530,6 @@ export const BookingsPage: React.FC = () => {
             </>
           )}
 
-          {buyerSourceType === 'custom' && (
-            <div className="booking-form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-              <div className="form-group">
-                <label className="form-label">Buyer Full Name *</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  required
-                  value={customerName}
-                  onChange={e => setCustomerName(e.target.value)}
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Buyer Phone *</label>
-                <input
-                  type="tel"
-                  className="form-input"
-                  required
-                  value={customerPhone}
-                  onChange={e => setCustomerPhone(e.target.value)}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Project & Plot selection placed under the Buyer/Customer section */}
-          <div className="booking-form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px', marginTop: '14px' }}>
-            <div className="form-group">
-              <label className="form-label">Project *</label>
-              <select
-                className="form-select"
-                required
-                value={selectedProjectId}
-                onChange={e => handleProjectSelect(e.target.value)}
-              >
-                <option value="">-- Select Project --</option>
-                {projects.map(p => (
-                  <option key={p.id} value={String(p.id)}>
-                    {p.name} ({p.location})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            <div className="form-group">
-              <label className="form-label">Plot *</label>
-              {(() => {
-                const chosen = selectedPlotId ? plots.find((p: any) => String(p.id) === String(selectedPlotId)) : null;
-                return chosen ? (
-                  <div
-                    style={{
-                      display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 8,
-                      padding: '8px 12px', border: '1px solid var(--border-base, #e2e8f0)', borderRadius: 8,
-                    }}
-                  >
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 700, fontSize: 13.5 }}>
-                        {chosen.plotNumber} <StatusChip status={chosen.status} size="sm" />
-                      </div>
-                      <div style={{ fontSize: 12, color: 'var(--text-secondary)' }}>
-                        {[chosen.facing && `${chosen.facing} facing`, (chosen.areaSqFt || chosen.sizeSqft) && `${chosen.areaSqFt || chosen.sizeSqft} sq ft`,
-                          chosen.price ? `₹${Number(chosen.price).toLocaleString('en-IN')}` : null].filter(Boolean).join(' · ')}
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                      <button type="button" className="btn btn-secondary btn-sm" onClick={handlePickPlotFromInventory}>Change</button>
-                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setSelectedPlotId(''); setTotalPlotPrice(undefined); }}>Clear</button>
-                    </div>
-                  </div>
-                ) : (
-                  <button
-                    type="button"
-                    className="btn btn-secondary"
-                    style={{ width: '100%', justifyContent: 'center' }}
-                    onClick={handlePickPlotFromInventory}
-                    disabled={!selectedProjectId}
-                  >
-                    Choose plot from Plot Inventory →
-                  </button>
-                );
-              })()}
-              <p style={{ fontSize: 11, color: 'var(--text-secondary)', marginTop: 4 }}>
-                {selectedProjectId
-                  ? 'Opens Plot Inventory so you can filter by facing, size and price and pick the plot to book.'
-                  : 'Select a project first.'}
-              </p>
-            </div>
-          </div>
-
-          <div className="booking-form-grid-2" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
-            <div className="form-group">
-              <label className="form-label">Token Advance (₹) *</label>
-              <input
-                type="number"
-                className="form-input"
-                min={0}
-                value={tokenAmountPaid ?? ''}
-                onChange={e => setTokenAmountPaid(e.target.value ? Number(e.target.value) : undefined)}
-                placeholder="e.g. 100000"
-              />
-            </div>
-            <div className="form-group">
-              <label htmlFor="booking-total-amount" className="form-label">Total Agreement Value (₹) *</label>
-              <input
-                id="booking-total-amount"
-                name="totalAmount"
-                type="number"
-                className="form-input"
-                required
-                min={0}
-                value={totalPlotPrice ?? ''}
-                onChange={e => setTotalPlotPrice(e.target.value ? Number(e.target.value) : undefined)}
-              />
-            </div>
-          </div>
-
-          <div className="form-group">
-            <label htmlFor="booking-payment-mode" className="form-label">Payment Mode *</label>
-            <select
-              id="booking-payment-mode"
-              name="paymentMode"
-              className="form-select"
-              value={paymentMode}
-              onChange={e => {
-                setPaymentMode(e.target.value);
-                if (e.target.value !== 'Other') setPaymentModeOther('');
-              }}
-            >
-              <option value="">-- Select Payment Mode --</option>
-              {PAYMENT_MODES.map(mode => <option key={mode} value={mode}>{mode}</option>)}
-              <option value="Other">Other</option>
-            </select>
-            {paymentMode === 'Other' && (
-              <input
-                className="form-input"
-                style={{ marginTop: 8 }}
-                value={paymentModeOther}
-                onChange={e => setPaymentModeOther(e.target.value)}
-                placeholder="Enter payment mode"
-              />
-            )}
-          </div>
-
-          {paymentMode && !/cash/i.test(paymentMode === 'Other' ? paymentModeOther : paymentMode) && (
-            <div className="form-group">
-              <label htmlFor="booking-payment-reference" className="form-label">Payment Reference / Transaction ID *</label>
-              <input
-                id="booking-payment-reference"
-                className="form-input"
-                value={paymentReference}
-                onChange={e => setPaymentReference(e.target.value)}
-                placeholder="UTR / cheque number / UPI reference"
-              />
-            </div>
-          )}
-
-          {bookingFormErrors.length > 0 && (
-            <div role="alert" style={{ padding: '10px 12px', borderRadius: 8, background: 'rgba(239,68,68,0.10)', border: '1px solid rgba(239,68,68,0.35)', color: '#b91c1c', fontSize: 13 }}>
-              <strong>The booking cannot be confirmed yet.</strong> Please complete:
-              <ul style={{ margin: '6px 0 0', paddingLeft: 18 }}>
-                {bookingFormErrors.map(e => <li key={e}>{e}</li>)}
-              </ul>
-            </div>
-          )}
-
-          <div className="form-group">
-            <label htmlFor="booking-payment-terms" className="form-label">Payment Terms & Milestones</label>
-            <textarea
-              id="booking-payment-terms"
-              name="paymentTerms"
-              className="form-textarea"
-              rows={2}
-              value={paymentTerms}
-              onChange={e => setPaymentTerms(e.target.value)}
-              placeholder="e.g. 10% token, 40% on agreement, 50% on registration"
-            />
-          </div>
-
-          <div className="form-group">
-            <label className="form-label">General Notes & Remarks</label>
-            <textarea
-              className="form-textarea"
-              rows={2}
-              value={notes}
-              onChange={e => setNotes(e.target.value)}
-              placeholder="Internal remarks or special requests..."
-            />
-          </div>
-
-          <div className="booking-form-actions" style={{ display: 'flex', justifyContent: 'flex-end', gap: '12px', marginTop: '16px' }}>
-            <button type="button" className="btn btn-secondary" onClick={() => setIsNewBookingModalOpen(false)}>
-              Cancel
-            </button>
-            <button type="submit" className="btn btn-primary" disabled={submitting}>
-              {submitting ? 'Creating Booking...' : 'Confirm & Reserve Plot'}
-            </button>
-          </div>
-        </form>
-      </Modal>
-
-      {/* ── MANAGE DETAILS & STATUS MODAL ──────────────────────────────────── */}
-      <Modal
-        isOpen={isManageModalOpen && !!managingBooking}
-        onClose={() => setIsManageModalOpen(false)}
-        title={`Edit Booking: ${managingBooking?.plotNumber || 'Plot'}`}
-        subtitle={`Update booking details and status for ${managingBooking?.customerName || ''}`}
-        size="md"
-      >
-        <form onSubmit={handleSaveManageBooking} className="booking-form">
-          <div className="booking-summary-card">
-            <div className="booking-summary-row">
-              <span className="booking-summary-label">Buyer:</span>
-              <span className="booking-summary-val">{managingBooking?.customerName} ({managingBooking?.customerPhone})</span>
-            </div>
-            <div className="booking-summary-row">
-              <span className="booking-summary-label">Project / Plot:</span>
-              <span className="booking-summary-val">{managingBooking?.projectName || 'Project'} · Plot {managingBooking?.plotNumber}</span>
-            </div>
-            <div className="booking-summary-row">
-              <span className="booking-summary-label">Current Status:</span>
-              <span className="booking-summary-val">
-                <StatusChip status={managingBooking?.status || 'Booking Pending Verification'} size="sm" />
-              </span>
-            </div>
-          </div>
-
-          {manageMode === 'details' && (
-            <>
-              <div className="form-group">
-                <label className="form-label">Token Amount Paid (₹)</label>
-                <input
-                  type="number"
-                  className="form-input"
-                  min={0}
-                  value={manageTokenAmount ?? ''}
-                  onChange={e => setManageTokenAmount(e.target.value === '' ? undefined : Number(e.target.value))}
-                />
-              </div>
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div className="form-group">
-                  <label className="form-label">Payment Mode</label>
-                  <select
-                    className="form-select"
-                    value={managePaymentMode}
-                    onChange={e => {
-                      setManagePaymentMode(e.target.value);
-                      if (e.target.value !== 'Other') setManagePaymentModeOther('');
-                    }}
-                  >
-                    <option value="">-- Select Payment Mode --</option>
-                    {PAYMENT_MODES.map(mode => <option key={mode} value={mode}>{mode}</option>)}
-                    <option value="Other">Other</option>
-                  </select>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Payment Terms</label>
-                  <input
-                    className="form-input"
-                    value={managePaymentTerms}
-                    onChange={e => setManagePaymentTerms(e.target.value)}
-                    placeholder="Installment or milestone terms"
-                  />
-                </div>
-              </div>
-            </>
-          )}
 
           <div className="form-group">
             <label className="form-label" style={{ fontWeight: 700, fontSize: '13px' }}>

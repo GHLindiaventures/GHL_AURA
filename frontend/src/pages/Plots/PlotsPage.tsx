@@ -42,7 +42,7 @@ export const PlotsPage: React.FC = () => {
 
   // Hold action state
   const [isHoldModalOpen, setIsHoldModalOpen] = useState(false);
-  const [holdSourceType, setHoldSourceType] = useState<'customer' | 'lead' | 'custom'>('customer');
+  const [holdSourceType, setHoldSourceType] = useState<'customer' | 'lead' | 'custom'>('lead');
   const [customersList, setCustomersList] = useState<any[]>([]);
   const [leadsList, setLeadsList] = useState<any[]>([]);
 
@@ -89,7 +89,7 @@ export const PlotsPage: React.FC = () => {
 
   // Booking action state
   const [isBookingModalOpen, setIsBookingModalOpen] = useState(false);
-  const [bookingSourceType, setBookingSourceType] = useState<'customer' | 'lead' | 'custom'>('customer');
+  const [bookingSourceType, setBookingSourceType] = useState<'customer' | 'lead' | 'custom'>('lead');
   const [selectedBookingCustomerId, setSelectedBookingCustomerId] = useState('');
   const [selectedBookingLeadId, setSelectedBookingLeadId] = useState('');
   const [bookingCustomerName, setBookingCustomerName] = useState('');
@@ -420,7 +420,7 @@ export const PlotsPage: React.FC = () => {
 
   const handleOpenHold = (plot: any) => {
     setSelectedPlot(plot);
-    setHoldSourceType('customer');
+    setHoldSourceType('lead');
     setSelectedCustomerId('');
     setSelectedLeadId('');
     setHoldCustomer('');
@@ -472,7 +472,7 @@ export const PlotsPage: React.FC = () => {
   const handleConfirmHold = async () => {
     if (!selectedPlot) return;
     const missing: string[] = [];
-    if (!holdCustomer.trim()) missing.push(holdSourceType === 'customer' ? 'customer' : holdSourceType === 'lead' ? 'lead' : 'client name');
+    if (!selectedLeadId || !holdCustomer.trim()) missing.push('lead');
     if (!holdPhone.trim()) missing.push('phone number');
     const when = new Date(holdExpiry);
     if (!holdExpiry || Number.isNaN(when.getTime())) missing.push('hold expiry date & time');
@@ -544,26 +544,15 @@ export const PlotsPage: React.FC = () => {
     const heldPhone = (plot.heldByCustomerPhone || plot.holdPhone || '').trim();
     const heldName = (plot.heldByCustomerName || plot.holdCustomer || '').trim();
 
-    if (plot.heldByCustomerId) {
-      setBookingSourceType('customer');
-      setSelectedBookingCustomerId(String(plot.heldByCustomerId));
-      setSelectedBookingLeadId('');
-      const matched = effectiveCustomersList.find((c: any) => String(c.id) === String(plot.heldByCustomerId));
-      setBookingCustomerName(matched?.name || heldName);
-      setBookingCustomerPhone(matched?.phone || heldPhone);
-    } else if (heldName || heldPhone) {
-      setBookingSourceType('custom');
-      setSelectedBookingCustomerId('');
-      setSelectedBookingLeadId('');
-      setBookingCustomerName(heldName);
-      setBookingCustomerPhone(heldPhone);
-    } else {
-      setBookingSourceType('customer');
-      setSelectedBookingCustomerId('');
-      setSelectedBookingLeadId('');
-      setBookingCustomerName('');
-      setBookingCustomerPhone('');
-    }
+    // Bookings are made for a lead: pre-select the lead the plot is held for (matched by id, then phone).
+    setBookingSourceType('lead');
+    setSelectedBookingCustomerId('');
+    const heldLead = lds.find((l: any) =>
+      (plot.heldByLeadId && String(l.id).replace(/\D/g, '') === String(plot.heldByLeadId))
+      || (!!phoneKeyOf(heldPhone) && phoneKeyOf(l.phone) === phoneKeyOf(heldPhone)));
+    setSelectedBookingLeadId(heldLead ? String(heldLead.id) : '');
+    setBookingCustomerName(heldLead?.name || heldName);
+    setBookingCustomerPhone(heldLead?.phone || heldPhone);
 
     const price = plot.price || plot.totalPrice || 0;
     setBookingTotalAgreementValue(price);
@@ -634,26 +623,12 @@ export const PlotsPage: React.FC = () => {
         : undefined);
     const foundLead = lead ?? leadByPhone;
 
-    if (customer) {
-      setBookingSourceType('customer');
-      setSelectedBookingCustomerId(String(customer.id));
-      setSelectedBookingLeadId('');
-      setBookingCustomerName(customer.name || sel.name || '');
-      setBookingCustomerPhone(customer.phone || sel.phone || '');
-    } else if (foundLead) {
-      setBookingSourceType('lead');
-      setSelectedBookingLeadId(String(foundLead.id));
-      setSelectedBookingCustomerId('');
-      setBookingCustomerName(foundLead.name || sel.name || '');
-      setBookingCustomerPhone(foundLead.phone || sel.phone || '');
-    } else {
-      // No matching record: book as a typed-in buyer instead of an empty "choose a lead" dropdown.
-      setBookingSourceType('custom');
-      setSelectedBookingLeadId('');
-      setSelectedBookingCustomerId('');
-      setBookingCustomerName(sel.name || '');
-      setBookingCustomerPhone(sel.phone || '');
-    }
+    // Always a lead: the lead found by id / phone is selected for you; otherwise choose it from the list.
+    setBookingSourceType('lead');
+    setSelectedBookingCustomerId('');
+    setSelectedBookingLeadId(foundLead ? String(foundLead.id) : '');
+    setBookingCustomerName(foundLead?.name || sel.name || '');
+    setBookingCustomerPhone(foundLead?.phone || sel.phone || '');
   };
 
   /** After a booking is saved, open the form for the next plot waiting in the queue. */
@@ -725,6 +700,7 @@ export const PlotsPage: React.FC = () => {
 
     // Every mandatory detail must be present before a booking can be confirmed.
     const missingBooking: string[] = [];
+    if (!selectedBookingLeadId) missingBooking.push('Lead');
     const bookingPrice = bookingTotalAgreementValue ?? (selectedPlot.price || selectedPlot.totalPrice || 0);
     if (bookingPrice <= 0) missingBooking.push('Total agreement value');
     if (!bookingTokenAmount || bookingTokenAmount <= 0) missingBooking.push('Token advance amount');
@@ -1564,65 +1540,6 @@ export const PlotsPage: React.FC = () => {
         }
       >
         <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <div className="form-group">
-            <label className="form-label">Link Reservation To</label>
-            <div className="hold-source-tabs">
-              <button
-                type="button"
-                className={`hold-source-tab ${holdSourceType === 'customer' ? 'active' : ''}`}
-                onClick={() => handleSourceTypeChange('customer')}
-              >
-                Customer
-              </button>
-              <button
-                type="button"
-                className={`hold-source-tab ${holdSourceType === 'lead' ? 'active' : ''}`}
-                onClick={() => handleSourceTypeChange('lead')}
-              >
-                Lead
-              </button>
-              <button
-                type="button"
-                className={`hold-source-tab ${holdSourceType === 'custom' ? 'active' : ''}`}
-                onClick={() => handleSourceTypeChange('custom')}
-              >
-                Custom
-              </button>
-            </div>
-          </div>
-
-          {holdSourceType === 'customer' && (
-            <>
-              <div className="form-group">
-                <label className="form-label">Select Customer *</label>
-                <select
-                  className="form-select"
-                  value={selectedCustomerId}
-                  onChange={handleCustomerChange}
-                >
-                  <option value="">-- Choose Existing Customer --</option>
-                  {effectiveCustomersList.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} {c.phone ? `(${c.phone})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {holdCustomer && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div className="form-group">
-                    <label className="form-label">Customer Name</label>
-                    <input type="text" className="form-input" value={holdCustomer} readOnly />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Customer Phone</label>
-                    <input type="text" className="form-input" value={holdPhone} readOnly />
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
           {holdSourceType === 'lead' && (
             <>
               <div className="form-group">
@@ -1655,33 +1572,6 @@ export const PlotsPage: React.FC = () => {
             </>
           )}
 
-          {holdSourceType === 'custom' && (
-            <>
-              <div className="form-group">
-                <label htmlFor="plot-hold-customer" className="form-label">Client Name *</label>
-                <input
-                  id="plot-hold-customer"
-                  name="holdCustomer"
-                  type="text"
-                  className="form-input"
-                  required
-                  value={holdCustomer}
-                  onChange={e => setHoldCustomer(e.target.value)}
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Client Phone Number *</label>
-                <input
-                  type="tel"
-                  className="form-input"
-                  required
-                  value={holdPhone}
-                  onChange={e => setHoldPhone(e.target.value)}
-                />
-              </div>
-            </>
-          )}
 
           <div className="form-group">
             <label htmlFor="plot-hold-expiry" className="form-label">Hold expires on *</label>
@@ -1789,65 +1679,6 @@ export const PlotsPage: React.FC = () => {
           </div>
 
           {/* Buyer selection tabs: Customer, Lead, Custom */}
-          <div className="form-group">
-            <label className="form-label">Link Buyer To</label>
-            <div className="hold-source-tabs">
-              <button
-                type="button"
-                className={`hold-source-tab ${bookingSourceType === 'customer' ? 'active' : ''}`}
-                onClick={() => handleBookingSourceTypeChange('customer')}
-              >
-                Customer
-              </button>
-              <button
-                type="button"
-                className={`hold-source-tab ${bookingSourceType === 'lead' ? 'active' : ''}`}
-                onClick={() => handleBookingSourceTypeChange('lead')}
-              >
-                Lead
-              </button>
-              <button
-                type="button"
-                className={`hold-source-tab ${bookingSourceType === 'custom' ? 'active' : ''}`}
-                onClick={() => handleBookingSourceTypeChange('custom')}
-              >
-                Custom
-              </button>
-            </div>
-          </div>
-
-          {bookingSourceType === 'customer' && (
-            <>
-              <div className="form-group">
-                <label className="form-label">Select Customer *</label>
-                <select
-                  className="form-select"
-                  value={selectedBookingCustomerId}
-                  onChange={handleBookingCustomerChange}
-                >
-                  <option value="">-- Choose Existing Customer --</option>
-                  {effectiveCustomersList.map(c => (
-                    <option key={c.id} value={c.id}>
-                      {c.name} {c.phone ? `(${c.phone})` : ''}
-                    </option>
-                  ))}
-                </select>
-              </div>
-              {bookingCustomerName && (
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                  <div className="form-group">
-                    <label className="form-label">Customer Name</label>
-                    <input type="text" className="form-input" value={bookingCustomerName} readOnly />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Customer Phone</label>
-                    <input type="text" className="form-input" value={bookingCustomerPhone} readOnly />
-                  </div>
-                </div>
-              )}
-            </>
-          )}
-
           {bookingSourceType === 'lead' && (
             <>
               <div className="form-group">
@@ -1885,31 +1716,6 @@ export const PlotsPage: React.FC = () => {
             </>
           )}
 
-          {bookingSourceType === 'custom' && (
-            <>
-              <div className="form-group">
-                <label className="form-label">Buyer Name *</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  required
-                  value={bookingCustomerName}
-                  onChange={e => setBookingCustomerName(e.target.value)}
-                />
-              </div>
-
-              <div className="form-group">
-                <label className="form-label">Buyer Phone Number *</label>
-                <input
-                  type="tel"
-                  className="form-input"
-                  required
-                  value={bookingCustomerPhone}
-                  onChange={e => setBookingCustomerPhone(e.target.value)}
-                />
-              </div>
-            </>
-          )}
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <div className="form-group">
