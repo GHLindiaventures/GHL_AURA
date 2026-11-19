@@ -819,6 +819,16 @@ export const jaminApiService = {
     }
   },
 
+  /** Same as updatePlot, but returns the server's reason when the change is refused (e.g. an active booking). */
+  async updatePlotDetailed(id: number | string, plot: Record<string, unknown>): Promise<{ success: boolean; message?: string }> {
+    try {
+      const res = await apiClient.put<any>(`/jamin/plots/${id}`, plot);
+      return { success: Boolean(res && res.success), message: res?.message };
+    } catch (err: any) {
+      return { success: false, message: err?.message || 'Could not update the plot.' };
+    }
+  },
+
   async updatePlot(id: number | string, plot: Partial<{
     plotNumber: string;
     dimensions: string;

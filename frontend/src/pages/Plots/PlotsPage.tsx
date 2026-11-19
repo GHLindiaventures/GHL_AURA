@@ -800,7 +800,7 @@ export const PlotsPage: React.FC = () => {
     }
     setSubmittingEdit(true);
     try {
-      const success = await jaminApiService.updatePlot(selectedPlot.id, {
+      const result = await jaminApiService.updatePlotDetailed(selectedPlot.id, {
         plotNumber: editPlotNumber.trim(),
         dimensions: editPlotDimensions.trim(),
         areaSqFt: Number(editPlotAreaSqFt) || 1200,
@@ -809,12 +809,13 @@ export const PlotsPage: React.FC = () => {
         ...(editPlotStatus === 'Available' ? { status: editPlotStatus } : {}),
         notes: editPlotNotes.trim(),
       });
-      if (success) {
+      if (result.success) {
         setIsEditPlotModalOpen(false);
         setSelectedPlot(null);
         await loadData(selectedProject);
+        toast.success('Plot updated.');
       } else {
-        alert('Failed to update plot. Please verify inputs.');
+        alert(result.message || 'Failed to update plot. Please verify inputs.');
       }
     } catch (err) {
       console.error('Error updating plot', err);
@@ -1895,13 +1896,17 @@ export const PlotsPage: React.FC = () => {
                   className="form-select"
                   value={editPlotStatus}
                   onChange={e => setEditPlotStatus(e.target.value)}
-                  disabled={editPlotStatus !== 'Available'}
                 >
                   <option value="Available">Available</option>
-                  {editPlotStatus !== 'Available' && (
-                    <option value={editPlotStatus}>{editPlotStatus} (booking controlled)</option>
+                  {selectedPlot && selectedPlot.status !== 'Available' && (
+                    <option value={selectedPlot.status}>{selectedPlot.status} (current — set by booking / hold)</option>
                   )}
                 </select>
+                {selectedPlot && selectedPlot.status !== 'Available' && (
+                  <div style={{ fontSize: 11.5, color: 'var(--text-secondary)', marginTop: 4 }}>
+                    Choose <strong>Available</strong> to free this plot. This works only when the plot has no active booking; otherwise cancel the booking first.
+                  </div>
+                )}
               </div>
             </div>
 
