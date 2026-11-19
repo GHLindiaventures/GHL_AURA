@@ -855,6 +855,14 @@ export const KycVerifyModal: React.FC<KycVerifyModalProps> = ({
         payload.nomineesJson = JSON.stringify(editValues.nominees || []);
       }
 
+      // Validate what the server validates, so a bad value is reported instead of silently dropped.
+      if (key === 'pan' && payload.panNumber) {
+        payload.panNumber = String(payload.panNumber).trim().toUpperCase();
+        if (!/^[A-Z]{5}[0-9]{4}[A-Z]$/.test(payload.panNumber)) {
+          throw new Error('Invalid PAN format. Use 5 letters, 4 digits, 1 letter (e.g. ABCDE1234F).');
+        }
+      }
+
       if (!isMockMode() && resolvedKycId && (/^\d+$/.test(String(resolvedKycId)) || typeof resolvedKycId === 'number')) {
         const res = await fetch(apiUrl(`/irm/kyc/${resolvedKycId}/details`), {
           method: 'PATCH',
@@ -864,11 +872,13 @@ export const KycVerifyModal: React.FC<KycVerifyModalProps> = ({
           },
           body: JSON.stringify(payload),
         });
-        if (res.ok) {
-          const json = await res.json();
-          if (json.success && json.data) {
-            setLiveKycData((prev: any) => ({ ...prev, ...json.data }));
-          }
+        const json = await res.json().catch(() => null);
+        // A refused or failed save must NOT look like a success.
+        if (!res.ok || !json?.success) {
+          throw new Error(json?.message || json?.errors?.[0] || `The server did not save the changes (HTTP ${res.status}).`);
+        }
+        if (json.data) {
+          setLiveKycData((prev: any) => ({ ...prev, ...json.data }));
         }
       }
 
