@@ -1380,32 +1380,42 @@ export const SiteVisitsPage: React.FC = () => {
       >
         <form onSubmit={handleScheduleVisit} className="sitevisit-form">
 
-          {/* Visitor: one picker for leads, customers, or a new visitor */}
-          <div className="form-group">
-            <label htmlFor="sitevisit-visitor-select" className="form-label">
-              Visitor *{' '}
-              <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
-                ({leads.length} leads)
-              </span>
-            </label>
-            <select
-              id="sitevisit-visitor-select"
-              name="visitor"
-              className="form-select"
-              required
-              value={visitorSelectValue}
-              onChange={e => handleVisitorSelect(e.target.value)}
-            >
-              <option value="">-- Choose a lead or add a new visitor --</option>
-              <optgroup label={`Leads (${leads.length})`}>
+          {/* Visitor (pick a lead) and New visitor (not in the CRM) sit side by side */}
+          <div className="sitevisit-form-grid-2">
+            <div className="form-group">
+              <label htmlFor="sitevisit-visitor-select" className="form-label">
+                Visitor *{' '}
+                <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                  ({leads.length} leads)
+                </span>
+              </label>
+              <select
+                id="sitevisit-visitor-select"
+                name="visitor"
+                className="form-select"
+                required={visitorType !== 'new'}
+                value={visitorType === 'new' ? '' : visitorSelectValue}
+                onChange={e => handleVisitorSelect(e.target.value)}
+              >
+                <option value="">-- Choose a lead --</option>
                 {leads.map(l => (
                   <option key={`lead-${l.id}`} value={`lead:${l.id}`}>
                     {l.name} — {l.phone}
                   </option>
                 ))}
-              </optgroup>
-              <option value="new">+ New visitor (enter name and phone)</option>
-            </select>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">New visitor</label>
+              <button
+                type="button"
+                className={visitorType === 'new' ? 'btn btn-primary' : 'btn btn-secondary'}
+                style={{ width: '100%', justifyContent: 'center' }}
+                onClick={() => handleVisitorTypeChange(visitorType === 'new' ? 'lead' : 'new')}
+              >
+                {visitorType === 'new' ? '✓ New visitor — enter name & phone below (click to cancel)' : '+ Add new visitor (not in leads)'}
+              </button>
+            </div>
           </div>
 
           {existingOpenVisit && (
