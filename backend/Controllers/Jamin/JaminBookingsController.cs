@@ -526,12 +526,7 @@ public class JaminBookingsController : JaminTenantControllerBase
             if (normalizedStatus == "Registration Completed") plot.Status = "Registered";
             else if (normalizedStatus == "Cancelled")
             {
-                plot.Status = "Available";
-                plot.HeldByCustomerId = null;
-                plot.HeldByCustomerName = null;
-                plot.HeldByCustomerPhone = null;
-                plot.HoldByAgent = null;
-                plot.HoldExpiresAt = null;
+                JaminHoldLedger.ReleasePlot(plot, DateTime.UtcNow);
                 booking.CancelledAt = DateTime.UtcNow;
             }
             plot.UpdatedAt = DateTime.UtcNow;
@@ -641,13 +636,7 @@ public class JaminBookingsController : JaminTenantControllerBase
                 var plot = await _db.JaminPlots.FirstOrDefaultAsync(p => p.Id == booking.PlotId.Value && p.CompanyId == companyId, ct);
                 if (plot != null)
                 {
-                    plot.Status = "Available";
-                    plot.HeldByCustomerId = null;
-                    plot.HeldByCustomerName = null;
-                    plot.HeldByCustomerPhone = null;
-                    plot.HoldByAgent = null;
-                    plot.HoldExpiresAt = null;
-                    plot.UpdatedAt = DateTime.UtcNow;
+                    JaminHoldLedger.ReleasePlot(plot, DateTime.UtcNow);
 
                     var project = await _db.JaminProjects.FirstOrDefaultAsync(p => p.Id == plot.ProjectId && p.CompanyId == companyId, ct);
                     if (project != null) await RecalculateInventoryAsync(project, ct);

@@ -251,8 +251,8 @@ export const PlotsPage: React.FC = () => {
     return () => { cancelled = true; };
   }, [pickProjectId]);
 
-  const loadData = async (projId?: string) => {
-    setLoading(true);
+  const loadData = async (projId?: string, silent = false) => {
+    if (!silent) setLoading(true);
     try {
       const [projList, plotList] = await Promise.all([
         jaminApiService.getProjects(),
@@ -266,9 +266,32 @@ export const PlotsPage: React.FC = () => {
     } catch (err) {
       console.error('Failed to load plots/projects from backend', err);
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   };
+
+  // Keep the inventory live: refresh quietly when a booking/hold changes elsewhere (cancel, verify, expiry),
+  // when the tab regains focus, and on a short timer - so a cancelled booking frees its plot without a reload.
+  const latestRef = React.useRef({ selectedProject, pickProjectId });
+  latestRef.current = { selectedProject, pickProjectId };
+  useEffect(() => {
+    const refresh = () => {
+      if (document.visibilityState === 'hidden') return;
+      void loadData(latestRef.current.pickProjectId || latestRef.current.selectedProject || undefined, true);
+    };
+    const events = ['jamin_inventory_changed', 'nexus_storage_updated'];
+    events.forEach(e => window.addEventListener(e, refresh));
+    window.addEventListener('focus', refresh);
+    document.addEventListener('visibilitychange', refresh);
+    const timer = window.setInterval(refresh, 20000);
+    return () => {
+      events.forEach(e => window.removeEventListener(e, refresh));
+      window.removeEventListener('focus', refresh);
+      document.removeEventListener('visibilitychange', refresh);
+      window.clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     // In pick mode, open straight on the project the visit is being scheduled for.
