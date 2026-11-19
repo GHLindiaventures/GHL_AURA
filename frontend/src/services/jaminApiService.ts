@@ -859,7 +859,7 @@ export const jaminApiService = {
     }
   },
 
-  async holdPlot(plotId: string | number, customerName: string, customerPhone: string, holdDays: number = 7, notes?: string, holdByAgent?: string, heldByCustomerId?: number | string, heldByLeadId?: number | string): Promise<boolean> {
+  async holdPlot(plotId: string | number, customerName: string, customerPhone: string, holdDays: number = 7, notes?: string, holdByAgent?: string, heldByCustomerId?: number | string, heldByLeadId?: number | string, holdUntil?: string): Promise<boolean> {
     try {
       const res = await apiClient.post<any>(`/jamin/plots/${plotId}/hold`, {
         heldByCustomerId: heldByCustomerId ? Number(heldByCustomerId) : undefined,
@@ -867,6 +867,8 @@ export const jaminApiService = {
         customerName,
         customerPhone,
         holdDays,
+        // Exact expiry (ISO, UTC). When present the backend uses it instead of holdDays.
+        holdUntil,
         notes,
         holdByAgent,
       });

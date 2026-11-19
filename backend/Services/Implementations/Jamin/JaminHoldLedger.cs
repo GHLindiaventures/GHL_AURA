@@ -78,7 +78,8 @@ public static class JaminHoldLedger
         if (string.IsNullOrWhiteSpace(dto.CustomerPhone)) missing.Add("customer phone");
 
         DateTime expiresAt;
-        if (dto.ExpiresAt.HasValue) expiresAt = DateTime.SpecifyKind(dto.ExpiresAt.Value, DateTimeKind.Utc).ToUniversalTime();
+        var explicitExpiry = dto.ExpiresAt ?? dto.HoldUntil;   // HoldUntil: older clients
+        if (explicitExpiry.HasValue) expiresAt = DateTime.SpecifyKind(explicitExpiry.Value, DateTimeKind.Utc).ToUniversalTime();
         else if (dto.HoldDays is >= 1 and <= MaxHoldDays) expiresAt = now.AddDays(dto.HoldDays);
         else { expiresAt = default; missing.Add("hold expiry date and time"); }
 

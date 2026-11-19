@@ -14,6 +14,9 @@ const App = lazy(() => import('./App.tsx'));
 const CustomerKycApp = lazy(() =>
   import('./pages/CustomerKyc/CustomerKycApp').then(m => ({ default: m.CustomerKycApp }))
 );
+const PublicDocumentPackPage = lazy(() =>
+  import('./pages/PublicDocs/PublicDocumentPackPage').then(m => ({ default: m.PublicDocumentPackPage }))
+);
 const ResetPasswordPage = lazy(() =>
   import('./pages/Auth/ResetPasswordPage').then(m => ({ default: m.ResetPasswordPage }))
 );
@@ -25,6 +28,8 @@ const isCustomerKycRoute =
   /^\/kyc\/[^/]+/i.test(window.location.pathname) ||
   (window.location.pathname === '/kyc' && new URLSearchParams(window.location.search).has('token'));
 const isResetPasswordRoute = /^\/reset-password/i.test(window.location.pathname);
+// Public (no login) document pack shared with a customer during a plot hold.
+const isPublicDocsRoute = /^\/docs\/[a-z0-9]{32,64}\/?$/i.test(window.location.pathname);
 
 // Sleek, zero-flicker loading fallback for chunk hydration
 const LoadingFallback = () => (
@@ -75,6 +80,8 @@ createRoot(document.getElementById('root')!).render(
               <CustomerKycApp />
             ) : isResetPasswordRoute ? (
               <ResetPasswordPage />
+            ) : isPublicDocsRoute ? (
+              <PublicDocumentPackPage />
             ) : (
               <AuthProvider>
                 <NavigationGuardProvider>

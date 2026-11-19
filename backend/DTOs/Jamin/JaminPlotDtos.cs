@@ -68,8 +68,26 @@ public class HoldPlotRequestDto
     public string? PaymentReference { get; set; }
     public DateTime? PaymentDate { get; set; }
     public string? PaymentProofUrl { get; set; }
+    /// <summary>Alias of <see cref="ExpiresAt"/> (older clients): exact hold expiry, must be in the future and within 30 days.</summary>
+    public DateTime? HoldUntil { get; set; }
     /// <summary>Reason / additional notes.</summary>
     public string? Notes { get; set; }
+
+    /// <summary>Resolves the hold expiry in UTC, or returns an error message if the request is invalid.</summary>
+    public (DateTime? expiresAtUtc, string? error) ResolveHoldExpiry(DateTime nowUtc)
+    {
+        if (HoldUntil.HasValue)
+        {
+            var until = HoldUntil.Value.Kind == DateTimeKind.Unspecified
+                ? DateTime.SpecifyKind(HoldUntil.Value, DateTimeKind.Utc)
+                : HoldUntil.Value.ToUniversalTime();
+            if (until <= nowUtc.AddMinutes(1)) return (null, "Hold expiry must be a future date and time.");
+            if (until > nowUtc.AddDays(30)) return (null, "Hold expiry cannot be more than 30 days from now.");
+            return (until, null);
+        }
+        if (HoldDays is < 1 or > 30) return (null, "Hold period must be between 1 and 30 days.");
+        return (nowUtc.AddDays(HoldDays), null);
+    }
 }
 
 public class ExtendHoldRequestDto

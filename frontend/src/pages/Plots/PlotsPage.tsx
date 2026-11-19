@@ -15,8 +15,45 @@ import { toast } from '../../context/ToastContext';
 import {
   ExtendHoldModal, VerifyHoldPaymentModal, HoldHistoryModal, PaymentBadge, toLocalInput, fmtDateTime,
 } from '../../components/common/PlotHoldDialogs';
+import { ShareDocumentsModal, type ShareDocumentsTarget } from '../../components/jamin/ShareDocumentsModal';
+import { PlotDocumentsPanel, VerificationChip } from '../../components/jamin/PlotDocumentsPanel';
+import { documentPackService, latestShareByPlot, type PlotDocumentShare } from '../../services/documentPackService';
 import './PlotsPage.css';
 
+
+// ── Hold expiry helpers ────────────────────────────────────────────────────
+const pad2 = (n: number) => String(n).padStart(2, '0');
+const toLocalDateInput = (d: Date) => `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
+const MAX_HOLD_DAYS = 30;
+/** Default hold expiry: N days from now at 6:00 PM (fully editable). */
+const defaultHoldExpiry = (days: number): Date => {
+  const d = new Date();
+  d.setDate(d.getDate() + days);
+  d.setHours(18, 0, 0, 0);
+  return d;
+};
+
+/** e.g. "26 Nov 2026, 6:00 pm" */
+const formatHoldExpiry = (iso?: string | null): string => {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return '—';
+  return d.toLocaleString('en-IN', { day: '2-digit', month: 'short', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
+};
+
+/** "2d 4h left" / "3h 10m left" / "Expired" + urgency flag (< 24h) */
+const getHoldRemaining = (iso?: string | null): { label: string; urgent: boolean } => {
+  if (!iso) return { label: '', urgent: false };
+  const ms = new Date(iso).getTime() - Date.now();
+  if (Number.isNaN(ms)) return { label: '', urgent: false };
+  if (ms <= 0) return { label: 'Expired', urgent: true };
+  const mins = Math.floor(ms / 60000);
+  const days = Math.floor(mins / 1440);
+  const hours = Math.floor((mins % 1440) / 60);
+  const m = mins % 60;
+  const label = days > 0 ? `${days}d ${hours}h left` : hours > 0 ? `${hours}h ${m}m left` : `${m}m left`;
+  return { label, urgent: ms < 24 * 3600 * 1000 };
+};
 
 export const PlotsPage: React.FC = () => {
   const { tenant, user } = useAuth();
@@ -45,6 +82,11 @@ export const PlotsPage: React.FC = () => {
   const [isHoldModalOpen, setIsHoldModalOpen] = useState(false);
   const [holdSourceType, setHoldSourceType] = useState<'customer' | 'lead' | 'custom'>('lead');
   const [customersList, setCustomersList] = useState<any[]>([]);
+  // Legal document pack sharing (during hold)
+  const [shareTarget, setShareTarget] = useState<ShareDocumentsTarget | null>(null);
+  const [shareRefreshKey, setShareRefreshKey] = useState(0);
+  const [plotShares, setPlotShares] = useState<Record<string, PlotDocumentShare>>({});
+  const [shareDocsAfterHold, setShareDocsAfterHold] = useState(true);
   const [leadsList, setLeadsList] = useState<any[]>([]);
 
   // Effective customers list: includes all customers from CRM database, PLUS any converted leads who are already customers
@@ -331,6 +373,37 @@ export const PlotsPage: React.FC = () => {
 
   const currentProjectId = selectedProject || (projects[0]?.id ? String(projects[0].id) : '');
 
+  const loadPlotShares = async (projId: string) => {
+    if (!projId) return;
+    try {
+      const shares = await documentPackService.getShares({ projectId: projId });
+      setPlotShares(latestShareByPlot(shares));
+    } catch {
+      setPlotShares({});
+    }
+  };
+  useEffect(() => {
+    loadPlotShares(currentProjectId);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [currentProjectId, shareRefreshKey]);
+
+  const openShareDocs = (plot: any, overrides?: Partial<ShareDocumentsTarget>) => {
+    const lead = plot?.heldByLeadId ? leadsList.find((l: any) => String(l.id) === String(plot.heldByLeadId)) : null;
+    const cust = plot?.heldByCustomerId ? customersList.find((c: any) => String(c.id) === String(plot.heldByCustomerId)) : null;
+    setShareTarget({
+      plotId: plot.id,
+      plotNumber: plot.plotNumber,
+      projectName: projects.find((p: any) => String(p.id) === String(plot.projectId))?.name,
+      holdExpiresAt: plot.status === 'Hold' ? plot.holdExpiresAt : null,
+      recipientName: plot.heldByCustomerName || lead?.name || cust?.name || '',
+      recipientPhone: plot.heldByCustomerPhone || lead?.phone || cust?.phone || '',
+      recipientEmail: lead?.email || cust?.email || '',
+      leadId: plot.heldByLeadId || null,
+      customerId: plot.heldByCustomerId || null,
+      ...overrides,
+    });
+  };
+
   const projectPlots = currentProjectId
     ? plots.filter(p => String(p.projectId) === String(currentProjectId)).sort(comparePlotNumbers)
     : [...plots].sort(comparePlotNumbers);
@@ -449,7 +522,7 @@ export const PlotsPage: React.FC = () => {
     setSelectedLeadId('');
     setHoldCustomer('');
     setHoldPhone('');
-    setHoldExpiry(toLocalInput(new Date(Date.now() + 7 * 24 * 3600 * 1000)));
+    setHoldExpiry(toLocalInput(defaultHoldExpiry(7)));
     setHoldAmount(undefined);
     setHoldPaymentMode('');
     setHoldPaymentRef('');
@@ -523,10 +596,23 @@ export const PlotsPage: React.FC = () => {
         notes: holdNotes.trim() || undefined,
       });
       if (result.success) {
+        const heldPlot = selectedPlot;
+        const holdLead = holdSourceType === 'lead' && selectedLeadId ? leadsList.find((l: any) => String(l.id) === String(selectedLeadId)) : null;
+        const holdCust = holdSourceType === 'customer' && selectedCustomerId ? customersList.find((c: any) => String(c.id) === String(selectedCustomerId)) : null;
         setIsHoldModalOpen(false);
         setSelectedPlot(null);
         await loadData(selectedProject);
         toast.success(`Plot placed on hold until ${fmtDateTime(when.toISOString())}.`);
+        if (shareDocsAfterHold && heldPlot) {
+          openShareDocs({ ...heldPlot, status: 'Hold' }, {
+            holdExpiresAt: when.toISOString(),
+            recipientName: holdCustomer.trim(),
+            recipientPhone: holdPhone.trim(),
+            recipientEmail: holdLead?.email || holdCust?.email || '',
+            leadId: holdSourceType === 'lead' && selectedLeadId ? selectedLeadId : null,
+            customerId: holdSourceType === 'customer' && selectedCustomerId ? selectedCustomerId : null,
+          });
+        }
       } else {
         setHoldError(result.message || 'Failed to place plot on hold.');
       }
@@ -1317,9 +1403,43 @@ export const PlotsPage: React.FC = () => {
                         Book
                       </button>
                     </div>
-                    {plot.holdExpiresAt && (
-                      <div style={{ marginTop: 2 }}>Expiry: {new Date(plot.holdExpiresAt).toLocaleDateString()}</div>
-                    )}
+                    {plot.holdExpiresAt && (() => {
+                      const rem = getHoldRemaining(plot.holdExpiresAt);
+                      return (
+                        <div style={{ marginTop: 4, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6, flexWrap: 'wrap' }}>
+                          <span title="Hold expires — the plot is auto-released to Available at this time">
+                            ⏰ Until <strong>{formatHoldExpiry(plot.holdExpiresAt)}</strong>
+                          </span>
+                          {rem.label && (
+                            <span
+                              style={{
+                                fontSize: 10.5, fontWeight: 700, padding: '1px 6px', borderRadius: 4,
+                                background: rem.urgent ? 'rgba(239, 68, 68, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+                                color: rem.urgent ? '#dc2626' : '#b45309',
+                              }}
+                            >
+                              {rem.label}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
+                    <div style={{ marginTop: 6, display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 6 }}>
+                      {plotShares[String(plot.id)] ? (
+                        <span style={{ display: 'inline-flex', alignItems: 'center', gap: 4, fontSize: 11 }} title="Legal document verification">
+                          📄 <VerificationChip small status={plotShares[String(plot.id)].isExpired && plotShares[String(plot.id)].status !== 'Verified' ? 'Link expired' : plotShares[String(plot.id)].status} />
+                        </span>
+                      ) : (
+                        <span style={{ fontSize: 11, opacity: 0.85 }}>📄 Docs not shared</span>
+                      )}
+                      <button
+                        title="Share legal documents with the customer"
+                        onClick={e => { e.stopPropagation(); openShareDocs(plot); }}
+                        style={{ background: 'transparent', color: 'inherit', border: '1px solid currentColor', borderRadius: 4, padding: '1px 7px', fontSize: 11, fontWeight: 600, cursor: 'pointer' }}
+                      >
+                        {plotShares[String(plot.id)] ? 'Resend Docs' : 'Share Docs'}
+                      </button>
+                    </div>
                   </div>
                 )}
 
@@ -1378,7 +1498,7 @@ export const PlotsPage: React.FC = () => {
 
       {/* Plot Detail Modal */}
       <Modal
-        isOpen={!!selectedPlot && !isHoldModalOpen && !isBookingModalOpen && !isEditPlotModalOpen && !isDeletePlotModalOpen}
+        isOpen={!!selectedPlot && !isHoldModalOpen && !isBookingModalOpen && !isEditPlotModalOpen && !isDeletePlotModalOpen && !shareTarget}
         onClose={() => setSelectedPlot(null)}
         title={`${selectedPlot?.plotNumber} Specifications`}
         maxWidth={760}
@@ -1539,14 +1659,38 @@ export const PlotsPage: React.FC = () => {
                 <div>Customer: <strong>{selectedPlot.heldByCustomerName || '—'}</strong></div>
                 <div>Phone: <strong>{selectedPlot.heldByCustomerPhone || '—'}</strong></div>
                 {selectedPlot.holdByAgent && <div>Responsible agent: <strong>{selectedPlot.holdByAgent}</strong></div>}
-                <div>Expires: <strong>{fmtDateTime(selectedPlot.holdExpiresAt)}</strong></div>
+                <div>
+                  Expires: <strong>{formatHoldExpiry(selectedPlot.holdExpiresAt)}</strong>
+                  {selectedPlot.holdExpiresAt && getHoldRemaining(selectedPlot.holdExpiresAt).label && (
+                    <span style={{ marginLeft: 6, fontSize: 12, fontWeight: 600, color: getHoldRemaining(selectedPlot.holdExpiresAt).urgent ? '#dc2626' : '#b45309' }}>
+                      ({getHoldRemaining(selectedPlot.holdExpiresAt).label})
+                    </span>
+                  )}
+                </div>
                 {selectedPlot.holdAmount > 0 && <div>Hold amount: <strong>₹{Number(selectedPlot.holdAmount).toLocaleString('en-IN')}</strong></div>}
                 <div style={{ marginTop: 4 }}><PaymentBadge status={selectedPlot.holdPaymentStatus} /></div>
               </div>
             )}
+
+            <PlotDocumentsPanel
+              plotId={selectedPlot.id}
+              plotNumber={selectedPlot.plotNumber}
+              canManage={canManagePlots}
+              refreshKey={shareRefreshKey}
+              onShareClick={() => openShareDocs(selectedPlot)}
+              onSharesChanged={() => setShareRefreshKey(k => k + 1)}
+            />
           </div>
         )}
       </Modal>
+
+      {/* Share legal document pack with the customer */}
+      <ShareDocumentsModal
+        isOpen={!!shareTarget}
+        target={shareTarget}
+        onClose={() => setShareTarget(null)}
+        onShared={() => setShareRefreshKey(k => k + 1)}
+      />
 
       {/* Place on Hold Form Modal */}
       <Modal
@@ -1616,9 +1760,16 @@ export const PlotsPage: React.FC = () => {
                 </button>
               ))}
             </div>
-            <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
-              The plot returns to Available automatically at this time unless the hold is extended or booked. Maximum 30 days.
-            </div>
+            {(() => {
+              const when = holdExpiry ? new Date(holdExpiry) : null;
+              if (!when || Number.isNaN(when.getTime())) return null;
+              const rem = getHoldRemaining(when.toISOString());
+              return (
+                <div style={{ fontSize: 12, color: 'var(--text-secondary)', marginTop: 4 }}>
+                  ⏰ Hold expires on <strong>{formatHoldExpiry(when.toISOString())}</strong>{rem.label ? ` (${rem.label})` : ''}. The plot returns to Available automatically at this time unless the hold is extended or booked. Maximum 30 days.
+                </div>
+              );
+            })()}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
@@ -1653,6 +1804,16 @@ export const PlotsPage: React.FC = () => {
             <label htmlFor="plot-hold-notes" className="form-label">Reason / notes</label>
             <input id="plot-hold-notes" type="text" className="form-input" value={holdNotes} onChange={e => setHoldNotes(e.target.value)} placeholder="Why is the plot being held?" />
           </div>
+
+          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, cursor: 'pointer' }}>
+            <input type="checkbox" checked={shareDocsAfterHold} onChange={e => setShareDocsAfterHold(e.target.checked)} style={{ marginTop: 2 }} />
+            <span>
+              <strong>Share legal document pack after hold</strong>
+              <span style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)' }}>
+                Send the DTCP/RERA approvals, parent deed, EC, patta, plot sketch &amp; cost sheet so the customer's lawyer or bank can verify during the hold.
+              </span>
+            </span>
+          </label>
 
           <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
             Responsible agent: <strong>{user?.name || 'you'}</strong> · Project: <strong>{currentProjectObj?.name || '—'}</strong> · Plot: <strong>{selectedPlot?.plotNumber}</strong>
