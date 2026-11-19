@@ -15,6 +15,13 @@ public static class JaminBookingRules
         return digits.Length > 10 ? digits[^10..] : digits;
     }
 
+    /// <summary>The booking amount of a plot: its rate per sq.ft x its area (the stored price when no rate is recorded).</summary>
+    public static decimal CalculatedPlotAmount(JaminPlot plot)
+    {
+        if (plot.PricePerSqft > 0 && plot.AreaSqFt > 0) return Math.Round(plot.PricePerSqft * plot.AreaSqFt, 2);
+        return plot.Price;
+    }
+
     public static bool IsCash(string? mode) =>
         !string.IsNullOrWhiteSpace(mode) && mode.Contains("cash", StringComparison.OrdinalIgnoreCase);
 

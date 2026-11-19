@@ -115,7 +115,9 @@ public class JaminBookingsController : JaminTenantControllerBase
                 project = await _db.JaminProjects.FirstOrDefaultAsync(p => p.Id == plot.ProjectId && p.CompanyId == companyId, ct);
             }
 
-            var basePrice = dto.BasePrice ?? (plot?.Price ?? dto.TotalPlotPrice);
+            // The original amount is always calculated server-side from the plot's rate x area (the client cannot set it);
+            // the agent may edit the final agreement value, and both are stored.
+            var basePrice = plot != null ? JaminBookingRules.CalculatedPlotAmount(plot) : (dto.BasePrice ?? dto.TotalPlotPrice);
             var devCharges = dto.DevelopmentCharges ?? 0;
             var discounts = dto.ApprovedDiscounts ?? 0;
             var totalPrice = dto.TotalPlotPrice > 0 ? dto.TotalPlotPrice : (basePrice + devCharges - discounts);
@@ -182,6 +184,13 @@ public class JaminBookingsController : JaminTenantControllerBase
                 Notes = dto.Notes?.Trim(),
                 CreatedAt = DateTime.UtcNow
             };
+
+            if (!dto.IsHold && basePrice > 0 && Math.Round(totalPrice) != Math.Round(basePrice))
+            {
+                var inv = System.Globalization.CultureInfo.InvariantCulture;
+                var editNote = $"[Agreement value edited from {basePrice.ToString("N0", inv)} (rate x area) to {totalPrice.ToString("N0", inv)} by {User.GetUserName()}]";
+                booking.Notes = string.IsNullOrWhiteSpace(booking.Notes) ? editNote : $"{booking.Notes}\n{editNote}";
+            }
 
             _db.JaminBookings.Add(booking);
             await _db.SaveChangesAsync(ct);

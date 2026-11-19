@@ -6,7 +6,8 @@ import { Modal } from '../../components/common/Modal';
 import { BlueprintViewerModal } from '../../components/common/BlueprintViewerModal';
 import { PlotLayoutViewer, type LayoutPlot } from '../../components/common/PlotLayoutViewer';
 import { ProjectMapModal } from '../../components/common/ProjectMapModal';
-import { comparePlotNumbers } from '../../utils/plotUtils';
+import { comparePlotNumbers, calculatePlotAmount } from '../../utils/plotUtils';
+import { PlotAmountField } from '../../components/common/PlotAmountField';
 import { jaminApiService } from '../../services/jaminApiService';
 import { getCustomers, getLeads } from '../../services/ghlApiService';
 import { storageService } from '../../services/storageService';
@@ -554,7 +555,8 @@ export const PlotsPage: React.FC = () => {
     setBookingCustomerName(heldLead?.name || heldName);
     setBookingCustomerPhone(heldLead?.phone || heldPhone);
 
-    const price = plot.price || plot.totalPrice || 0;
+    // The agreement value starts as rate x area of THIS plot (editable); choosing another plot recalculates it.
+    const price = calculatePlotAmount(plot).amount || plot.price || plot.totalPrice || 0;
     setBookingTotalAgreementValue(price);
     setBookingTokenAmount(undefined);
     setBookingPaymentMode('');
@@ -1729,17 +1731,9 @@ export const PlotsPage: React.FC = () => {
               />
             </div>
 
-            <div className="form-group">
-              <label className="form-label">Total Agreement Value (₹) *</label>
-              <input
-                type="number"
-                className="form-input"
-                min={0}
-                value={bookingTotalAgreementValue ?? ''}
-                onChange={e => setBookingTotalAgreementValue(e.target.value ? Number(e.target.value) : undefined)}
-              />
-            </div>
           </div>
+
+          <PlotAmountField plot={selectedPlot} value={bookingTotalAgreementValue} onChange={setBookingTotalAgreementValue} id="plots-booking-amount" />
 
           <div className="form-group">
             <label className="form-label">Payment Mode *</label>
