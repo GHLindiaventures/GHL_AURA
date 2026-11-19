@@ -38,7 +38,7 @@ export const DEFAULT_TENANTS: Record<string, Tenant> = {
     name: 'Jamin Bazaar',
     slug: 'jamin',
     brandColor: '#e10600',
-    logo: '/jamin-logo-badge.png',
+    logo: '/jamin-logo-pill.png',
     tagline: 'Premium Plotted Enclaves & Farmland Communities',
     enabledFeatures: [
       FEATURES.LEADS,
