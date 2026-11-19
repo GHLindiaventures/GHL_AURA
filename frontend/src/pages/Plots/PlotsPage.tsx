@@ -86,7 +86,6 @@ export const PlotsPage: React.FC = () => {
   const [shareTarget, setShareTarget] = useState<ShareDocumentsTarget | null>(null);
   const [shareRefreshKey, setShareRefreshKey] = useState(0);
   const [plotShares, setPlotShares] = useState<Record<string, PlotDocumentShare>>({});
-  const [shareDocsAfterHold, setShareDocsAfterHold] = useState(true);
   const [leadsList, setLeadsList] = useState<any[]>([]);
 
   // Effective customers list: includes all customers from CRM database, PLUS any converted leads who are already customers
@@ -596,23 +595,10 @@ export const PlotsPage: React.FC = () => {
         notes: holdNotes.trim() || undefined,
       });
       if (result.success) {
-        const heldPlot = selectedPlot;
-        const holdLead = holdSourceType === 'lead' && selectedLeadId ? leadsList.find((l: any) => String(l.id) === String(selectedLeadId)) : null;
-        const holdCust = holdSourceType === 'customer' && selectedCustomerId ? customersList.find((c: any) => String(c.id) === String(selectedCustomerId)) : null;
         setIsHoldModalOpen(false);
         setSelectedPlot(null);
         await loadData(selectedProject);
         toast.success(`Plot placed on hold until ${fmtDateTime(when.toISOString())}.`);
-        if (shareDocsAfterHold && heldPlot) {
-          openShareDocs({ ...heldPlot, status: 'Hold' }, {
-            holdExpiresAt: when.toISOString(),
-            recipientName: holdCustomer.trim(),
-            recipientPhone: holdPhone.trim(),
-            recipientEmail: holdLead?.email || holdCust?.email || '',
-            leadId: holdSourceType === 'lead' && selectedLeadId ? selectedLeadId : null,
-            customerId: holdSourceType === 'customer' && selectedCustomerId ? selectedCustomerId : null,
-          });
-        }
       } else {
         setHoldError(result.message || 'Failed to place plot on hold.');
       }
@@ -1804,16 +1790,6 @@ export const PlotsPage: React.FC = () => {
             <label htmlFor="plot-hold-notes" className="form-label">Reason / notes</label>
             <input id="plot-hold-notes" type="text" className="form-input" value={holdNotes} onChange={e => setHoldNotes(e.target.value)} placeholder="Why is the plot being held?" />
           </div>
-
-          <label style={{ display: 'flex', alignItems: 'flex-start', gap: 8, fontSize: 13, cursor: 'pointer' }}>
-            <input type="checkbox" checked={shareDocsAfterHold} onChange={e => setShareDocsAfterHold(e.target.checked)} style={{ marginTop: 2 }} />
-            <span>
-              <strong>Share legal document pack after hold</strong>
-              <span style={{ display: 'block', fontSize: 12, color: 'var(--text-secondary)' }}>
-                Send the DTCP/RERA approvals, parent deed, EC, patta, plot sketch &amp; cost sheet so the customer's lawyer or bank can verify during the hold.
-              </span>
-            </span>
-          </label>
 
           <div style={{ fontSize: 12.5, color: 'var(--text-secondary)' }}>
             Responsible agent: <strong>{user?.name || 'you'}</strong> · Project: <strong>{currentProjectObj?.name || '—'}</strong> · Plot: <strong>{selectedPlot?.plotNumber}</strong>
