@@ -1762,13 +1762,19 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
             </div>
           </div>
         ) : tenant?.slug === 'jamin' ? (
-          <div style={{ display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
+          // The logo has transparent light areas, so it sits on a white card to keep "BAZAAR" readable on the dark header.
+          <div
+            style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'center', overflow: 'hidden',
+              background: '#ffffff', borderRadius: 12, padding: '2px 6px', boxShadow: '0 1px 6px rgba(0,0,0,0.35)',
+            }}
+          >
             <img
               src="/jamin-logo-badge.png"
               alt="Jamin Bazaar"
               style={{
-                height: 60,
-                maxWidth: 200,
+                height: 50,
+                maxWidth: 180,
                 objectFit: 'contain',
                 display: 'block',
               }}
