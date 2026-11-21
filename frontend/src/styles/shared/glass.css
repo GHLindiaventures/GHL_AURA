@@ -1,0 +1,368 @@
+/* ==========================================================================
+   Glass Layer — app-wide glassmorphism & card alignment
+   --------------------------------------------------------------------------
+   Loaded globally from index.css. Page stylesheets are lazy-loaded AFTER this
+   file, so any rule that must beat a page rule is prefixed with
+   `.app-container` (one extra class of specificity) instead of `!important`.
+
+   backdrop-filter policy
+   ----------------------
+   backdrop-filter makes an element the containing block for position:fixed
+   descendants. Modal, Drawer and many page overlays render inline (no portal),
+   so a blurred card would trap them. Real blur is therefore reserved for
+   surfaces that float over scrolling content AND have no fixed children:
+   sidebar, sticky table headers, overlay backdrops.
+   (The topbar is a solid obsidian band — nothing scrolls under it.)
+   Everything else achieves glass with translucency over the ambient mesh,
+   which — because the mesh is itself a soft gradient — reads identically.
+   ========================================================================== */
+
+/* ── 1. Nested surfaces ────────────────────────────────────────────────────
+   A card inside another glass surface becomes a quiet inset instead of
+   stacking a second frosted slab on top of the first.                      */
+:is(.card, .modal-card, .drawer-panel) .card:not(.animate-slide-down) {
+  background: var(--glass-bg-subtle);
+  box-shadow: var(--glass-highlight), 0 0 0 1px var(--glass-hairline);
+}
+
+/* ── 2. Floating popovers built on .card (menus, incoming-call card) ────── */
+.card.animate-slide-down:not(.modal-card):not(.auth-card) {
+  background: var(--glass-bg-solid);
+  box-shadow: var(--glass-highlight), var(--glass-shadow-overlay);
+}
+
+/* ── 3. Page-level tiles & panels that hard-set a solid surface ───────────
+   background-color (not the shorthand) so accent gradients layered via
+   background-image on modifier classes survive.                            */
+.app-container :is(
+  /* tenant workspace — KPI / stat tiles */
+  .irm-kpi-card,
+  .irm-widget-card,
+  .consultations-kpi-card,
+  .all-leads-metric-card,
+  .irm-stat-card,
+  .ni-stat-card,
+  .pending-leads-kpi-card,
+  .support-kpi-card,
+  .work-handover-page .handover-kpi-card,
+  /* tenant workspace — list items & panels */
+  .followup-item-card,
+  .pipeline-deal-card,
+  .irm-deal-card,
+  .irm-other-controls-card,
+  .notifications-card-wrapper,
+  .irm-profile-tabs-card,
+  .ni-call-history-section,
+  .work-handover-page .start-handover-card,
+  .work-handover-page .handover-table-container,
+  /* filter / tab bars */
+  .consultations-tabs-bar,
+  .customer-tabs-bar,
+  .irm-workflow-nav-bar,
+  .plots-legend-bar,
+  .company-users-filter-bar,
+  .admin-followup-filterbar,
+  .irm-followup-filterbar,
+  /* super-admin console tiles */
+  .ticket-kpi-card,
+  .roles-stat-card,
+  .speech-kpi-card,
+  .plp-stat-card
+) {
+  background-color: var(--glass-bg);
+  box-shadow: var(--glass-highlight), var(--glass-shadow);
+}
+
+/* ── 4. Card alignment ─────────────────────────────────────────────────────
+   4a. One responsive rhythm for every auto-fit KPI row: same minimum tile
+       width, same gutter, equal-height tiles. Five tiles sit on one row at a
+       1440px viewport; phones get a tidy 2-up grid.
+       (Fixed-count grids such as 5/6/7-column strips keep their own,
+       deliberately tuned breakpoints and are not listed here.)            */
+.app-container :is(
+  .dashboard-kpi-grid,
+  .consultations-kpi-grid,
+  .irm-reports-kpi-grid,
+  .pending-leads-kpi-grid,
+  .reports-metrics-grid,
+  .support-kpi-grid,
+  .tickets-kpi-grid,
+  .roles-stats-grid,
+  .security-kpi-grid,
+  .speech-ai-kpi-grid,
+  .platform-docs-metrics-grid
+) {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 200px), 1fr));
+  gap: 16px;
+  align-items: stretch;
+}
+
+@media (max-width: 640px) {
+  .app-container :is(
+    .dashboard-kpi-grid,
+    .consultations-kpi-grid,
+    .irm-reports-kpi-grid,
+    .pending-leads-kpi-grid,
+    .reports-metrics-grid,
+    .support-kpi-grid,
+    .tickets-kpi-grid,
+    .roles-stats-grid,
+    .security-kpi-grid,
+    .speech-ai-kpi-grid,
+    .platform-docs-metrics-grid
+  ) {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+}
+
+/* 4b. Inside a tile, pin the footnote (trend / sub-stat line) to the bottom
+       edge so footnotes line up across a row even when one tile carries an
+       extra progress bar or a wrapped label. A zero-height flexible spacer is
+       slotted *before* the last child via `order`, so every child keeps its
+       own margins — the tallest tile is pixel-identical to before.          */
+.app-container :is(
+  .dashboard-kpi-card,
+  .irm-kpi-card,
+  .irm-reports-kpi-card,
+  .consultations-kpi-card,
+  .all-leads-metric-card,
+  .support-kpi-card,
+  .ticket-kpi-card,
+  .roles-stat-card,
+  .speech-kpi-card,
+  .plp-stat-card
+) {
+  display: flex;
+  flex-direction: column;
+}
+
+.app-container :is(
+  .dashboard-kpi-card,
+  .irm-kpi-card,
+  .irm-reports-kpi-card,
+  .consultations-kpi-card,
+  .all-leads-metric-card,
+  .support-kpi-card,
+  .ticket-kpi-card,
+  .roles-stat-card,
+  .speech-kpi-card,
+  .plp-stat-card
+)::after {
+  content: '';
+  flex: 1 1 0;
+  order: 1;
+}
+
+.app-container :is(
+  .dashboard-kpi-card,
+  .irm-kpi-card,
+  .irm-reports-kpi-card,
+  .consultations-kpi-card,
+  .all-leads-metric-card,
+  .support-kpi-card,
+  .ticket-kpi-card,
+  .roles-stat-card,
+  .speech-kpi-card,
+  .plp-stat-card
+) > :last-child:not(:first-child) {
+  order: 2;
+}
+
+/* 4c. KPI headers: label and icon share one baseline row; long labels wrap
+       beside the icon instead of pushing it down.                           */
+.app-container :is(.dashboard-kpi-header, .irm-reports-kpi-header) {
+  gap: 12px;
+  align-items: flex-start;
+}
+
+.app-container :is(.dashboard-kpi-label, .irm-reports-kpi-label) {
+  letter-spacing: 0.04em;
+  line-height: 1.35;
+  padding-top: 2px;
+}
+
+.app-container .dashboard-kpi-icon-box {
+  flex-shrink: 0;
+  border-radius: 12px;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+.app-container .dashboard-kpi-value {
+  line-height: 1.15;
+}
+
+/* One weight for every page title. Nine pages scope `.x-page .page-title`
+   down to 700; `main` adds one element of specificity (both layouts render
+   the page inside <main class="page-scrollable">) so this wins without
+   !important. Manrope needs 800 to carry the same presence Outfit had at 700. */
+.app-container main :is(.page-title, h1) {
+  font-family: var(--font-display);
+  font-weight: 800;
+  letter-spacing: -0.025em;
+}
+
+/* Every headline KPI figure speaks in the display face (Manrope) with
+   tabular digits, so values don't jitter in width as they update and rows
+   of tiles read as one typographic system across pages. */
+.app-container :is(
+  .dashboard-kpi-value,
+  .irm-kpi-val,
+  .irm-reports-kpi-value,
+  .irm-stat-card-value,
+  .kpi-val,
+  .kyc-metric-val,
+  .kyc-glass-metric-val,
+  .ni-stat-value,
+  .pending-leads-kpi-value,
+  .plp-stat-value,
+  .profile-kpi-value,
+  .reports-metric-value,
+  .speech-kpi-val,
+  .support-kpi-val,
+  .cc-kpi-value,
+  .all-leads-metric-value,
+  .consultations-kpi-value
+) {
+  font-family: var(--font-display);
+  font-variant-numeric: tabular-nums;
+  letter-spacing: -0.02em;
+}
+
+/* 4d. Split rows (e.g. "Recent inquiries" | "Follow-ups"): equal heights so
+       side-by-side panels end on the same line.                             */
+.app-container .dashboard-split-grid {
+  align-items: stretch;
+}
+
+.app-container .dashboard-split-header {
+  border-bottom-color: var(--glass-divider);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.35) 0%, transparent 100%);
+}
+
+:is(.dark-theme, .admin-theme) .app-container .dashboard-split-header,
+.app-container:is(.dark-theme, .admin-theme) .dashboard-split-header {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.03) 0%, transparent 100%);
+}
+
+.app-container .dashboard-followup-item {
+  background: var(--glass-bg-subtle);
+  border-color: var(--glass-border);
+  box-shadow: 0 0 0 1px var(--glass-hairline);
+  transition: background-color var(--transition-fast), transform var(--transition-fast);
+}
+
+.app-container .dashboard-followup-item:hover {
+  background: var(--glass-bg-hover);
+}
+
+.app-container :is(.dashboard-table-thead-tr) {
+  background: var(--glass-thead-bg);
+  border-bottom-color: var(--glass-divider);
+}
+
+.app-container .dashboard-table-tbody-tr {
+  border-bottom-color: var(--glass-divider);
+  transition: background-color var(--transition-fast);
+}
+
+.app-container .dashboard-table-tbody-tr:hover {
+  background: var(--glass-row-hover);
+}
+
+/* ── 5. Hero banner: dark glass with a brand glow instead of a flat slab ─── */
+.app-container .dashboard-banner {
+  position: relative;
+  overflow: hidden;
+  background:
+    radial-gradient(40rem 16rem at 100% 0%, rgba(239, 68, 68, 0.32), transparent 60%),
+    radial-gradient(28rem 14rem at 0% 100%, rgba(124, 58, 237, 0.22), transparent 60%),
+    linear-gradient(135deg, rgba(15, 23, 42, 0.94) 0%, rgba(2, 6, 23, 0.96) 100%) !important;
+  border: 1px solid rgba(255, 255, 255, 0.08) !important;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.08),
+    0 20px 48px -20px rgba(15, 23, 42, 0.55);
+}
+
+/* ── 6. Status chips & badges: a touch of frost (light only — on dark
+   surfaces a white rim reads as a stray line) ───────────────────────────── */
+.status-chip {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.35);
+}
+
+:is(.dark-theme, .admin-theme) .status-chip {
+  box-shadow: none;
+}
+
+/* ── 7. Global keyboard focus ──────────────────────────────────────────────
+   A visible ring for every interactive element that does not style its own.
+   :focus-visible only — mouse clicks stay clean.                            */
+:where(a, button, [role='button'], [tabindex]:not([tabindex='-1']), summary):focus-visible {
+  outline: 2px solid var(--primary-500);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ── 8. Fallbacks & preferences ────────────────────────────────────────────
+   No backdrop-filter support → lift every frosted surface to near-opaque so
+   text never sits on an un-blurred busy background.                         */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  .sidebar-container,
+  .page-header-sticky,
+  .modal-backdrop,
+  .drawer-backdrop {
+    background-color: var(--glass-bg-solid);
+  }
+}
+
+/* OS-level "reduce transparency" → solid surfaces, no blur */
+@media (prefers-reduced-transparency: reduce) {
+  :root,
+  .dark-theme,
+  .admin-theme {
+    --glass-bg: var(--bg-surface);
+    --glass-bg-strong: var(--bg-surface);
+    --glass-bg-solid: var(--bg-surface);
+    --glass-bg-hover: var(--bg-surface-hover);
+    --bg-card: var(--bg-surface);
+  }
+
+  .sidebar-container,
+  .page-header-sticky,
+  .modal-backdrop,
+  .drawer-backdrop {
+    backdrop-filter: none !important;
+    -webkit-backdrop-filter: none !important;
+  }
+}
+
+/* OS-level "reduce motion" → no lifts, slides or entrance fades.
+   Scoped on purpose: loading spinners keep turning, because a frozen spinner
+   reads as a hung app and that motion carries meaning. */
+@media (prefers-reduced-motion: reduce) {
+  .animate-fade-in,
+  .animate-slide-down,
+  .animate-slide-right,
+  .modal-backdrop,
+  .drawer-backdrop,
+  .modal-card-shake {
+    animation: none !important;
+  }
+
+  .card,
+  .btn,
+  .sidebar-nav-item,
+  .form-input,
+  .form-select,
+  .form-textarea {
+    transition-duration: 0.01ms !important;
+  }
+
+  .card-hover:hover,
+  .btn-primary:hover,
+  .btn-success:hover,
+  .btn-call:hover {
+    transform: none !important;
+  }
+}

@@ -1,27 +1,49 @@
 /* ==========================================================================
    EmptyState Component Styles
+   Content is top-aligned (not vertically centred) so that a row of empty
+   cards in a grid lines up icon-to-icon and title-to-title even when their
+   descriptions wrap to different lengths.
    ========================================================================== */
 
 .empty-state-card {
-  padding: 48px 24px;
+  padding: 44px 24px 40px;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  background: var(--bg-card);
-  border: 1px dashed var(--border-strong);
+  justify-content: flex-start;
+  background: var(--glass-bg-subtle);
+  border: 1px dashed var(--glass-input-border);
+  box-shadow: var(--glass-highlight);
+}
+
+/* Inside a parent glass surface the empty state is a quiet inset, not a second card */
+:is(.card, .modal-card, .drawer-panel) .empty-state-card {
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
 }
 
 .empty-state-icon-circle {
   width: 56px;
   height: 56px;
-  border-radius: 50%;
-  background-color: var(--bg-surface-hover);
+  flex-shrink: 0;
+  border-radius: 18px;
+  background: linear-gradient(145deg, rgba(239, 68, 68, 0.14) 0%, rgba(239, 68, 68, 0.04) 100%);
+  border: 1px solid rgba(239, 68, 68, 0.16);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.6),
+    0 8px 20px -10px rgba(239, 68, 68, 0.45);
   display: flex;
   align-items: center;
   justify-content: center;
-  color: var(--text-muted);
+  color: var(--primary-600);
   margin-bottom: 16px;
+}
+
+:is(.dark-theme, .admin-theme) .empty-state-icon-circle {
+  color: #fca5a5;
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.06),
+    0 8px 20px -10px rgba(239, 68, 68, 0.55);
 }
 
 .empty-state-title {
@@ -29,13 +51,15 @@
   font-weight: 600;
   color: var(--text-primary);
   margin-bottom: 6px;
+  text-wrap: balance;
 }
 
 .empty-state-description {
   font-size: 13px;
   color: var(--text-secondary);
   max-width: 420px;
-  line-height: 1.5;
+  line-height: 1.55;
+  text-wrap: pretty;
 }
 
 .empty-state-description.with-action {

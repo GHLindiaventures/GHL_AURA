@@ -1847,7 +1847,7 @@
   box-sizing: border-box;
   overflow: visible !important; /* CRITICAL: Enables smooth vertical scrolling */
   min-height: min-content;
-  font-family: -apple-system, BlinkMacSystemFont, 'SF Pro Display', 'Inter', system-ui, sans-serif;
+  font-family: var(--font-sans);
   color: #0f172a;
 }
 

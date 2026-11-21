@@ -44,86 +44,33 @@ export const Drawer: React.FC<DrawerProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div
-      style={{
-        position: 'fixed',
-        inset: 0,
-        zIndex: 1000,
-        display: 'flex',
-        justifyContent: 'flex-end',
-        backgroundColor: 'rgba(15, 23, 42, 0.5)',
-        backdropFilter: 'blur(3px)',
-      }}
-      onClick={onClose}
-    >
+    <div className="drawer-backdrop" onClick={onClose}>
       <div
-        className="animate-slide-right"
+        className="animate-slide-right drawer-panel"
+        role="dialog"
+        aria-modal="true"
+        aria-label={title}
         style={{
-          width: '100%',
           maxWidth: typeof resolvedWidth === 'number' ? `${resolvedWidth}px` : resolvedWidth,
-          height: '100%',
-          backgroundColor: 'var(--bg-surface)',
-          display: 'flex',
-          flexDirection: 'column',
-          boxShadow: 'var(--shadow-xl)',
-          borderLeft: '1px solid var(--border-base)',
         }}
         onClick={e => e.stopPropagation()}
       >
         {/* Header */}
-        <div
-          style={{
-            padding: '20px 24px',
-            borderBottom: '1px solid var(--border-base)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between',
-            backgroundColor: 'var(--bg-surface)',
-          }}
-        >
+        <div className="drawer-header">
           <div>
-            <h3 style={{ fontSize: 18, fontWeight: 700, margin: 0 }}>{title}</h3>
-            {subtitle && (
-              <p style={{ fontSize: 13, color: 'var(--text-secondary)', marginTop: 4 }}>
-                {subtitle}
-              </p>
-            )}
+            <h3 className="drawer-title">{title}</h3>
+            {subtitle && <p className="drawer-subtitle">{subtitle}</p>}
           </div>
-          <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose}>
+          <button className="btn btn-ghost btn-icon btn-sm" onClick={onClose} aria-label="Close drawer">
             <X size={18} />
           </button>
         </div>
 
         {/* Content */}
-        <div
-          style={{
-            padding: '24px',
-            overflowY: 'auto',
-            flex: 1,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 20,
-          }}
-        >
-          {children}
-        </div>
+        <div className="drawer-body">{children}</div>
 
         {/* Footer */}
-        {footer && (
-          <div
-            style={{
-              padding: '16px 24px',
-              borderTop: '1px solid var(--border-base)',
-              backgroundColor: 'var(--bg-surface-hover)',
-              display: 'flex',
-              alignItems: 'center',
-              justifyContent: 'flex-end',
-              gap: 12,
-            }}
-          >
-            {footer}
-          </div>
-        )}
+        {footer && <div className="drawer-footer">{footer}</div>}
       </div>
     </div>
   );

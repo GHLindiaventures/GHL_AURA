@@ -6,7 +6,7 @@
   display: flex;
   align-items: center;
   flex-wrap: wrap;
-  gap: 10px;
+  gap: 10px 14px;
 }
 
 .filterbar-label {
@@ -43,8 +43,8 @@
   padding-left: 10px;
   padding-right: 28px;
   border-radius: var(--radius-md);
-  border: 1px solid var(--border-base);
-  background-color: var(--bg-surface);
+  border: 1px solid var(--glass-input-border);
+  background-color: var(--glass-input-bg);
   color: var(--text-primary);
   cursor: pointer;
   min-width: 110px;
@@ -99,10 +99,10 @@
   padding-left: 8px;
   padding-right: 8px;
   border-radius: var(--radius-md);
-  border: 1px solid var(--border-base);
-  background-color: var(--bg-surface);
+  border: 1px solid var(--glass-input-border);
+  background-color: var(--glass-input-bg);
   color: var(--text-primary);
-  color-scheme: dark;
+  color-scheme: light;
   min-width: 125px;
   cursor: pointer;
 }
@@ -121,6 +121,26 @@
   padding: 4px 8px;
   height: 32px;
   border-radius: var(--radius-md);
-  border: 1px solid var(--border-base);
+  border: 1px solid var(--glass-input-border);
+  background: var(--glass-bg-subtle);
+  cursor: pointer;
   white-space: nowrap;
+}
+
+:is(.dark-theme, .admin-theme) .filterbar-date-input {
+  color-scheme: dark;
+}
+
+.filterbar-select:hover:not(:focus),
+.filterbar-date-input:hover:not(:focus),
+.filterbar-clear-btn:hover {
+  border-color: var(--border-strong);
+}
+
+.filterbar-select:focus-visible,
+.filterbar-date-input:focus-visible,
+.filterbar-clear-btn:focus-visible {
+  outline: none;
+  border-color: var(--primary-500);
+  box-shadow: var(--focus-ring);
 }

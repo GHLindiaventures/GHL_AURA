@@ -33,6 +33,7 @@ import {
   Layers,
   CalendarOff,
   Ticket,
+  Zap,
 } from 'lucide-react';
 import { useAuth } from '../../context/AuthContext';
 import { getFollowups } from '../../services/ghlApiService';
@@ -379,11 +380,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
 
   return (
     <aside
+      className={`sidebar-container${isSuperAdmin ? ' is-super-admin' : ''}${collapsed ? ' is-collapsed' : ''}`}
       style={{
         width: collapsed ? 'var(--sidebar-collapsed-width)' : 'var(--sidebar-width)',
         height: '100vh',
-        backgroundColor: isSuperAdmin ? '#0b0f19' : 'var(--bg-surface)',
-        borderRight: `1px solid ${isSuperAdmin ? '#1e293b' : 'var(--border-base)'}`,
         display: 'flex',
         flexDirection: 'column',
         transition: 'width var(--transition-normal)',
@@ -394,6 +394,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
     >
       {/* Brand Header */}
       <div
+        className="sidebar-brand-header"
         style={{
           height: 'var(--topbar-height)',
           backgroundColor: '#000000',
@@ -413,7 +414,6 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
               : tenant?.slug === 'ghl'
                 ? '0 48px'
                 : '0 20px',
-          borderBottom: `1px solid ${isSuperAdmin ? '#1e293b' : 'var(--border-base)'}`,
           position: 'relative',
         }}
       >
@@ -433,7 +433,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
                 fontSize: 12,
               }}
             >
-              ⚡
+              <Zap size={18} fill="currentColor" aria-hidden="true" />
             </div>
           ) : tenant?.slug === 'jamin' ? (
             <div
@@ -510,7 +510,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
                 fontSize: 20,
               }}
             >
-              ⚡
+              <Zap size={22} fill="currentColor" aria-hidden="true" />
             </div>
             <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
               <div
@@ -649,7 +649,7 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
                 fontSize: 13,
               }}
             >
-              ⚡
+              <Zap size={18} fill="currentColor" aria-hidden="true" />
             </div>
             <div style={{ overflow: 'hidden', whiteSpace: 'nowrap' }}>
               <div
@@ -697,6 +697,8 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
           onMouseLeave={() => setIsCollapseHovered(false)}
           onClick={() => setCollapsed(!collapsed)}
           title={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-label={collapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+          aria-expanded={!collapsed}
         >
           {collapsed ? (
             <ChevronRight
@@ -715,37 +717,15 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
       </div>
 
       {/* Nav List */}
-      <div
-        style={{
-          flex: 1,
-          overflowY: 'auto',
-          padding: '16px 10px',
-          display: 'flex',
-          flexDirection: 'column',
-          gap: 16,
-        }}
-      >
+      <nav className="sidebar-nav" aria-label="Primary">
         {sectionsToRender.map((sec, sIdx) => {
           const visibleItems = filterSection(sec);
           // Omit section headers if zero children are permitted/enabled (Section 4.2 rule)
           if (visibleItems.length === 0) return null;
 
           return (
-            <div key={sIdx} style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-              {sec.header && !collapsed && (
-                <div
-                  style={{
-                    fontSize: 11,
-                    fontWeight: 700,
-                    textTransform: 'uppercase',
-                    letterSpacing: '0.06em',
-                    color: isSuperAdmin ? '#64748b' : 'var(--text-muted)',
-                    padding: '6px 12px 2px',
-                  }}
-                >
-                  {sec.header}
-                </div>
-              )}
+            <div key={sIdx} className="sidebar-section">
+              {sec.header && !collapsed && <div className="sidebar-section-header">{sec.header}</div>}
 
               {visibleItems.map(item => {
                 const isActive = currentRoute === item.id;
@@ -753,62 +733,27 @@ export const Sidebar: React.FC<SidebarProps> = ({ currentRoute, onNavigate }) =>
                 return (
                   <button
                     key={item.id}
-                    className="btn btn-ghost"
-                    style={{
-                      width: '100%',
-                      justifyContent: collapsed ? 'center' : 'flex-start',
-                      padding: collapsed ? '10px 0' : '9px 14px',
-                      borderRadius: 'var(--radius-md)',
-                      backgroundColor: isActive
-                        ? isSuperAdmin
-                          ? 'rgba(139, 92, 246, 0.18)'
-                          : 'var(--primary-50)'
-                        : 'transparent',
-                      color: isActive
-                        ? isSuperAdmin
-                          ? '#c084fc'
-                          : 'var(--primary-600)'
-                        : isSuperAdmin
-                          ? '#cbd5e1'
-                          : 'var(--text-secondary)',
-                      fontWeight: isActive ? 700 : 500,
-                      border: isActive
-                        ? isSuperAdmin
-                          ? '1px solid rgba(139, 92, 246, 0.3)'
-                          : '1px solid rgba(239, 68, 68, 0.25)'
-                        : '1px solid transparent',
-                    }}
+                    className={`btn btn-ghost sidebar-nav-item${isActive ? ' is-active' : ''}`}
+                    aria-current={isActive ? 'page' : undefined}
+                    aria-label={collapsed ? item.label : undefined}
                     title={collapsed ? item.label : undefined}
                     onClick={() => onNavigate(item.id)}
                   >
-                    <span style={{ display: 'flex', alignItems: 'center' }}>{item.icon}</span>
+                    <span className="sidebar-nav-icon">{item.icon}</span>
                     {!collapsed && (
-                      <span style={{ fontSize: 13, marginLeft: 12, display: 'flex', alignItems: 'center', gap: 8, width: '100%', justifyContent: 'space-between' }}>
+                      <span className="sidebar-nav-label">
                         <span>{item.label}</span>
-                        {item.badge !== undefined && (
-                          <span
-                            style={{
-                              backgroundColor: '#ef4444',
-                              color: '#ffffff',
-                              fontSize: 11,
-                              fontWeight: 700,
-                              padding: '2px 7px',
-                              borderRadius: 10,
-                              lineHeight: 1,
-                            }}
-                          >
-                            {item.badge}
-                          </span>
-                        )}
+                        {item.badge !== undefined && <span className="sidebar-nav-badge">{item.badge}</span>}
                       </span>
                     )}
+                    {collapsed && item.badge !== undefined && <span className="sidebar-nav-dot" aria-hidden="true" />}
                   </button>
                 );
               })}
             </div>
           );
         })}
-      </div>
+      </nav>
     </aside>
   );
 };

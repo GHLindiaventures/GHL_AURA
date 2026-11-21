@@ -34,7 +34,7 @@
   min-height: 100vh;
   background-color: var(--ckyc-bg);
   color: var(--ckyc-text-primary);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-sans);
   display: flex;
   flex-direction: column;
   align-items: center;

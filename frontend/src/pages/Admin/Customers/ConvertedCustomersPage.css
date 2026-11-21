@@ -37,7 +37,7 @@
   min-height: 100vh;
   background-color: var(--cc-bg);
   color: var(--cc-text-main);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+  font-family: var(--font-sans);
   transition: background-color 0.2s ease, color 0.2s ease;
 }
 
@@ -699,7 +699,8 @@
 }
 
 .cc-amount-cell {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  font-family: var(--font-sans);
+  font-variant-numeric: tabular-nums;
   font-size: 0.9375rem;
   font-weight: 700;
   color: #d97706;

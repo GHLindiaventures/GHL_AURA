@@ -1,10 +1,16 @@
 /* Shared Application Layout Scaffolding */
 
+/* The ambient mesh lives on the shell (it never scrolls), and every layer above
+   it stays transparent so glass surfaces always have colour to frost. */
 .app-container {
   display: flex;
   height: 100vh;
   width: 100vw;
   overflow: hidden;
+  background-color: var(--canvas-base);
+  background-image: var(--canvas-mesh);
+  background-repeat: no-repeat;
+  background-size: cover;
 }
 
 .main-content-area {
@@ -14,30 +20,18 @@
   min-width: 0;
   height: 100vh;
   overflow: hidden;
-  background: linear-gradient(
-    to bottom,
-    #FAF9F4 0%,
-    #F7F5EF 28%,
-    #F4F1EA 55%,
-    #E7E8EA 100%
-  );
+  background: transparent;
 }
 
 .page-scrollable {
   flex: 1;
   overflow-y: auto;
   scrollbar-gutter: stable;
-  padding: 24px 32px;
+  padding: 24px 32px 40px;
   display: flex;
   flex-direction: column;
   gap: 24px;
-  background: linear-gradient(
-    to bottom,
-    #FAF9F4 0%,
-    #F7F5EF 28%,
-    #F4F1EA 55%,
-    #E7E8EA 100%
-  );
+  background: transparent;
 }
 
 .page-scrollable.page-chat-layout {
@@ -55,24 +49,10 @@
   min-height: 0 !important;
 }
 
-.admin-theme .main-content-area,
-.admin-theme .page-scrollable {
-  background: #090d16 !important;
-}
-
-.dark-theme .main-content-area,
-.dark-theme .page-scrollable {
-  background: #090d16 !important;
-}
-
-:is(.admin-theme, .dark-theme) .topbar-header {
-  background: #000000 !important;
-  border-bottom-color: rgba(255, 255, 255, 0.1) !important;
-}
-
-:is(.admin-theme, .dark-theme) .sidebar-container {
-  background: #0f172a !important;
-  border-right-color: #334155 !important;
+:is(.admin-theme, .dark-theme) .main-content-area,
+:is(.admin-theme, .dark-theme) .page-scrollable,
+.admin-layout-main {
+  background: transparent !important;
 }
 
 

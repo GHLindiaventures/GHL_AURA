@@ -192,13 +192,13 @@ export function DataTable<T>({
         <div
           style={{
             padding: '16px 20px',
-            borderBottom: '1px solid var(--border-base)',
+            borderBottom: '1px solid var(--glass-divider)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             flexWrap: 'wrap',
             gap: 12,
-            background: 'var(--bg-surface)',
+            background: 'transparent',
             flexShrink: 0,
           }}
         >
@@ -287,7 +287,7 @@ export function DataTable<T>({
           onAction={onEmptyAction}
         />
       ) : (
-        <div style={{ overflowX: 'auto', overflowY: 'auto', flex: 1, minHeight: 0, backgroundColor: 'var(--bg-surface)' }}>
+        <div style={{ overflowX: 'auto', overflowY: 'auto', flex: 1, minHeight: 0, backgroundColor: 'transparent' }}>
           <table
             style={{
               width: '100%',
@@ -298,11 +298,11 @@ export function DataTable<T>({
               tableLayout: 'fixed',
             }}
           >
-            <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--bg-surface-hover)' }}>
+            <thead style={{ position: 'sticky', top: 0, zIndex: 10, backgroundColor: 'var(--glass-thead-bg)' }}>
               <tr
                 style={{
                   borderBottom: '1px solid var(--border-base)',
-                  backgroundColor: 'var(--bg-surface-hover)',
+                  backgroundColor: 'transparent',
                   color: 'var(--text-secondary)',
                   fontWeight: 600,
                   fontSize: 12,
@@ -318,8 +318,8 @@ export function DataTable<T>({
                       textAlign: 'center',
                       position: 'sticky',
                       top: 0,
-                      background: 'var(--bg-surface-hover)',
-                      boxShadow: 'inset 0 -1px 0 var(--border-base)',
+                      background: 'var(--glass-thead-bg)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+                      boxShadow: 'inset 0 -1px 0 var(--glass-divider)',
                       zIndex: 10,
                     }}
                   >
@@ -354,8 +354,8 @@ export function DataTable<T>({
                         position: 'sticky',
                         top: 0,
                         right: isActionsCol ? 0 : undefined,
-                        background: 'var(--bg-surface-hover)',
-                        boxShadow: 'inset 0 -1px 0 var(--border-base)',
+                        background: 'var(--glass-thead-bg)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+                        boxShadow: 'inset 0 -1px 0 var(--glass-divider)',
                         zIndex: isActionsCol ? 12 : 10,
                       }}
                       onClick={() => col.sortable && handleSort(col.key)}
@@ -401,8 +401,8 @@ export function DataTable<T>({
                       position: 'sticky',
                       top: 0,
                       right: 0,
-                      background: 'var(--bg-surface-hover)',
-                      boxShadow: 'inset 0 -1px 0 var(--border-base)',
+                      background: 'var(--glass-thead-bg)', backdropFilter: 'blur(12px)', WebkitBackdropFilter: 'blur(12px)',
+                      boxShadow: 'inset 0 -1px 0 var(--glass-divider), inset 1px 0 0 var(--glass-divider)',
                       zIndex: 12,
                     }}
                   >
@@ -421,25 +421,25 @@ export function DataTable<T>({
                     key={rowKey}
                     onClick={() => onRowClick && onRowClick(item)}
                     style={{
-                      borderBottom: '1px solid var(--border-base)',
+                      borderBottom: '1px solid var(--glass-divider)',
                       backgroundColor: isSelected
                         ? 'rgba(59, 130, 246, 0.04)'
-                        : 'var(--bg-surface)',
+                        : 'transparent',
                       cursor: onRowClick ? 'pointer' : 'default',
                       transition: 'background-color var(--transition-fast)',
                     }}
                     onMouseEnter={e => {
                       if (!isSelected) {
-                        e.currentTarget.style.backgroundColor = 'var(--bg-surface-hover)';
+                        e.currentTarget.style.backgroundColor = 'var(--glass-row-hover)';
                         const stickyCell = e.currentTarget.querySelector('td[data-sticky-action="true"]');
-                        if (stickyCell) (stickyCell as HTMLElement).style.background = 'var(--bg-surface-hover)';
+                        if (stickyCell) (stickyCell as HTMLElement).style.background = 'var(--glass-bg-hover)';
                       }
                     }}
                     onMouseLeave={e => {
                       if (!isSelected) {
-                        e.currentTarget.style.backgroundColor = 'var(--bg-surface)';
+                        e.currentTarget.style.backgroundColor = 'transparent';
                         const stickyCell = e.currentTarget.querySelector('td[data-sticky-action="true"]');
-                        if (stickyCell) (stickyCell as HTMLElement).style.background = 'var(--bg-surface)';
+                        if (stickyCell) (stickyCell as HTMLElement).style.background = 'var(--glass-bg-strong)';
                       }
                     }}
                   >
@@ -480,7 +480,7 @@ export function DataTable<T>({
                             position: isActionsCol ? 'sticky' : undefined,
                             right: isActionsCol ? 0 : undefined,
                             background: isActionsCol
-                              ? (isSelected ? 'rgba(59, 130, 246, 0.04)' : 'var(--bg-surface)')
+                              ? (isSelected ? 'rgba(59, 130, 246, 0.04)' : 'var(--glass-bg-strong)')
                               : undefined,
                             zIndex: isActionsCol ? 1 : undefined,
                           }}
@@ -496,15 +496,16 @@ export function DataTable<T>({
                           textAlign: 'right',
                           position: 'sticky',
                           right: 0,
-                          background: isSelected ? 'rgba(59, 130, 246, 0.04)' : 'var(--bg-surface)',
+                          background: isSelected ? 'rgba(59, 130, 246, 0.04)' : 'var(--glass-bg-strong)',
                           zIndex: 1,
+                          boxShadow: 'inset 1px 0 0 var(--glass-divider)',
                         }}
                         onClick={e => e.stopPropagation()}
                         onMouseEnter={e => {
-                          if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'var(--bg-surface-hover)';
+                          if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'var(--glass-bg-hover)';
                         }}
                         onMouseLeave={e => {
-                          if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'var(--bg-surface)';
+                          if (!isSelected) (e.currentTarget as HTMLElement).style.background = 'var(--glass-bg-strong)';
                         }}
                       >
                         <button
@@ -589,13 +590,13 @@ export function DataTable<T>({
         <div
           style={{
             padding: '12px 20px',
-            borderTop: '1px solid var(--border-base)',
+            borderTop: '1px solid var(--glass-divider)',
             display: 'flex',
             alignItems: 'center',
             justifyContent: 'space-between',
             fontSize: 13,
             color: 'var(--text-secondary)',
-            backgroundColor: 'var(--bg-surface)',
+            backgroundColor: 'transparent',
             flexShrink: 0,
           }}
         >

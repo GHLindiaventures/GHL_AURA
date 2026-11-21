@@ -10,8 +10,10 @@
   align-items: center;
   justify-content: center;
   padding: 20px;
-  background-color: rgba(15, 23, 42, 0.65);
-  backdrop-filter: blur(4px);
+  background-color: rgba(15, 23, 42, 0.42);
+  backdrop-filter: blur(8px) saturate(120%);
+  -webkit-backdrop-filter: blur(8px) saturate(120%);
+  animation: fadeIn var(--transition-normal) ease-out;
 }
 
 .modal-card {
@@ -20,18 +22,22 @@
   display: flex;
   flex-direction: column;
   padding: 0;
-  box-shadow: var(--shadow-xl);
   overflow: hidden;
-  background-color: var(--bg-surface);
+  /* The backdrop already frosts the page; the card stays filter-free so fixed
+     popovers rendered inside a modal (date pickers, menus) are not trapped. */
+  background: var(--glass-bg-strong);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-highlight), var(--glass-shadow-overlay);
   border-radius: var(--radius-xl);
 }
 
 .modal-header {
   padding: 20px 24px;
-  border-bottom: 1px solid var(--border-base);
+  border-bottom: 1px solid var(--glass-divider);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
 }
 
 .modal-title {
@@ -54,8 +60,8 @@
 
 .modal-footer {
   padding: 16px 24px;
-  border-top: 1px solid var(--border-base);
-  background-color: var(--bg-surface-hover);
+  border-top: 1px solid var(--glass-divider);
+  background: var(--glass-bg-subtle);
   display: flex;
   align-items: center;
   justify-content: flex-end;

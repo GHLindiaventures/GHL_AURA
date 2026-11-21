@@ -2,18 +2,38 @@
    TopBar Component Styles
    ========================================================================== */
 
+/* Obsidian band — continues the black brand header of the sidebar.
+   Intentionally NO backdrop-filter: nothing scrolls beneath the topbar (the
+   page scrolls in .page-scrollable below it), and backdrop-filter would make
+   the header the containing block for position:fixed descendants — trapping
+   the full-screen .topbar-dropdown-backdrop inside the 64px bar so clicks on
+   the page could not dismiss open menus. */
 .topbar-header {
   height: var(--topbar-height);
   background-color: #000000 !important;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+  background-image: linear-gradient(180deg, rgba(255, 255, 255, 0.06) 0%, rgba(255, 255, 255, 0) 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow:
+    inset 0 -1px 0 rgba(239, 68, 68, 0.18),
+    0 8px 24px -16px rgba(0, 0, 0, 0.6);
   display: flex;
   align-items: center;
   justify-content: space-between;
+  gap: 16px;
   padding: 0 24px;
   position: sticky;
   top: 0;
   z-index: 50;
-  backdrop-filter: blur(8px);
+}
+
+/* Topbar popovers float over live content → near-opaque frost */
+.topbar-search-results.card,
+.topbar-menu-dropdown.card,
+.topbar-notif-dropdown.card,
+.topbar-user-dropdown.card {
+  background: var(--glass-bg-solid);
+  box-shadow: var(--glass-highlight), var(--glass-shadow-overlay);
+  border-radius: var(--radius-lg);
 }
 
 .topbar-svg-def {
@@ -89,6 +109,11 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  transition: background-color var(--transition-fast);
+}
+
+.topbar-search-result-item:hover {
+  background: var(--glass-row-hover);
 }
 
 .topbar-search-item-name {
@@ -172,7 +197,7 @@
 
 .topbar-notif-header {
   padding: 12px 16px;
-  border-bottom: 1px solid var(--border-base);
+  border-bottom: 1px solid var(--glass-divider);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -185,12 +210,18 @@
 
 .topbar-notif-item {
   padding: 12px 16px;
-  border-bottom: 1px solid var(--border-subtle);
+  border-bottom: 1px solid var(--glass-divider);
   cursor: pointer;
+  transition: background-color var(--transition-fast);
+}
+
+.topbar-notif-item:hover {
+  background: var(--glass-row-hover);
 }
 
 .topbar-notif-item.unread {
-  background-color: rgba(59, 130, 246, 0.04);
+  background-color: rgba(239, 68, 68, 0.05);
+  box-shadow: inset 3px 0 0 var(--primary-500);
 }
 
 .topbar-user-avatar-btn {
@@ -231,7 +262,7 @@
 
 .topbar-user-dropdown-header {
   padding: 8px 10px 10px;
-  border-bottom: 1px solid var(--border-base);
+  border-bottom: 1px solid var(--glass-divider);
 }
 
 .topbar-user-role-label {
